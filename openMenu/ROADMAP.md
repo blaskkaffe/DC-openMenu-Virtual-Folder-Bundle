@@ -147,3 +147,5 @@ Ordered by what unblocks the most and what can be done without new hardware or d
 11. Device integrations (VMU slot/GameID, controller modes, pairing) once their firmware has a protocol.
 
 Waiting on you (hardware): OPEN 1 (crash log), OPEN 2 (fps numbers), OPEN 6 (serial tests).
+
+Waiting on you (cloud session access): allow `dc.dreamcastlive.net` and `dc.segaonline.net` in the environment's Network access (cloud environment menu, Edit, Allowed domains, or a broader level), then the News parser can be checked against the real pages (the DreamcastLive page shape is known from a paste; the Sega Online page has not been seen). Also useful to allow later: `dc99.net` (events).
