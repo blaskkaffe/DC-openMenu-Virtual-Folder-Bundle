@@ -15,7 +15,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 1. Disc / card contents and settings to prepare
 
-- [ ] Menu disc has `NOWO.PVR`, `NOWB.PVR` and `CNET.PVR` next to `LOGO.PVR` (the Card Manager's `tools/openMenu/menu_data` folder has them), `EMPTY.VMU`,
+- [ ] Menu disc has `EMPTY.VMU` (the online logo letters are inside the program),
       `META.DAT`, `ICON.DAT`, `BOX.DAT`, `DISC.DAT`.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
@@ -76,11 +76,11 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] Above the clock, same font: a lamp (grey off, yellow connecting, green online, red failed) and, once the list is in, "DCNow! n DCNet n".
       Nothing with Online features Off. Right-aligned to the clock, not clipped with 3-digit counts.
 - [ ] Logo, offline: the normal BIOS logo (PAL console: blue swirl). With your own LOGO.PVR nothing changes in any state.
-- [ ] While connecting the swirl turns about its own centre, once in about 1.2 s, wordmark still; it starts with the dial and stops on connect/fail.
+- [ ] While connecting the logo stays the normal one (no turning swirl).
 - [ ] Online on Dreamcast Now!: "Now!" in the swirl's colour right after "Dreamcast" (not overlapping the clock, not cut off).
 - [ ] Online through a DreamPi with DCNET selected: the swirl with "DCNET" over the wordmark's place, same size and baseline as "Dreamcast".
       "Now!" shows right away, also without the DreamPi add-on; with it the logo changes to "DCNET" when the add-on reports that network.
-- [ ] Without NOWO/NOWB/CNET.PVR on the disc the logo stays as it is online (no crash).
+- [ ] The online logos need no files: "Now!" / "CNET" show with only LOGO.PVR (or none) on the disc.
 - [ ] Compare the letters with the real wordmark at 1:1 on a CRT: weight, height, baseline (known: baseline about 1 px high, strokes lighter than
       the wordmark's own).
 
@@ -100,6 +100,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 - [ ] Settings saved here read fine by Derek's 1.7.1 with nothing changed (also with the Swatch .beat clock on: that flag is in EXTENDED.SYS, not in OPENMENU.SYS) and the other way round. A save from an older build of this menu with Clock format 3 or 4 becomes 12 / 24 hour + .beat at the first start.
 - [ ] Launch: Dreamcast game, multi-disc, PSX disc (Bleem!/Bloom), CodeBreaker, browsers, homebrew; exit from a game back to the menu.
+- [ ] Settings layout: one tall box with 5 rows (same back as the game list, as wide as the old rows, icons and text at the original size), a separate information bar at the bottom where the original help box is (no coloured square, help text starting at the value column, wrapped on a second line, nothing outside the bar), green arrows (not ^ / v text) when rows are above / below and a green scroll bar thumb that follows the cursor between them; box corners as the original (large left, small right; info box small all round), distance to BACK as the original; no label runs into its pill, pills line up with the rows, icons fit, BACK marker not covered, value column does not collide with the label.
 - [ ] Settings: groups in order BIOS, Clock and date, Display, Game list, Starting games, System, Internet, Other; help box shows group and n/total; Display > Background changes the gradient (6 choices, BIOS blue = as before), Dark mode dims it, both survive a restart and a swap to 1.7.1 and back; judge the colours on a CRT/TV. Internet screen > Settings: the three rows cycle with A and persist.
 - [ ] Files screen, Settings, date and time editor, About, debug log page, performance test still work.
 - [ ] Memory and stability: browse 500+ games, open every screen twice, leave it on the Internet screen for an hour online.
@@ -150,10 +151,10 @@ build with `-DOM_MUTE_CANCEL` (sound.c) leaves out the CANCEL sound: if the free
 Open: Flycast uses DCNET, but the player lists are DCNow!'s, and with no DreamPi nothing tells the menu which network it is on
 (`dreampi_link_network()` is 0). Decision so far: "Now!" is the default whenever the network is not known. Figure out whether DCNET can be
 recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the connection). Also: in Flycast no logo change is visible at all.
-Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
+Check the X debug overlay line `logo m  link s  net n  letters b` (letters 7 = all made) and the log `OM logo: mode m (shown, state, network, ...)`
 (state must be 2 = online for mode 1; the setting Online features must not be Off).
 
-Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (3 = swirl turning, 1 = Now!), code
+Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (1 = Now!), code
 that is new on this branch. A test build with `-DOM_NO_LOGO_MODES` keeps the logo plain. If the freeze is gone with it, the logo code (gfx.c:
 build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the connection or fetch threads (the `OM B:` and `OM logo:` lines say which).
 
@@ -165,3 +166,30 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] At the next start the VMU is backed up into the slot the game was started from (no question; 1.7.1 asks, this menu does not).
       `LASTDISC.TXT` holds `<serial>-<slot>`; `SLOT<n>.VMU` has the new time. Check on a card shared with 1.7.1 that it reads the same files.
 - [ ] A backup left undone (skipped) is offered ("Back it up now") before the next restore, also when it was made from slot 3 to 5.
+
+## Freeze on B (findings so far)
+- Seen: B on the Events page while it was loading and nothing shown yet; B out of the case viewer and the game list right after changing the game
+  or turning the case. The viewer's B does nothing but `sound_sfx(BAUDIO_SFX_CANCEL)`, so the cancel sound is the main suspect (test: `-DOM_MUTE_CANCEL`).
+- Done in code: leaving the Internet screen no longer waits for the events/news worker threads (`*_fetch_abort` only raises the flag; the poll joins
+  the thread when it has ended; a start during that time is queued).
+- Test: B at once on Events / News while loading, then open them again (must load); B out of the case viewer right after turning it, with and
+  without `-DOM_MUTE_CANCEL`.
+
+## Dark mode, logo and start-up (this round)
+- [ ] Settings > Display > Dark mode On: the header bar is dark grey, the clock and the player counts white, the "Dreamcast" wordmark light grey (swirl unchanged),
+      the waves of the background dimmed and in the hue of the chosen background colour (Green: green waves; BIOS blue: blue). Off: everything as the BIOS.
+- [ ] Dark mode with Dreamcast Now! / DCNET online: "Now!" and "CNET" readable on the dark bar.
+- [ ] A LOGO.PVR of your own: left as it is in dark mode too (the bar is still dark).
+- [ ] No turning swirl while connecting: the logo stays plain until online.
+- [ ] Start-up with Auto-Connect: the stutter in the first seconds should be less (connection threads run below the menu). Compare the `HITCH` count right after boot with Online features Off and On.
+
+## Settings icons
+- [ ] Only the selected row's icon animates (the BIOS lips, clock, speaker, question mark play their own motion from the start each time the row is selected; the rest sit still).
+- [ ] The icons we added animate too while selected, as the BIOS ones do: they shrink to about 70% and back once in a second (60 frames), about their own middle (VMU, controller, globe, telephone, case, disc, digits).
+- [ ] The VMU icon is the main menu's VMU with its LCD screen (and its own motion), centred on the row, not too big. Check the colour: it may look pale.
+
+## Internet icon
+- [ ] With Online features on (manual or automatic) the main menu's Music icon is the globe, labelled Internet, sitting where the note was; it turns slowly (3 s a turn) while selected and rests when not. With Online off it is the music note again.
+- [ ] Main menu, Internet icon (globe): the globe sits behind the caption's pill (the pill is drawn over it), and the caption text stays still while the globe turns.
+- [ ] Settings: the VMU icon is centred in the icon column (as the lips and clock), and its row text is where the other rows' text is.
+- [ ] "Now!" / "CNET" are drawn with the logo polygon's own colour (grey 0xB4 shading, and its fade): same blue as the PAL swirl, no light border, same weight as "Dreamcast"; they slide in and fade with the bar when coming back from a menu.

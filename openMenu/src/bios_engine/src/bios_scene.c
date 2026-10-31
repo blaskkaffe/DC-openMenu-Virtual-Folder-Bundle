@@ -123,6 +123,7 @@ bscene_project(nj_vec3 p, float* sx, float* sy, float* invw) {
 #define CACHE_VERTS 12288 /* vertices of the kept strips */
 #define CACHE_RUNS 2048   /* kept strips */
 #define CACHE_ENTRIES 128
+#define HEADER_MODEL 7 /* the header bar (BMENU_HEADER_MODEL) */
 
 typedef struct {
     uint32_t flags;
@@ -135,9 +136,11 @@ typedef struct {
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
     float stretch_yc, stretch_yd, stretch_yx;
+    int small_left;
     int no_decals, panel_on, fullbright;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
+    uint32_t header_bar_argb;
     int ovr_n;
     struct {
         int node, poly;
@@ -241,6 +244,9 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     k->motion = (o->flags & BVM_F_MOTION) ? o->motion : 0;
     k->texlist = o->texlist;
     memcpy(k->pos, o->pos, sizeof(k->pos));
+    k->pos[0] += o->model_off[0];
+    k->pos[1] += o->model_off[1];
+    k->pos[2] += o->model_off[2];
     memcpy(k->rot, o->rot, sizeof(k->rot));
     memcpy(k->scl, scl, sizeof(k->scl));
     if (offs) {
@@ -256,6 +262,7 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     k->stretch_yc = s->stretch_yc;
     k->stretch_yd = s->stretch_yd;
     k->stretch_yx = s->stretch_yx;
+    k->small_left = s->small_left;
     k->no_decals = s->no_decals;
     k->fullbright = s->fullbright;
     if (s->panel_on) {
@@ -263,6 +270,9 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
         k->panel_fx = s->panel_fx;
         k->panel_fy = s->panel_fy;
         k->panel_accent = s->panel_accent;
+    }
+    if (o->model == HEADER_MODEL) {
+        k->header_bar_argb = s->header_bar_argb;
     }
     for (int i = 0; i < s->ovr_n && i < BSCENE_OVR_MAX; i++) {
         if (s->ovr[i].model == o->model) {
@@ -597,9 +607,11 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         draw_object_panel(s, o, sink);
     }
 
-    float scl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
+    const float ms = o->model_scale > 0.0f ? o->model_scale : 1.0f;
+    float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
     nj_mat4 obj_m;
-    nj_mat_object(&obj_m, o->pos, scl, o->rot);
+    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2] + o->model_off[2]};
+    nj_mat_object(&obj_m, mpos, scl, o->rot);
     /* constant material (a, r, g, b offsets), and the screen transition's fade */
     float eoff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float* offs = NULL;
@@ -678,6 +690,20 @@ draw_model:
                             src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
                             src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
                         }
+                        if (s->small_left && mesh->nverts == 23 && i < 13) { /* model 41: the left cap's outline points */
+                            /* corner arc of radius 1.0 as the right end's (offsets from the corner), then the straight edge */
+                            static const float arc[5][2] = {{0.0f, 0.0f}, {0.38f, 0.08f}, {0.71f, 0.29f}, {0.92f, 0.62f}, {1.0f, 1.0f}};
+                            const float xl = -30.75f, top = 2.75f;
+                            if (i >= 1 && i <= 5) {
+                                src.x = xl + 1.0f - arc[i - 1][0];
+                                src.y = top - arc[i - 1][1];
+                            } else if (i >= 7 && i <= 11) {
+                                src.x = xl + 1.0f - arc[11 - i][0];
+                                src.y = -(top - arc[11 - i][1]);
+                            } else if (i == 6) {
+                                src.x = xl;
+                            }
+                        }
                         if (s->stretch_on) {
                             if (src.x > s->stretch_b) {
                                 src.x = s->stretch_a + (s->stretch_b - s->stretch_a) * s->stretch_f + (src.x - s->stretch_b);
@@ -748,6 +774,10 @@ draw_model:
                                 forced = 1;
                             }
                         }
+                    }
+                    if (!forced && s->header_bar_argb && o->model == HEADER_MODEL && poly->tex < 0) {
+                        forced_argb = s->header_bar_argb; /* dark mode: the bar's grey */
+                        forced = 1;
                     }
                     const fcolour mat = material(diffuse, offs);
                     uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
@@ -873,7 +903,16 @@ model_done:
     if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
         /* text_surface_draw (0x8C014D78) projects the surface's offset through the object's matrix: the offset is scaled and
          * turned with the object, then moved to its place */
-        nj_vec3 anchor = nj_mat_apply(&obj_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
+        /* (a model that was moved or resized for its icon, see model_off / model_scale, leaves its caption where it was) */
+        nj_mat4 text_m;
+        if (o->model_scale > 0.0f || o->model_off[0] != 0.0f || o->model_off[1] != 0.0f || o->model_off[2] != 0.0f) {
+            const float tscl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
+            const int32_t still[3] = {0, 0, 0}; /* the model may turn, the caption does not */
+            nj_mat_object(&text_m, o->pos, tscl, still);
+        } else {
+            text_m = obj_m;
+        }
+        nj_vec3 anchor = nj_mat_apply(&text_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {
             sink->text(sink->user, o, sx, sy, iw);
@@ -886,6 +925,24 @@ bscene_draw_objects(bscene* s, const bvm* vm, const bscene_sink* sink) {
     for (int i = 0; i < vm->count; i++) {
         bscene_draw_object(s, &vm->objs[vm->order[i]], sink);
     }
+}
+
+static uint32_t background_tint = 0xFFFFFFu;
+
+void
+bscene_set_background_tint(uint32_t rgb) {
+    background_tint = rgb ? (rgb & 0xFFFFFFu) : 0xFFFFFFu;
+}
+
+static uint32_t
+tinted(uint32_t argb) {
+    if (background_tint == 0xFFFFFFu) {
+        return argb;
+    }
+    uint32_t r = ((argb >> 16) & 0xFF) * ((background_tint >> 16) & 0xFF) / 255u;
+    uint32_t g = ((argb >> 8) & 0xFF) * ((background_tint >> 8) & 0xFF) / 255u;
+    uint32_t b = (argb & 0xFF) * (background_tint & 0xFF) / 255u;
+    return (argb & 0xFF000000u) | r << 16 | g << 8 | b;
 }
 
 static void
@@ -911,7 +968,7 @@ draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
                     v[k].invw = src->invw;
                     v[k].u = src->u;
                     v[k].v = src->v;
-                    v[k].argb = src->argb;
+                    v[k].argb = tinted(src->argb);
                     v[k].oargb = 0;
                 }
                 sink->triangle(sink->user, v, tex);

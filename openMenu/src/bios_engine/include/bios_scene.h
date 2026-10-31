@@ -91,6 +91,9 @@ typedef struct bscene {
      * Points in the band that lie within 0.2 of the leftmost x yx are put on x = yx: a straight edge
      * (the row bar's rounded end has its apex a hair further out than the points next to it). */
     float stretch_yc, stretch_yd, stretch_yx;
+    /* Give the row bar (model 41) small corners on its left end too, the radius of its right end (the BIOS help box has
+     * them on all four): the rounded cap's 13 outline points move onto a flat edge with two corner arcs. */
+    int small_left;
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;
@@ -105,6 +108,9 @@ typedef struct bscene {
                   * write into a model's material: the card colours, the file window's ALL button) */
     } ovr[BSCENE_OVR_MAX];
     int ovr_n;
+    /* The header bar's grey (the polygons without a picture of the header model, 7): 0 leaves the BIOS's own, else a colour shown as it is
+     * (dark mode). */
+    uint32_t header_bar_argb;
     /* screen_fly_in / screen_fly_out: objects with BVM_F_FLAG17 (and their text) fade by this much alpha (0..1) */
     float fade;
     /* rim colour of the window panels that objects create (script op panel_create, BVM_F_PANEL) */
@@ -146,6 +152,9 @@ nj_node* bscene_node(bscene* s, int model, int node);
 float bscene_text_alpha(const bvm_obj* o);
 
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
+/* The colour the background's waves (the swirl and the water meshes) are multiplied with: 0 (or 0xFFFFFF) leaves them as they are. The
+ * clouds picture is blue; this moves it to the hue of the background colour in use (and dims it in dark mode). */
+void bscene_set_background_tint(uint32_t rgb);
 
 /* Objects whose drawing state did not change since an earlier frame are not transformed, lit and projected again:
  * their triangles are kept and sent as they were. The key covers the object (model, motion frame, position,

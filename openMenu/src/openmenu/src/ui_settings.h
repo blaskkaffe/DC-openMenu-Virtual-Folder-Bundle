@@ -37,8 +37,20 @@ enum { UIS_ACTION_NONE, UIS_ACTION_DATETIME, UIS_ACTION_ABOUT, UIS_ACTION_VMUCLO
 void uis_run(int row);
 int uis_action(int row);
 
-/* Icon of a row: 0..3 one of the BIOS settings icons (language, clock, sound, question mark),
- * -1 a placeholder digit. */
+/* Icon of a row: UIS_ICON_*, or -1 for a placeholder digit. The numbers are those of BPAGE_ICON_* in bios_page.h (a row's icon is
+ * handed to the page as it is). Which kind of setting gets which icon: clock and date, anything with a time: the clock; sound: the
+ * speaker; memory card, VMU and saving: the VMU; games and discs: the GD-ROM disc; controllers and mice: the controller; the BIOS language: the lips; the rest: the question mark or none yet. */
+enum {
+    UIS_ICON_LANGUAGE = 0, /* the lips */
+    UIS_ICON_CLOCK = 1,
+    UIS_ICON_SOUND = 2,    /* the speaker */
+    UIS_ICON_OTHER = 3,    /* the question mark */
+    UIS_ICON_VMU = 20,
+    UIS_ICON_PAD = 21,     /* the controller */
+    UIS_ICON_GLOBE = 22,
+    UIS_ICON_PHONE = 23,
+    UIS_ICON_DISC = 25     /* the GD-ROM disc */
+};
 int uis_icon(int row);
 
 /* Rows with more than two choices open a popup. */
@@ -61,3 +73,6 @@ int uis_apply_card_defaults(void);
 
 /* The menu background: the BIOS gradient (top and bottom, ARGB) changed by the Background and Dark mode rows. */
 void uis_background(uint32_t* top, uint32_t* bottom);
+/* Dark mode and the colour of the background's waves (see bg_palette.h): the header bar turns dark grey, the clock white. */
+int uis_dark(void);
+uint32_t uis_wave_tint(void);

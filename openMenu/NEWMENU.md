@@ -71,10 +71,9 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 (any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
-Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
-drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+Online modes (not with a `LOGO.PVR` of your own): the logo stays plain while connecting (a turning swirl was tried and taken out); once connected it changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
-(`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are three small .PVR files (64x32) on the menu disc next to LOGO.PVR: `NOWO.PVR` (orange) and `NOWB.PVR` (blue) "Now!", picked by the swirl's hue, and `CNET.PVR` (grey). The soft edges are baked in (an edge pixel is lighter than the bar, as in the BIOS logo) and they are drawn untinted. They hold
+(`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are inside the program (`logo_letters.inc`: the coverage of the pixels of "Now!" and "CNET", 64x32 each; the menu builds the orange and blue "Now!" and the grey "CNET" for the light bar, with soft edges baked in the way the BIOS logo's own edge pixels are (an edge pixel is lighter than the bar), and flat copies for the dark bar), so there are no files on the disc. They hold
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs
 and draws "CNET" after the D, so height and weight match the original wordmark. Without the files the logo is left alone in the online modes. They are made by
 `openMenu/tools/gen_logo_text.py` (hand-drawn outlines in the style of the Dreamcast logo typeface; capitals y 7.6 to 24.8 of the 128x32 texture, stems 2.87 px as measured on the original D; no font outlines are
@@ -113,13 +112,23 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 
 ## Settings screen (sketch)
 
-Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
-text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
-any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
-values open a popup list; two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock, clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
-(label, group, help, save-file variable, choice names). Text column positions
-(`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
-Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
+Built from the game list's pieces (`bios_engine/bios_page`): one tall box (the row bar model grown along y, corners keep their
+radius), the width of the original Settings rows (x 40..619), holding `BPAGE_SLOTS` = 5 rows (48-332 px, pitch 54 px). Everything
+in a row is the original's size (icon, 45 px high value pill), measured on the BIOS screen and a photo of the console; only the rows are closer
+together than the original's 78 px, and the value pill starts at x 304 instead of 256 (it ends at 615 as the original) so that a label of up to
+17 characters does not run into it. Text as in the photo: the label is centred between the icon (ends at x 100) and the pill, the value is left aligned 10 px inside the pill (x 314), both centred on the row's height. The big box has the row bar's large rounded left end and small right corners. Under the box, where the original's help box is (x 187..622,
+y 340..434, the original's distance to the BACK marker; its corners are the help box's small ones, `small_left` in `bios_scene`), a second, separate bar holds the information about the selected row and nothing else: the
+help line, as in the original: it starts where the values do (x 314), 9 px below the top of the bar, in the menu font at its own size, written
+by `ui_bios.c` (`draw_settings_info`; a longer text goes on a second line, cut with ".." only if that is too long as well). The original's
+help box (model 34, which is the purple square) is not used.
+When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show at the top and bottom of the box, in the margin to its right (x 631, not over the box); a green scroll bar thumb (`bpage_scroll_thumb_px`, the arrows' colour, as wide as the arrow halfway up its
+height) moves between them with the cursor. The full list of rows and their lengths: `SETTINGS_LIST.md`. Icons (`UIS_ICON_*`, `bios_page.h`): the clock for everything with a time (date and time, clock format, memory card clock, clock extender, VMU time sync, online time sync), the speaker for sound (Sound, VMU beep on save), the VMU (ROM model 62) for memory card and saving settings (Serial VMU, its slots, VM2 game ID), the lips for Language, the GD-ROM disc (ROM model 61) for the game list and starting games rows, the question mark for Auto start and About; the controller icon (model 17) is ready for the mouse and controller settings, none exist yet; the other models are drawn without motion, scaled to about 40 px. Rows without an icon yet show the digit models 0-9. Rows with more than two values open a popup list;
+two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock,
+clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System,
+Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other.
+Rows are defined in `ui_settings.c` (label, group, help, save-file variable, choice names). Text column positions (`PAGE_TEXT_PAD`,
+`PAGE_VALUE_X` in `gfx.c`, `TEXT_X` in `bios_page.c`) and all box constants at the top of `bios_page.c` are guesses to be tuned on
+hardware; seen on the host preview only (the text there is drawn from a label file, see bios_preview.c). Preview: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
 
 ## Game browser (sketch)
 

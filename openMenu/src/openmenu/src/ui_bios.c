@@ -20,6 +20,7 @@
 #include "qr.h"
 #include <bios_case.h>
 #include <bios_menu.h>
+#include <bios_models.h>
 #include <bios_datetime.h>
 #include <bios_list.h>
 #include <bios_page.h>
@@ -48,6 +49,7 @@
 #include "ui_files.h"
 #include <bios_cdplayer.h>
 #include "ui_list.h"
+#include "bg_palette.h"
 #include "ui_settings.h"
 #include "video.h"
 
@@ -64,6 +66,8 @@ enum { ICON_PLAY, ICON_FILE, ICON_MUSIC, ICON_SETTINGS };
 #define GFX_MAIN_AUTOSORT 1
 #endif
 
+static bmenu menu; /* (defined here for set_icon_labels; the same object further down) */
+
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
 /* The main menu's icon labels: the Music icon is "Internet" while the online features are on, manual or automatic
@@ -72,6 +76,12 @@ static void
 set_icon_labels(void) {
     for (int i = 0; i < BMENU_ICONS; i++) {
         gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF ? "Internet" : icon_names[i]);
+    }
+    /* and the icon is the globe (it turns while selected), not the music note */
+    if (sf_dcnow[0] != DCNOW_OFF) {
+        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.115f, -11.75f, -13.96f, 40.0f); /* 40 units back: behind the caption's pill */
+    } else {
+        bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f, 0.0f);
     }
 }
 
@@ -122,7 +132,6 @@ blend_color(uint32_t from, uint32_t to, int t) {
 #define NOTICE_Y_PANEL 424.0f
 #define FPS_Y 376.0f
 
-static bmenu menu;
 static screen_t screen;
 static bpage page;
 static blist glist;                 /* the game list screen */
@@ -163,16 +172,16 @@ static int report_page; /* 0 off, 1 the table of the debug log, 2 the QR code wi
 static dbglog_sample last_sample;
 
 static char status_line[64];
-static char logo_line[64]; /* logo mode, link state and the .PVR files, in the X debug overlay */
+static char logo_line[64]; /* logo mode, link state, network and the letters made, in the X debug overlay */
 
-/* The logo at the left of the bar follows the connection: the plain logo, the swirl turning while connecting, "Now!" behind it on
- * Dreamcast Now!, "DCNET" on DCNET. Every frame, so the turning starts when the dial does. */
+/* The logo at the left of the bar follows the connection: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET.
+ * While connecting it stays the plain logo. Every frame. */
 static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    int mode = !oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
-#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes, to see whether the freeze on B while online comes from it */
+    int mode = !oh.shown ? 0 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
+#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes */
     mode = 0;
 #endif
     static int last_mode = -1;
@@ -180,8 +189,7 @@ update_logo_mode(void) {
         printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);
         last_mode = mode;
     }
-    snprintf(logo_line, sizeof(logo_line), "logo %d  shown %d state %d net %d  PVR %d", mode, oh.shown, oh.state, oh.network,
-             gfx_logo_texts_loaded());
+    snprintf(logo_line, sizeof(logo_line), "logo %d  link %d  net %d  letters %d", mode, oh.state, oh.network, gfx_logo_texts_loaded());
     gfx_set_logo_mode(mode);
 }
 
@@ -204,12 +212,14 @@ update_clock(void) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
     char key[64];
-    snprintf(key, sizeof(key), "%s|%s", text, counts);
+    int dark = uis_dark();
+    snprintf(key, sizeof(key), "%s|%s|%d", text, counts, dark);
     static char shown[64];
     static uint32_t shown_serial;
     bsurf* s = bsurf_get(BMENU_ID_HEADER, 256, 32);
     if (s && (strcmp(shown, key) != 0 || s->serial != shown_serial)) {
         bsurf_clear(s);
+        bsurf_clock_light(dark); /* white on the dark bar */
         bsurf_clock_text(s, 40, 16, text);
         if (counts[0]) {
             int text_w = (int)strlen(counts) * 11;
@@ -1042,7 +1052,7 @@ static void
 page_row(void* user, int index, bpage_row* out) {
     (void)user;
     int icon = uis_icon(index);
-    out->icon = icon >= 0 ? BPAGE_ICON_BIOS(icon) : BPAGE_ICON_DIGIT(index % 10); /* digits until real icons exist */
+    out->icon = icon >= 0 ? BPAGE_ICON_BIOS(icon) : BPAGE_ICON_DIGIT(index % 10); /* the numbers of UIS_ICON_* are those of BPAGE_ICON_*; digits for rows without an icon yet */
 }
 
 /* Text of the visible rows and of the help box, then the objects themselves. */
@@ -1058,8 +1068,6 @@ settings_sync(void) {
         }
         gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), line);
     }
-    snprintf(line, sizeof(line), "%.28s  %d/%d\n%.36s", uis_group(page.cursor), page.cursor + 1, page.count, uis_help(page.cursor)); /* 36 fit the help box */
-    gfx_set_label((uint16_t)BPAGE_HELP_ID, line);
     bpage_sync(&page, page_row, NULL);
 }
 
@@ -1082,16 +1090,71 @@ draw_about(void) {
     gfx_text("A: close", 144.0f, 316.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
+/* Draw `text` in the menu font at its own size, in at most `max_w` pixels: a longer text is cut and ends in "..". */
+static void
+text_fitted(const char* text, float x, float y, uint32_t color, float max_w) {
+    char cut[100], tmp[100];
+    snprintf(cut, sizeof(cut), "%s", text);
+    if ((float)gfx_text_width(cut) > max_w) {
+        size_t n = strlen(cut);
+        while (n > 0) {
+            cut[--n] = '\0';
+            snprintf(tmp, sizeof(tmp), "%s..", cut);
+            if ((float)gfx_text_width(tmp) <= max_w) {
+                snprintf(cut, sizeof(cut), "%s", tmp);
+                break;
+            }
+        }
+    }
+    gfx_text(cut, x, y, 0.5f, color, 1);
+}
+
+/* The information under the box, as the original's help text: starting where the values do, 9 px below the top, in the menu font at its
+ * own size. A longer text goes on a second line (broken at a space) and is cut with ".." only if even that is too long. */
+static void
+draw_settings_info(void) {
+    float x0, y0, x1, y1;
+    bpage_info_rect_px(&x0, &y0, &x1, &y1);
+    const char* help = uis_help(page.cursor);
+    char first[96];
+    snprintf(first, sizeof(first), "%s", help);
+    const char* rest = "";
+    if ((float)gfx_text_width(first) > x1 - x0) {
+        size_t n = strlen(first), cut = 0;
+        for (size_t i = 1; i < n; i++) { /* the last space that still leaves the first line inside the width */
+            char keep = first[i];
+            first[i] = '\0';
+            int fits = (float)gfx_text_width(first) <= x1 - x0;
+            first[i] = keep;
+            if (!fits) {
+                break;
+            }
+            if (first[i] == ' ') {
+                cut = i;
+            }
+        }
+        if (cut == 0) {
+            cut = n; /* no space to break at: the whole text on one line, cut below */
+        }
+        rest = help + cut + (cut < n ? 1 : 0);
+        first[cut] = '\0';
+    }
+    text_fitted(first, x0, y0, 0xFFFFFFFFu, x1 - x0);
+    if (*rest) {
+        text_fitted(rest, x0, y0 + (float)GFX_LINE_H, 0xFFFFFFFFu, x1 - x0);
+    }
+}
+
 static void
 draw_settings(void) {
-    bpage_draw(&page, gfx_sink());
-    /* more rows above / below the four shown */
-    if (page.top > 0) {
-        gfx_text("^", 590.0f, 40.0f, 0.5f, 0xFFFFFFFFu, 1);
+    bpage_draw(&page, gfx_sink()); /* the green arrows for more rows above / below are part of it */
+    {
+        float tx, ty, tw, th; /* the scroll bar between the arrows */
+        if (bpage_scroll_thumb_px(&page, &tx, &ty, &tw, &th)) {
+            gfx_rect(tx, ty, tw, th, 0.5f, BPAGE_THUMB_ARGB);
+        }
     }
-    if (page.top + BPAGE_SLOTS < page.count) {
-        gfx_text("v", 590.0f, 370.0f, 0.5f, 0xFFFFFFFFu, 1);
-    }
+    draw_settings_info();
     if (about_open) {
         draw_about();
     }
@@ -1295,6 +1358,11 @@ draw_frame(void) {
     gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
     uis_background(&top, &bottom);
+    bscene_set_background_tint(uis_wave_tint());
+    gfx_set_dark(uis_dark());
+    if (uis_dark() != (menu.scene.header_bar_argb != 0)) { /* the cached header drawing has this in its key */
+        menu.scene.header_bar_argb = uis_dark() ? bg_palette_bar_dark() : 0;
+    }
     {
         uint32_t border = blend_color(START_COLOR, 0xFF000000u, fade_step < 0 ? 0 : fade_step);
         vid_border_color((int)((border >> 16) & 0xFF), (int)((border >> 8) & 0xFF), (int)(border & 0xFF));
@@ -2360,7 +2428,7 @@ ui_bios_run(const bios_rom* rom) {
     dbglog_boot("gfx", (unsigned)timer_ms_gettime64());
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
-    gfx_load_logo_texts(); /* NOWO/NOWB/CNET.PVR: the letters of the online logos */
+    gfx_load_logo_texts(); /* the letters of the online logos, made from the embedded masks */
     dbglog_boot("logo", (unsigned)timer_ms_gettime64());
     /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
     file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);

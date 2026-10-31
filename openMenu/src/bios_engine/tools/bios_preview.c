@@ -35,6 +35,7 @@
 #include "bios_surface.h"
 #include "bios_filescr.h"
 #include "bios_text.h"
+#include "bg_palette.h"
 
 #define W 640
 #define H 480
@@ -315,7 +316,7 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
 
 /* ---- Labels of the screens, for pictures (BIOS_PREVIEW_LABEL_FILE): the console sets the texts of the icon captions, the Settings rows, the
  * game list rows and the help box through gfx_set_label(); here a file does. One line each: `0x200|Play` (an icon caption), `0x1407|Language|English`
- * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (the help box: group and help), `0x17C0|Some Game` (a game
+ * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (no longer used: the information under the Settings box is written by the app), `0x17C0|Some Game` (a game
  * list row), and `@x,y,rrggbb|text` for any text at a place of the picture (x < 0: centred on -x). The font is the BIOS's own, at its own size. */
 typedef struct {
     unsigned id;
@@ -396,11 +397,8 @@ draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
     if (o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) { /* centred on the anchor */
         blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
     } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
-        blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
-        blit_text(l->b, x0 + 250, y0, 0xFFFFFF);
-    } else if (o->id == BPAGE_HELP_ID) { /* two lines, left edge 156 px left of the anchor */
-        blit_text(l->a, (int)(x - 156.0f), y0 + 6, 0xFFFFFF);
-        blit_text(l->b, (int)(x - 156.0f), y0 + 6 + 32, 0xFFFFFF);
+        blit_text(l->a, (int)(BPAGE_LABEL_CX_PX - (float)btext_width(l->a) / 2.0f), y0, 0xFFFFFF); /* as gfx.c */
+        blit_text(l->b, (int)BPAGE_VALUE_X_PX, y0, 0xFFFFFF);
     } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
         blit_text(l->a, x0, y0, 0xFFFFFF);
     } else {
@@ -537,7 +535,15 @@ demo_fill(const bios_rom* rom) {
 static void
 demo_row(void* user, int index, bpage_row* out) {
     (void)user;
-    out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+    static int env_icons[16], env_n = -1; /* BIOS_PREVIEW_ICONS="1,2,20,...": the icon of each row */
+    if (env_n < 0) {
+        env_n = 0;
+        for (const char* e = getenv("BIOS_PREVIEW_ICONS"); e && *e && env_n < 16;) {
+            env_icons[env_n++] = atoi(e);
+            e = strchr(e, ',') ? strchr(e, ',') + 1 : NULL;
+        }
+    }
+    out->icon = index < env_n ? env_icons[index] : index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
 }
 
 static double bench_area, bench_tris, bench_tex_area, bench_vtx_count;
@@ -656,6 +662,16 @@ main(int argc, char** argv) {
     static bdt dt;
     bmenu_init(&menu, &rom, NULL);
     bsurf_init(&rom);
+    /* BIOS_PREVIEW_BG=<palette index> and BIOS_PREVIEW_DARK=1 as the Settings rows (needs bg_palette.c in the build) */
+    int pv_bg = getenv("BIOS_PREVIEW_BG") ? atoi(getenv("BIOS_PREVIEW_BG")) : 0, pv_dark = getenv("BIOS_PREVIEW_DARK") != NULL;
+    if (getenv("BIOS_PREVIEW_GLOBE")) {
+        bmenu_set_icon_model(&menu, 2, BMODEL_GLOBE, (float)atof(getenv("BIOS_PREVIEW_GLOBE")), getenv("GX") ? (float)atof(getenv("GX")) : 0.0f, getenv("GY") ? (float)atof(getenv("GY")) : 0.0f, getenv("GZ") ? (float)atof(getenv("GZ")) : 0.0f); /* the Music icon as the globe: the value is its scale */
+    }
+    bscene_set_background_tint(bg_palette_wave_tint(pv_bg, pv_dark));
+    if (pv_dark) {
+        menu.scene.header_bar_argb = bg_palette_bar_dark();
+        bsurf_clock_light(1);
+    }
     { /* the header clock as ui_bios prints it (fx_debug_hex_text) */
         bsurf* hs = bsurf_get(BMENU_ID_HEADER, 256, 32);
         bsurf_clock_text(hs, 40, 16, "10/10/2026 10:27");
@@ -835,6 +851,7 @@ main(int argc, char** argv) {
     }
     uint32_t top, bottom;
     dcbg_gradient(&menu.bg, &top, &bottom);
+    bg_palette_apply(pv_bg, pv_dark, &top, &bottom);
     if (getenv("BIOS_PREVIEW_FLAT")) { /* flat grey, no cloud layers: for comparing the models with a reference render */
         top = bottom = 0xFF808080u;
         menu.bg.swirl.cols = menu.bg.water.cols = 0;
@@ -1027,6 +1044,16 @@ main(int argc, char** argv) {
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
+        {   /* the scroll bar's thumb, as ui_bios draws it */
+            float tx, ty, tw, th;
+            if (g_autosort) frag_resolve();
+            if (bpage_scroll_thumb_px(&page, &tx, &ty, &tw, &th)) {
+                for (int yy = (int)ty; yy < (int)(ty + th); yy++)
+                    for (int xx = (int)tx; xx < (int)(tx + tw); xx++) {
+                        fb[yy][xx][0] = 0x62 / 255.0f; fb[yy][xx][1] = 0x9B / 255.0f; fb[yy][xx][2] = 0x6E / 255.0f;
+                    }
+            }
+        }
     } else if (script == -13) {
         bscene_draw_background(&menu.bg, &sink);
         bcd_draw(&cdp, &sink);
