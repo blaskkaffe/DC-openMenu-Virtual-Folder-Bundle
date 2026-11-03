@@ -129,6 +129,8 @@ get_last_allinfo_type_name(void) {
         return "USB4MAPLE";
     } else if (!strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
         return "Pico2Maple";
+    } else if (!strncasecmp(info->extended, "iBlueControlMod ", 16)) {
+        return "iBlue";
     }
     return "VMU";
 }
@@ -150,7 +152,8 @@ check_vm2_present(maple_device_t* dev) {
 
     if (!strncasecmp(info->extended, "VM2 by Dreamware", 16) || !strncasecmp(info->extended, "USB RP2040 EMU  ", 16)
         || !strncasecmp(info->extended, "8BITMODS VMUPro ", 16)
-        || !strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
+        || !strncasecmp(info->extended, "Pico2Maple USBBT", 16)
+        || !strncasecmp(info->extended, "iBlueControlMod ", 16)) {
         return 1;
     }
 
@@ -185,6 +188,8 @@ get_vmu_type_name(maple_device_t* dev) {
         return "USB4MAPLE";
     } else if (!strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
         return "Pico2Maple";
+    } else if (!strncasecmp(info->extended, "iBlueControlMod ", 16)) {
+        return "iBlue";
     }
 
     /* Default: regular VMU */
