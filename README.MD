@@ -1,5 +1,7 @@
 # openMenu Virtual Folder Bundle
 
+> **Part of the DC- Dreamcast family** (branch `unified`): [DC-DreamDash](https://github.com/blaskkaffe/DC-DreamDash/tree/unified) · [DC-PicoLink](https://github.com/blaskkaffe/DC-PicoLink/tree/unified) · [DC-iBlueControlMod](https://github.com/blaskkaffe/DC-iBlueControlMod/tree/unified) · [DC-BlueRetro](https://github.com/blaskkaffe/DC-BlueRetro/tree/unified) · [DC-openMenu-Virtual-Folder-Bundle](https://github.com/blaskkaffe/DC-openMenu-Virtual-Folder-Bundle/tree/unified). They work alone and together. The shared plan, feature list, vocabulary and licenses overview are in [docs/unified/](docs/unified/README.md).
+
 <img align="right" width="300" src="https://github.com/DerekPascarella/openMenu-Virtual-Folder-Bundle/blob/main/images/preview.gif?raw=true">
 
 This is a new version of openMenu with virtual folder/subfolder support and other updates and fixes, including a modified version of GD MENU Card Manager to support it. It aims to be the ultimate menu software and SD card management solution for SEGA Dreamcast [GDEMU](https://gdemu.wordpress.com/about/) users.
@@ -1488,6 +1490,8 @@ After that, open GD MENU Card Manager with GDEMU SD card inserted, then click **
 ---
 
 ## Legal and Licensing
+
+The licenses below are those of the openMenu part (Modified BSD) and of the GD MENU Card Manager part (GPL-3.0); they are unchanged by this repository being part of the DC- family. The documents in [docs/unified/](docs/unified/README.md) are new project notes for the DC- family; they are not part of openMenu or the Card Manager, and the repository owner has not set a separate license for them yet. For the other repositories in the family see the table there.
 
 ### openMenu
 This project includes a modified version of openMenu, which is:
