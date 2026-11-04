@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <dc/maple.h>
+#include <kos/dbglog.h>
 #include <kos/genwait.h>
 
 #include "dcapi.h"

@@ -22,6 +22,7 @@
 #include <dc/maple/vmu.h>
 #include <dc/pvr.h>
 #include <dc/video.h>
+#include <kos/dbglog.h>
 #include <kos/thread.h>
 
 #include <backend/bgm.h>
