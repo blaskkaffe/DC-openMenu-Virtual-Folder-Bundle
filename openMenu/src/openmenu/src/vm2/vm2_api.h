@@ -21,4 +21,7 @@ typedef struct maple_alldevinfo {
 int vm2_set_id(maple_device_t* dev, const char* ID, const char* name);
 int check_vm2_present(maple_device_t* dev);
 const char* get_last_allinfo_type_name(void);
+/* The capability bits of the DC API behind the marker in the last ALLINFO answer ("dc1 " + 8 hex digits): 1 and the bits,
+ * or 0 when the device does not say it speaks the language (VM2, VMU Pro, a plain VMU ...) */
+int get_last_allinfo_dcapi_caps(uint32_t* caps);
 const char* get_vmu_type_name(maple_device_t* dev);

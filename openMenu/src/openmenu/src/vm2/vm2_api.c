@@ -6,6 +6,7 @@
 #include <kos/genwait.h>
 
 #include "vm2_api.h"
+#include "dcapi_text.h"
 
 static uint8_t recv_buff[196];
 
@@ -116,6 +117,13 @@ wait_vm2:
     }
 
     return -1;
+}
+
+int
+get_last_allinfo_dcapi_caps(uint32_t* caps) {
+    maple_alldevinfo_t* info = (maple_alldevinfo_t*)&recv_buff[4];
+
+    return dcapi_caps_parse(&info->extended[16], caps);
 }
 
 const char*

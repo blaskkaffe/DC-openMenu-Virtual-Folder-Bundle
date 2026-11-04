@@ -44,6 +44,8 @@ set(OPENMENU_SOURCES
         src/ui/ui_folders.c
         src/ui/ui_dcnow.c
         src/vm2/vm2_api.c
+        src/vm2/dcapi_text.c
+        src/vm2/dcapi.c
 )
 
 add_executable(openmenu ${OPENMENU_SOURCES})

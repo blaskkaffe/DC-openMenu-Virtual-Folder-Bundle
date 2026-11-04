@@ -45,6 +45,7 @@
 #include "ui/ui_common.h"
 #include "ui/ui_menu_credits.h"
 #include "vm2/vm2_api.h"
+#include "vm2/dcapi.h"
 #include "vmu_lcd_utils.h"
 
 #if DEBUG_MAPLE_FLASH
@@ -149,6 +150,8 @@ show_loading_screen(void) {
 maple_device_t* vm2_devices[VM2_MAX_DEVICES] = {NULL};
 char vm2_type_names[VM2_MAX_DEVICES][16];
 int vm2_device_count = 0;
+uint32_t vm2_dc_caps[VM2_MAX_DEVICES]; /* DC API capability bits of each device above (0 = it does not speak the language) */
+dcapi_hello_t vm2_dc_hello[VM2_MAX_DEVICES];
 
 void (*current_ui_init)(void);
 void (*current_ui_setup)(void);
@@ -214,6 +217,18 @@ vm2_rescan(void) {
             /* Cache type name from ALLINFO response still in recv_buff */
             strncpy(vm2_type_names[vm2_device_count], get_last_allinfo_type_name(), sizeof(vm2_type_names[0]) - 1);
             vm2_type_names[vm2_device_count][sizeof(vm2_type_names[0]) - 1] = '\0';
+            /* A device that speaks the DC API says so behind the marker (checked while the ALLINFO answer is still in
+             * the buffer); then ask who it is. Devices that do not (VM2, VMU Pro, USB4Maple, Pico2Maple today) are not asked. */
+            vm2_dc_caps[vm2_device_count] = 0;
+            vm2_dc_hello[vm2_device_count].name[0] = vm2_dc_hello[vm2_device_count].version[0] = 0;
+            if (get_last_allinfo_dcapi_caps(&vm2_dc_caps[vm2_device_count]) && dcapi_has(vm2_dc_caps[vm2_device_count], DCAPI_CAP_API)) {
+                vm2_dc_hello[vm2_device_count].caps = vm2_dc_caps[vm2_device_count];
+                if (dcapi_get_hello(vmu, &vm2_dc_hello[vm2_device_count]) == 0) {
+                    dbglog(DBG_INFO, "DC API: %s %s on %c%c (caps %08lx)\n", vm2_dc_hello[vm2_device_count].name,
+                           vm2_dc_hello[vm2_device_count].version, vmu->port + 'A', vmu->unit + '0',
+                           (unsigned long)vm2_dc_caps[vm2_device_count]);
+                }
+            }
             vm2_device_count++;
         }
     }
@@ -230,6 +245,29 @@ vm2_get_type_name(maple_device_t* dev) {
         }
     }
     return "VMU";
+}
+
+/* The capability bits of a device found by vm2_rescan(), 0 if it does not speak the DC API */
+uint32_t
+vm2_get_dc_caps(maple_device_t* dev) {
+    for (int i = 0; i < vm2_device_count; i++) {
+        if (vm2_devices[i] == dev) {
+            return vm2_dc_caps[i];
+        }
+    }
+    return 0;
+}
+
+/* Tells every device that has the `net` capability which network is selected ("dcnow" or "dcnet"), directly over Maple. With a
+ * DreamPi the Pi can do it over Bluetooth instead (decision D-12); the write is the same and repeating it is harmless.
+ * Not called yet: openMenu does not read the Pi's NET line yet (OM-P11). */
+void
+vm2_dc_set_network(const char* network) {
+    for (int i = 0; i < vm2_device_count; i++) {
+        if (dcapi_has(vm2_dc_caps[i], DCAPI_CAP_NET)) {
+            dcapi_set(vm2_devices[i], "net.selected", network, NULL, 0);
+        }
+    }
 }
 
 void
