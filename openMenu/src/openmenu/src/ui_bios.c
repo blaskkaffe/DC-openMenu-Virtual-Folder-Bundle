@@ -59,6 +59,13 @@ typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCRE
  * longer; the animations were written for that rate. */
 #define STEPS_PER_SECOND 60
 #define MAX_STEPS_PER_FRAME 4
+/* Trace lines for hunting a hang (build with -DOM_TRACE_LOG). printf goes out on the serial port at 115200 baud and waits for
+ * it: a 60 character line costs about 5 ms, a dropped frame each time. */
+#ifdef OM_TRACE_LOG
+#define OM_TRACE(...) printf(__VA_ARGS__)
+#else
+#define OM_TRACE(...) ((void)0)
+#endif
 
 enum { ICON_PLAY, ICON_FILE, ICON_MUSIC, ICON_SETTINGS };
 
@@ -2078,7 +2085,7 @@ handle_music(button_t b) {
 
 static void
 leave_settings(void) {
-    printf("OM leave settings: save\n");
+    OM_TRACE("OM leave settings: save\n");
     if (uis_commit() != 0) {
         sound_sfx(BAUDIO_SFX_ERROR);
         show_notice("Could not save settings");
@@ -2086,14 +2093,14 @@ leave_settings(void) {
         sound_sfx(BAUDIO_SFX_CANCEL);
     }
     /* order, multi-disc and recent list changes show up in the list again */
-    printf("OM leave settings: list\n");
+    OM_TRACE("OM leave settings: list\n");
     list_set_folder_root();
     uil_reset();
-    printf("OM leave settings: labels\n");
+    OM_TRACE("OM leave settings: labels\n");
     set_icon_labels();
     bmenu_show_main(&menu, ICON_SETTINGS);
     screen = SCREEN_MAIN;
-    printf("OM leave settings: done\n");
+    OM_TRACE("OM leave settings: done\n");
 }
 
 static void
@@ -2510,7 +2517,7 @@ ui_bios_run(const bios_rom* rom) {
         button_t b = input_poll();
         static int b_trace;
         if (b_trace) {
-            printf("OM B: frame %u after B ok\n", frame_no);
+            OM_TRACE("OM B: frame %u after B ok\n", frame_no);
             b_trace = 0;
         }
         if (bench_active()) {
@@ -2529,7 +2536,7 @@ ui_bios_run(const bios_rom* rom) {
             }
         }
         if (b == BTN_B) {
-            printf("OM B: pressed, frame %u, screen %d\n", frame_no, (int)screen);
+            OM_TRACE("OM B: pressed, frame %u, screen %d\n", frame_no, (int)screen);
             b_trace = 1;
         }
         input_mouse(&pointer);

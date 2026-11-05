@@ -15,6 +15,13 @@
 #include <string.h>
 #include <strings.h>
 
+/* The folder view's progress lines (on the serial port: about 5 ms a line, each time the list is rebuilt). */
+#ifdef GD_LIST_VERBOSE
+#define LIST_TRACE(...) printf(__VA_ARGS__)
+#else
+#define LIST_TRACE(...) ((void)0)
+#endif
+
 #include <ini.h>
 
 #include "backend/db_item.h"
@@ -1458,14 +1465,14 @@ list_visible_disc(const gd_item* item) {
 
 void
 list_set_folder_root(void) {
-    printf("list_set_folder_root: Starting\n");
+    LIST_TRACE("list_set_folder_root: Starting\n");
     if (!folder_tree_root) {
         printf("list_set_folder_root: No folder tree, using default sort\n");
         list_set_sort_default();
         return;
     }
 
-    printf("list_set_folder_root: Building folder view, root has %d children and %d games\n",
+    LIST_TRACE("list_set_folder_root: Building folder view, root has %d children and %d games\n",
            folder_tree_root->num_children, folder_tree_root->num_games);
 
 #ifndef STANDALONE_BINARY
@@ -1516,7 +1523,7 @@ list_set_folder_root(void) {
         list_temp[temp_idx++] = game;
     }
 
-    printf("list_set_folder_root: Sorting %d items\n", temp_idx);
+    LIST_TRACE("list_set_folder_root: Sorting %d items\n", temp_idx);
     qsort(list_temp, temp_idx, sizeof(gd_item*), folder_cmp);
 
     list_current = list_temp;
@@ -1527,7 +1534,7 @@ list_set_folder_root(void) {
     folder_state.path[0] = '\0';
     list_view_set(LIST_VIEW_FOLDER, 0, 0);
 
-    printf("list_set_folder_root: Complete, %d items in list\n", temp_idx);
+    LIST_TRACE("list_set_folder_root: Complete, %d items in list\n", temp_idx);
 }
 
 void

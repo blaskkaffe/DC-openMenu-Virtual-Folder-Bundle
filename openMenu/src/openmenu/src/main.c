@@ -37,6 +37,12 @@ main(int argc, char* argv[]) {
     (void)argv;
 
     dbglog_boot("main", (unsigned)timer_ms_gettime64());
+#ifdef THD_SCHED_HZ
+    /* KOS only switches to a thread woken by an interrupt at the next scheduler tick (or when the running thread sleeps or
+     * yields). The menu thread is woken by the PVR each frame; with the default 100 Hz a busy worker (a parser, a disc read)
+     * could keep it waiting up to 10 ms. At 1000 Hz that is at most 1 ms. */
+    thd_set_hz(1000);
+#endif
     serial_log_banner();
     maple_wait_scan();
     dbglog_boot("maple", (unsigned)timer_ms_gettime64());

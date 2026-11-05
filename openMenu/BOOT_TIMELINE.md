@@ -77,3 +77,22 @@ session); the debug log's boot marks (`dbglog_boot`) and `HITCH` lines measure t
 Debug overlay (X on the main menu), then B for the log page: the boot marks now include `warm` and `art` (their cost moved to
 before the menu shows), and the `HITCH` lines list every frame longer than 1.5 refreshes with what it spent the time on. Compare
 a boot with Online off and with Auto-Connect, and one with a Serial VMU backup pending.
+
+## Other causes of dropped frames (any time, not only at start)
+
+- **Scheduler tick.** A thread woken by an interrupt waits for the next tick unless the running thread yields. With the default
+  100 Hz that is up to 10 ms each frame a worker (DAT read, JSON/HTML parse, PPP, the File screen's reader) is busy. **Changed:**
+  `main()` sets `thd_set_hz(1000)` (only where KOS has `THD_SCHED_HZ`), at most 1 ms.
+- **Serial output.** `printf` waits for the serial port at 115200 baud, about 5 ms for a 60 character line. **Changed:** the B
+  trace lines and the "leave settings" markers are only built with `-DOM_TRACE_LOG`, the folder view's progress lines (four per
+  list rebuild: sort, Folders, leaving Settings) only with `-DGD_LIST_VERBOSE`. The rare `OM logo` line (on a mode change) and the
+  error lines stay.
+- **Blocking VMU and SD on the menu thread** (each VMU block waits a vblank; the serial SD card is driven by the CPU): saving the
+  settings (leaving Settings), the favourites, the Serial VMU restore's image read before a game. These happen on a button press,
+  one or a few frames each. Not changed.
+- **Scenes that change every frame** (game list scrolling, the case flying, the File grid): the object cache cannot reuse their
+  triangles, so the whole scene is transformed and lit each frame; the hardware numbers so far (game list 19-29 fps, File screen
+  19 fps) are this. The next step there is measuring with the performance test (Settings > Other) and cutting triangles/objects
+  per screen.
+- **Catch-up steps.** After a slow frame the logic runs up to 4 steps (the BIOS: 2); the logic is cheap next to drawing, so this
+  does not spiral, but it is a place to look if a screen stays slow.
