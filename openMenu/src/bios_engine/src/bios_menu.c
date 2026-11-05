@@ -4,6 +4,7 @@
  */
 #include "bios_menu.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define PRIO_ICON 0x2000
@@ -118,6 +119,36 @@ apply_icon_models(bmenu* m) {
             o->rot_tw[1].cur = o->rot[1] = age ? turn : 0;
         }
     }
+}
+
+void
+bmenu_prewarm(bmenu* m, const bscene_sink* sink, int frames) {
+    bvm* vm = (bvm*)malloc(sizeof(bvm)); /* a copy of the scripts' state (about 77 KB), for this only */
+    if (!vm) {
+        return;
+    }
+    memcpy(vm, &m->vm, sizeof(bvm));
+    const unsigned parts = m->scene.parts;
+    m->scene.parts = BSCENE_PART_MODEL;
+    for (int f = 0; f < frames; f++) {
+        bvm_update(vm);
+        for (int i = 0; i < BMENU_ICONS; i++) { /* the icons drawn with another model (the globe) */
+            for (int layer = 0; m->icon_model[i].model && layer < 2; layer++) {
+                bvm_obj* o = bvm_find(vm, (uint16_t)(BMENU_ID_ICON(i) + layer * 0x100));
+                if (o) {
+                    o->model = o->texlist = m->icon_model[i].model;
+                    o->flags &= ~(uint32_t)BVM_F_MOTION;
+                    o->model_scale = m->icon_model[i].scale;
+                }
+            }
+        }
+        if (f == 0 || f == frames - 1 || f % 8 == 0) { /* the objects appear over the first frames, the motions run on */
+            bscene_draw_objects(&m->scene, vm, sink);
+        }
+    }
+    bscene_draw_background(&m->bg, sink);
+    m->scene.parts = parts;
+    free(vm);
 }
 
 void

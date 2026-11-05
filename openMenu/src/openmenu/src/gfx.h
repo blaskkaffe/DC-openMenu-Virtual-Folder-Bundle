@@ -44,6 +44,10 @@ void gfx_load_logo_texts(void);
 /* Which pictures exist: bits 0 "Now!" orange, 1 "Now!" blue, 2 "CNET" (for the debug line). */
 int gfx_logo_texts_loaded(void);
 void gfx_logo_badge(void);
+/* A sink that only loads the textures of what is drawn into it (see bmenu_prewarm). */
+const bscene_sink* gfx_warm_sink(void);
+/* Reads the tables of the art DATs now (before the menu shows) instead of when the game list first opens. */
+void gfx_preload_art_index(void);
 
 /* Triangles submitted since gfx_begin_frame(). */
 unsigned gfx_triangles(void);

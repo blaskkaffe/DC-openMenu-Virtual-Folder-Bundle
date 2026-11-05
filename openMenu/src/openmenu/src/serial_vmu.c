@@ -20,6 +20,7 @@
 #include <dc/maple.h>
 #include <dc/maple/vmu.h>
 #include <fat/fs_fat.h>
+#include <kos/thread.h>
 #define SVMU_SD "/sd"
 #define SVMU_EMPTY_VMU "/cd/EMPTY.VMU" /* a BIOS-formatted blank card, on the menu disc */
 #endif
@@ -487,29 +488,29 @@ svmu_begin_backup(void) {
     return s.phase != SVMU_OFF;
 }
 
-void
-svmu_step(void) {
-    if (s.phase != SVMU_BUSY) {
-        return;
-    }
-    if (s.block < BLOCKS) {
-        int rc = s.mode == MODE_BACKUP ? vmu_read_block(s.device, s.block, s.buffer + s.block * BLOCK_SIZE)
-                                       : vmu_write_block(s.device, s.block, s.buffer + s.block * BLOCK_SIZE);
-        if (rc != 0) {
-            if (s.mode == MODE_BACKUP) {
-                ask(ASK_BACKUP_FAILED);
-            } else if (s.mode == MODE_WIPE) {
-                go_launch(); /* the wipe did not work: start anyway, as 1.7.1 */
-            } else {
-                ask(ASK_RESTORE_FAILED);
-            }
-            return;
+enum { XFER_OK, XFER_VMU_FAILED, XFER_SD_FAILED };
+
+static int
+transfer_block(int block) {
+    return s.mode == MODE_BACKUP ? vmu_read_block(s.device, block, s.buffer + block * BLOCK_SIZE)
+                                 : vmu_write_block(s.device, block, s.buffer + block * BLOCK_SIZE);
+}
+
+/* After the copy (all blocks, and for a backup the SD file): what to do next. */
+static void
+xfer_finish(int rc) {
+    if (rc == XFER_VMU_FAILED) {
+        if (s.mode == MODE_BACKUP) {
+            ask(ASK_BACKUP_FAILED);
+        } else if (s.mode == MODE_WIPE) {
+            go_launch(); /* the wipe did not work: start anyway, as 1.7.1 */
+        } else {
+            ask(ASK_RESTORE_FAILED);
         }
-        s.block++;
         return;
     }
     if (s.mode == MODE_BACKUP) {
-        if (write_image(s.serial, s.slot, s.buffer) != 0) {
+        if (rc == XFER_SD_FAILED) {
             ask(ASK_BACKUP_FAILED);
             return;
         }
@@ -520,6 +521,68 @@ svmu_step(void) {
     } else {
         go_launch();
     }
+}
+
+#ifndef SVMU_HOST_TEST
+static kthread_t* xfer_thd;
+static volatile int xfer_done, xfer_rc;
+
+static void*
+xfer_main(void* param) {
+    (void)param;
+    int rc = XFER_OK;
+    for (; s.block < BLOCKS; s.block++) { /* s.block is read by the popup for the progress */
+        if (transfer_block(s.block) != 0) {
+            rc = XFER_VMU_FAILED;
+            break;
+        }
+    }
+    if (rc == XFER_OK && s.mode == MODE_BACKUP && write_image(s.serial, s.slot, s.buffer) != 0) {
+        rc = XFER_SD_FAILED;
+    }
+    xfer_rc = rc;
+    xfer_done = 1;
+    return NULL;
+}
+#endif
+
+void
+svmu_step(void) {
+    if (s.phase != SVMU_BUSY) {
+        return;
+    }
+#ifndef SVMU_HOST_TEST
+    /* The copy runs on a thread: every VMU block read or write waits for the next maple cycle (a vblank), so one block per
+     * frame on the menu's thread held it to 30 fps for the 256 blocks; the 128 KB SD write at the end of a backup stalls too. */
+    if (!xfer_thd && !xfer_done) {
+        xfer_thd = thd_create(0, xfer_main, NULL);
+        if (xfer_thd) {
+            return;
+        }
+        /* no thread: one block per frame here, as before */
+    } else if (xfer_thd) {
+        if (!xfer_done) {
+            return;
+        }
+        thd_join(xfer_thd, NULL);
+        xfer_thd = NULL;
+    }
+    if (xfer_done) {
+        int rc = xfer_rc;
+        xfer_done = 0;
+        xfer_finish(rc);
+        return;
+    }
+#endif
+    if (s.block < BLOCKS) {
+        if (transfer_block(s.block) != 0) {
+            xfer_finish(XFER_VMU_FAILED);
+            return;
+        }
+        s.block++;
+        return;
+    }
+    xfer_finish(s.mode == MODE_BACKUP && write_image(s.serial, s.slot, s.buffer) != 0 ? XFER_SD_FAILED : XFER_OK);
 }
 
 svmu_phase

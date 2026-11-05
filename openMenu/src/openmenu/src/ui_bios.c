@@ -2454,6 +2454,15 @@ ui_bios_run(const bios_rom* rom) {
     uin_set_launch(start_game); /* games started from the Internet screen restore their Serial VMU first */
     dbglog_boot("menu", (unsigned)timer_ms_gettime64());
 
+    /* Everything the first seconds would otherwise load in the middle of a frame is loaded now, behind the start colour (as the
+     * BIOS's gui_init registers all its textures before its first frame): the main menu's models, motions and textures, the tables
+     * of the art DATs (else read when the game list first opens), and the Clock extender's one flash write (else in frame 1). */
+    bmenu_prewarm(&menu, gfx_warm_sink(), 60);
+    dbglog_boot("warm", (unsigned)timer_ms_gettime64());
+    gfx_preload_art_index();
+    dbglog_boot("art", (unsigned)timer_ms_gettime64());
+    clock_extender_tick();
+
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
     for (int i = 0; i < 3; i++) {
         gfx_begin_frame(START_COLOR, START_COLOR);
@@ -2467,9 +2476,10 @@ ui_bios_run(const bios_rom* rom) {
         serial_log_block("boot", b2);
     }
 
-    /* Auto-Connect dials on its own thread. It starts here, with the screen and the sound driver up: probing the modem or
-     * adapter (G2 bus) while they were being set up could upset either. */
-    online_boot();
+    /* Auto-Connect (online_boot) dials on its own thread; it starts in the loop once the screen has faded in (see below), not
+     * during the fade: probing the serial port or the modem keeps the CPU busy, and a woken menu thread only gets it back at the
+     * next scheduler tick. */
+    int online_started = 0;
     svmu_item = NULL;
     svmu_begin_backup(); /* the last game's VMU goes back to the serial SD card, if it left a note */
 
@@ -2623,6 +2633,10 @@ ui_bios_run(const bios_rom* rom) {
             games_sync();
         }
 
+        if (!online_started && fade_step >= FADE_STEPS) {
+            online_started = 1;
+            online_boot();
+        }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
                     !viewer_open && !options_open && !svmu_active());

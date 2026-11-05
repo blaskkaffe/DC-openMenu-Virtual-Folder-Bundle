@@ -663,6 +663,8 @@ static unsigned logo_swirl_rgb = 0xFFFFFF; /* the swirl's colour, 0xRRGGBB: pick
 
 #include "logo_letters.inc"
 
+static void build_logo_variants(void);
+
 /* One 64x32 ARGB4444 picture from a coverage mask. Light bar (`dark` 0): the colour mixed with white by (1 - coverage), as the BIOS
  * logo's own edge pixels are (c*colour + (1-c)*255). Dark bar: the colour as it is, the coverage as the alpha. */
 static void
@@ -697,6 +699,7 @@ gfx_load_logo_texts(void) {
     make_letters(logo_mask_now, 0x4477BBu, 0, &logo_now_tex[1]);
     make_letters(logo_mask_now, 0xEE4400u, 1, &logo_now_dark_tex[0]);
     make_letters(logo_mask_now, 0x6096E1u, 1, &logo_now_dark_tex[1]);
+    build_logo_variants(); /* the cropped and dark logos now, not in the frame that first needs them */
 }
 
 int
@@ -1289,6 +1292,34 @@ sink_strip(void* user, const bscene_vtx* v, int n, bscene_texref ref) {
 }
 
 static const bscene_sink the_sink = {NULL, sink_triangle, sink_text, sink_strip};
+
+/* Loads the textures a drawing uses, draws nothing (bmenu_prewarm before the first frame). */
+static void
+warm_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    (void)user;
+    (void)v;
+    if (ref.kind != BSCENE_TEX_NONE) {
+        get_rom_texture(ref);
+    }
+}
+
+static void
+warm_strip(void* user, const bscene_vtx* v, int n, bscene_texref ref) {
+    (void)n;
+    warm_triangle(user, v, ref);
+}
+
+static const bscene_sink warm_sink = {NULL, warm_triangle, NULL, warm_strip};
+
+const bscene_sink*
+gfx_warm_sink(void) {
+    return &warm_sink;
+}
+
+void
+gfx_preload_art_index(void) {
+    art_load_dats();
+}
 
 const bscene_sink*
 gfx_sink(void) {

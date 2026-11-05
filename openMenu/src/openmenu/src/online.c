@@ -37,7 +37,8 @@ static void
 vmu_lcd_check_insertions(void) {
     static bool prev_valid[8];
     static int counter;
-    if (++counter < VMU_LCD_CHECK_INTERVAL) {
+    static bool seeded; /* the cards present at start were drawn by savefile_init: only the ones plugged in later are new */
+    if (++counter < VMU_LCD_CHECK_INTERVAL && seeded) {
         return;
     }
     counter = 0;
@@ -46,7 +47,7 @@ vmu_lcd_check_insertions(void) {
             int idx = port * 2 + (unit - 1);
             maple_device_t* dev = maple_enum_dev(port, unit);
             bool now_valid = dev && dev->valid;
-            if (now_valid && !prev_valid[idx] && (dev->info.functions & MAPLE_FUNC_LCD)) {
+            if (seeded && now_valid && !prev_valid[idx] && (dev->info.functions & MAPLE_FUNC_LCD)) {
                 if (savefile_lcd_owned()) {
                     dcnow_vmu_redraw();
                 } else {
@@ -56,6 +57,7 @@ vmu_lcd_check_insertions(void) {
             prev_valid[idx] = now_valid;
         }
     }
+    seeded = true;
 }
 
 /* The top bar shows the player count, so the list is read once a link is up even when nobody has opened the Internet screen. The

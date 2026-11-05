@@ -33,6 +33,7 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Worker threads (connection, fetches, time sync, DreamPi link) run at `PRIO_DEFAULT + 4`, below the menu, so Auto-Connect does not take frame time at start-up.
 - Settings page icons (`bios_page.c`): only the selected row's icon animates (`icon_age`; BIOS icons by their motion from frame 0.5 with step 0.5, the others shrink to 70% and back in 60 frames by `icon_shrink`, like the BIOS ones); the VMU icon is ROM model 1 (the main menu's VMU, with LCD, motion 1) moved down by `icon_dy`. Host-rendered with `BIOS_PREVIEW_ICONS=20,21,22,23,24 bios_preview ... <row> -2`.
 - Main menu icon models: `bmenu_set_icon_model` (the Music icon is the BIOS-style globe while Online is on; `bvm_obj.model_scale`, offset dx/dy and dz (40 back: behind the caption's pill), turns while selected, the caption text is anchored without the turn; preview with `BIOS_PREVIEW_GLOBE=<scale> GX= GY= GZ=`).
+- Start-up order: `openMenu/BOOT_TIMELINE.md` (the first ten seconds, against the BIOS and KOS). Before the first frame: `bmenu_prewarm` (models/motions/textures via `gfx_warm_sink`), `gfx_preload_art_index`, the Clock extender write; Auto-Connect starts after the fade; the Serial VMU copy runs on a thread (VMU block I/O blocks for a vblank each in KOS); worker threads must sleep or yield, never spin (a woken menu thread only gets the CPU at the next tick or yield).
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
 ## Open items

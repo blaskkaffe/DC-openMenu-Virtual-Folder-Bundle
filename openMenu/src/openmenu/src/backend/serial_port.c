@@ -83,7 +83,6 @@ err_irq(irq_t src, irq_context_t* cxt, void* data) {
 
 int
 serial_port_open(int baud) {
-    int i;
     int irq_state;
 
     if (port_open) {
@@ -100,9 +99,7 @@ serial_port_open(int baud) {
     SCSMR2 = 0;    /* 8N1, P0 clock */
     SCBRR2 = (uint8_t)(50000000 / (32 * baud) - 1);
     irq_restore(irq_state);
-    for (i = 0; i < 800000; i++) {
-        __asm__ volatile("nop");
-    }
+    thd_sleep(10); /* let the port settle; sleeping, not a busy loop: the menu thread must get the CPU at each frame */
 
     ring_head = ring_tail = ring_count = ring_paused = 0;
     irq_state = irq_disable();
@@ -118,9 +115,7 @@ serial_port_open(int baud) {
     IPRC |= 0x000e << 4;
     SCSCR2 = 0x30 | 0x48; /* TE, RE, receive and receive-error interrupts */
     irq_restore(irq_state);
-    for (i = 0; i < 800000; i++) {
-        __asm__ volatile("nop");
-    }
+    thd_sleep(10); /* let the port settle; sleeping, not a busy loop: the menu thread must get the CPU at each frame */
     port_open = 1;
     serial_port_discard();
     return 0;

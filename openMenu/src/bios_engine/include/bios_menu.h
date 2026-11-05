@@ -54,6 +54,11 @@ typedef struct bmenu {
     } icon_model[BMENU_ICONS];
 } bmenu;
 
+/* Before the first frame: run a copy of the main menu's scripts for `frames` frames and draw it into `sink` (the scene's models and motions
+ * load into m->scene, the sink can load the textures), so nothing is loaded while the screen fades in. m itself is not changed: the menu
+ * still starts from its first frame. As the BIOS's gui_init registers its textures before the first frame. */
+void bmenu_prewarm(bmenu* m, const bscene_sink* sink, int frames);
+
 void bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy, float dz);
 
 void bmenu_init(bmenu* m, const bios_rom* rom, const bvm_host* host);
