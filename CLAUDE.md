@@ -36,6 +36,16 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Start-up order: `openMenu/BOOT_TIMELINE.md` (the first ten seconds, against the BIOS and KOS). Before the first frame: `bmenu_prewarm` (models/motions/textures via `gfx_warm_sink`), `gfx_preload_art_index`, the Clock extender write; Auto-Connect starts after the fade; the Serial VMU copy runs on a thread (VMU block I/O blocks for a vblank each in KOS); worker threads must sleep or yield, never spin (a woken menu thread only gets the CPU at the next tick or yield).
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
+## Card Manager
+- `GD MENU Card Manager/` is Derek's C# app (WPF + Avalonia, shared Core). Scraper: `Core/Scraper/` (ScreenScraper,
+  libretro thumbnails, `TitleMatcher`, `ScrapeText`, `ArtScraper`), `InfoDatManager.cs`, `ScrapeWindow` in both UIs;
+  doc `GD MENU Card Manager/SCRAPER.md`. Writes BOX/ICON, BACK.DAT, DISCART.DAT (fills DISC.DAT), META.DAT, INFO.DAT.
+- No NuGet in the cloud session: build and test through `.github/workflows/build-card-manager.yml` (Windows: offline
+  tests in `src/GDMENUCardManager.ScraperTests`, Avalonia build, WPF publish artifact). NuGet-free files (everything in
+  Scraper/ but ArtScraper, plus InfoDat/MetaDat) compile locally with `apt install dotnet-sdk-8.0` and a project whose
+  nuget.config clears the sources.
+- ScreenScraper developer credentials are never committed (secrets SS_DEVID / SS_DEVPASSWORD, or the user's own).
+
 ## Open items
 - Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.
 - Disc total ("2:4") is no longer shown anywhere; ask the user if it should come back.

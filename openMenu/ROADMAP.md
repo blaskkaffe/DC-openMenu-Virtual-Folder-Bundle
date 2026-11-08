@@ -32,7 +32,9 @@ Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a 
    bits and a 376-byte description. It has **no developer, publisher or release year**; `gd_item.date` is the disc's
    build date from IP.BIN. Options: (a) extend META.DAT in the Card Manager (the struct has 2 spare bytes, not enough;
    a new META2.DAT keyed by serial), (b) sort "release year" by the IP.BIN date as an approximation. Grouping by
-   developer/publisher and the Y screen's credits need (a).
+   developer/publisher and the Y screen's credits need (a). **Card Manager side done:** the scraper writes INFO.DAT
+   (date, developer, publisher, genre text, players, rating, title; `GD MENU Card Manager/SCRAPER.md`). The menu does not
+   read it yet.
 5. **Versions vs. discs.** Discs are grouped already (by serial set). Versions (PAL/NTSC/translation/serial or WIZnet
    patch) need a label per image. The Card Manager is the only place that sees the image; proposal: it writes a
    version tag (region + patch kind) into the INI per slot, openMenu groups by a normalised title.
@@ -59,7 +61,7 @@ Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a 
 |---|---|---|
 | 7 rows | Done | one box, `UIL_VISIBLE` 7 (ui_list.h), engine up to 13; text size at 9+ rows untested on hardware |
 | Spinning GD-ROM disc with the game's label | Done | DISC.DAT from the Card Manager, fallbacks to ICON.DAT / region disc |
-| 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`) but nothing fills it |
+| 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`); the Card Manager's scraper now writes BACK.DAT (BOX.DAT format), but the menu does not load it yet |
 | Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description. The brief also wants the favourite star and genre on the list itself |
 | Favourite / star | Partial | 1.7.1 has no favorites, so this branch has its own (`favorites.c`): X popup > Favorite toggles, a "* " starts the title in the list, the Favorites bottom button opens the list (Y removes). Stored in its own file (SD `/sd/OPENMENU/EXTENDED.SYS`, memory card `EXTENDED.SYS`), not in OPENMENU.SYS. Written without a console build: untested. Not yet: the star in the viewer, a real star glyph, Favorites as a Group |
 | Disc number on multi-disc | Done | 3D digits at the bottom right of the spinning CD (selected row only, no total); Compact mode, Left/Right pick the disc |
@@ -142,7 +144,8 @@ Ordered by what unblocks the most and what can be done without new hardware or d
 6. Main menu player count and the event/notification banner (APIs exist).
 7. Internet menu restructure to Online / Play / Events / Settings; Games: A launches.
 8. ISP editor (OPEN 3).
-9. Card Manager: version tags and META2.DAT (developer, publisher, year), then version grouping and the remaining groups.
+9. Card Manager: art scraper done (BOX/ICON, BACK.DAT, disc labels, META.DAT text, INFO.DAT). Next: the menu reads
+   BACK.DAT and INFO.DAT; version tags, then version grouping and the remaining groups.
 10. Pi side: protocol spec, news, catalogue, starring, Ethernet/Wi-Fi.
 11. Device integrations (VMU slot/GameID, controller modes, pairing) once their firmware has a protocol.
 
