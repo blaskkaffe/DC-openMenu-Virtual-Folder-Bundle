@@ -188,6 +188,22 @@ class P
         Eq(sg?.FrontUrl, "https://y/ct.png", "search media (not mediaJeu: no maxwidth)");
         Check(ss.ParseSearch("{\"response\":{\"jeux\":[{}]}}", "x", regionsUs, "en") == null, "search with nothing");
 
+        // ---- account (ssuserInfos.php)
+        var acc = ss.ParseAccount("{\"response\":{\"ssuser\":{\"id\":\"dcfan\",\"niveau\":\"1\",\"maxthreads\":\"1\",\"requeststoday\":\"345\",\"maxrequestsperday\":\"20000\",\"favregion\":\"eu\"}}}");
+        Eq(acc?.User, "dcfan", "account user");
+        Eq(acc?.RequestsToday, 345, "account requests");
+        Eq(acc?.Summary, "Logged in as dcfan. Requests today: 345 of 20000, 1 thread.", "account summary");
+        Check(ss.ParseAccount("{\"response\":{}}") == null, "no account in answer");
+        try
+        {
+            new ScreenScraperClient(null, new ScraperSettings()).CheckAccountAsync(default).GetAwaiter().GetResult();
+            Check(false, "no developer id must throw");
+        }
+        catch (ScraperException ex)
+        {
+            Check(ex.Message.Contains("developer ID"), "no developer id message");
+        }
+
         // ---- libretro tree
         var tree = "{\"sha\":\"x\",\"tree\":[{\"path\":\"Named_Boxarts\"},{\"path\":\"Named_Boxarts/Rez (USA).png\"},{\"path\":\"Named_Snaps/Rez (USA).png\"}],\"truncated\":false}";
         Eq(string.Join("|", LibretroThumbnailsClient.ParseTree(tree)), "Rez (USA)", "tree");

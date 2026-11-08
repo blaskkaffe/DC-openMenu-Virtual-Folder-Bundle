@@ -43,6 +43,23 @@ namespace GDMENUCardManager.Core.Scraper
             !string.IsNullOrWhiteSpace(Publisher) || !string.IsNullOrWhiteSpace(ReleaseDate) || Genres.Count > 0;
     }
 
+    /// <summary>A ScreenScraper account as ssuserInfos.php describes it.</summary>
+    public sealed class ScreenScraperAccount
+    {
+        public string User { get; set; } = string.Empty;
+        /// <summary>ScreenScraper's member level (1 = registered member; higher levels for contributors and donors).</summary>
+        public int Level { get; set; }
+        public int MaxThreads { get; set; } = 1;
+        public int RequestsToday { get; set; }
+        public int MaxRequestsPerDay { get; set; }
+        public string FavouriteRegion { get; set; } = string.Empty;
+
+        public string Summary =>
+            $"Logged in as {User}. Requests today: {RequestsToday}" +
+            (MaxRequestsPerDay > 0 ? $" of {MaxRequestsPerDay}" : string.Empty) +
+            $", {MaxThreads} thread{(MaxThreads == 1 ? "" : "s")}.";
+    }
+
     /// <summary>A lookup that could not be done at all (as opposed to a game that was not found).</summary>
     public sealed class ScraperException : System.Exception
     {

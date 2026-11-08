@@ -2476,6 +2476,11 @@ namespace GDMENUCardManager
             }
         }
 
+        private async void MenuItemScraperAccount_Click(object sender, RoutedEventArgs e)
+        {
+            await new ScraperAccountWindow().ShowDialog(this);
+        }
+
         private async void ButtonMenuOptions_Click(object sender, RoutedEventArgs e)
         {
             try

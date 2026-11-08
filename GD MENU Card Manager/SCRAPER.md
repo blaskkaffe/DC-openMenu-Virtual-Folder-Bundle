@@ -5,6 +5,17 @@ covers, disc labels and game information online. It shrinks the pictures and con
 with the same encoder as hand-picked artwork. Nothing reaches the SD card until **Save Changes**. A whole run is one
 **Undo** step.
 
+## Menu
+
+The **Scrape** button opens a small menu:
+
+- **Scrape Games...**: sources, what to get (front, back, disc label, info), which games, region and text language,
+  then a run with progress and a log.
+- **ScreenScraper Account...**: user name and password (with Show password), a link to create a free account,
+  **Test login** (shows the account name, requests used today out of the daily limit, and threads), and the developer ID
+  under Advanced. This is like the scraper account screen in EmulationStation and Recalbox. The Scrape Games window shows
+  which account is set, and its **Account...** button opens the same window.
+
 ## Sources
 
 | Source | Finds games by | Gives | Needs |

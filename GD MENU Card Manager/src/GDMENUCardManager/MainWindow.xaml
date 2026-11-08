@@ -180,10 +180,18 @@
                     <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Padding="10 5" Margin="10 0 0 0" Click="ButtonFolderTools_Click"
                             Visibility="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}" ToolTip="Folder artwork and batch folder move/rename tools"
                             IsEnabled="{Binding HasSdPath, Mode=OneWay}">Folder Tools</Button>
-                    <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Padding="10 5" Margin="10 0 0 0" Click="ButtonScrape_Click"
+                    <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Padding="10 5" Margin="10 0 0 0" Click="ButtonScrapeMenu_Click"
                             Visibility="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}"
                             ToolTip="Find covers, disc labels and game info online (ScreenScraper, libretro thumbnails)"
-                            IsEnabled="{Binding HasSdPath, Mode=OneWay}">Scrape</Button>
+                            IsEnabled="{Binding HasSdPath, Mode=OneWay}">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Scrape Games..." Click="ButtonScrape_Click"/>
+                                <MenuItem Header="ScreenScraper Account..." Click="MenuItemScraperAccount_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                        Scrape &#x25BE;
+                    </Button>
                     <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Padding="10 5" Margin="10 0 0 0" Click="ButtonDatTools_Click"
                             Visibility="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}" ToolTip="Various DAT file maintenance tasks"
                             IsEnabled="{Binding HasSdPath, Mode=OneWay}">DAT Tools</Button>

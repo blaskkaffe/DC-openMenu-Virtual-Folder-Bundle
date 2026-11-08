@@ -1369,6 +1369,22 @@ namespace GDMENUCardManager
             window.ShowDialog();
         }
 
+        // The Scrape button opens its menu (Scrape Games, ScreenScraper Account) on a left click too
+        private void ButtonScrapeMenu_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.ContextMenu != null)
+            {
+                button.ContextMenu.PlacementTarget = button;
+                button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                button.ContextMenu.IsOpen = true;
+            }
+        }
+
+        private void MenuItemScraperAccount_Click(object sender, RoutedEventArgs e)
+        {
+            new ScraperAccountWindow { Owner = this }.ShowDialog();
+        }
+
         private void ButtonScrape_Click(object sender, RoutedEventArgs e)
         {
             var selected = dg1.SelectedItems.OfType<GdItem>().ToList();

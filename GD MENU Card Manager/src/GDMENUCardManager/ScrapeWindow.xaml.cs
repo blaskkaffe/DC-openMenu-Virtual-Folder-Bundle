@@ -40,10 +40,7 @@ namespace GDMENUCardManager
         {
             CheckScreenScraper.IsChecked = s.UseScreenScraper;
             CheckLibretro.IsChecked = s.UseLibretro;
-            TextSsUser.Text = s.ScreenScraperUser;
-            TextSsPassword.Password = s.ScreenScraperPassword;
-            TextDevId.Text = s.DeveloperId;
-            TextDevPassword.Password = s.DeveloperPassword;
+            ShowAccount(s);
             CheckFront.IsChecked = s.FrontCover;
             CheckBack.IsChecked = s.BackCover;
             CheckDisc.IsChecked = s.DiscLabel;
@@ -63,10 +60,11 @@ namespace GDMENUCardManager
         {
             UseScreenScraper = CheckScreenScraper.IsChecked == true,
             UseLibretro = CheckLibretro.IsChecked == true,
-            ScreenScraperUser = TextSsUser.Text ?? string.Empty,
-            ScreenScraperPassword = TextSsPassword.Password ?? string.Empty,
-            DeveloperId = TextDevId.Text ?? string.Empty,
-            DeveloperPassword = TextDevPassword.Password ?? string.Empty,
+            // the account is set in its own window
+            ScreenScraperUser = ScraperSettings.Load().ScreenScraperUser,
+            ScreenScraperPassword = ScraperSettings.Load().ScreenScraperPassword,
+            DeveloperId = ScraperSettings.Load().DeveloperId,
+            DeveloperPassword = ScraperSettings.Load().DeveloperPassword,
             FrontCover = CheckFront.IsChecked == true,
             BackCover = CheckBack.IsChecked == true,
             DiscLabel = CheckDisc.IsChecked == true,
@@ -79,6 +77,19 @@ namespace GDMENUCardManager
                 : ScrapeScope.MissingArtwork,
         };
 
+        private void ShowAccount(ScraperSettings s)
+        {
+            TextAccount.Text = string.IsNullOrWhiteSpace(s.ScreenScraperUser)
+                ? "No account (ScreenScraper's lower limits). Set one with Account..."
+                : $"Account: {s.ScreenScraperUser}";
+        }
+
+        private void ButtonAccount_Click(object sender, RoutedEventArgs e)
+        {
+            new ScraperAccountWindow { Owner = this }.ShowDialog();
+            ShowAccount(ScraperSettings.Load());
+        }
+
         private void Log(string line)
         {
             TextLog.AppendText((TextLog.Text.Length > 0 ? Environment.NewLine : string.Empty) + line);
@@ -90,7 +101,7 @@ namespace GDMENUCardManager
             ButtonStart.IsEnabled = !running;
             ButtonClose.Content = running ? "Stop" : "Close";
             foreach (var c in new Control[] { CheckScreenScraper, CheckLibretro, CheckFront, CheckBack, CheckDisc, CheckInfo,
-                         CheckOverwrite, TextSsUser, TextSsPassword, TextDevId, TextDevPassword, RadioMissing, RadioAll,
+                         CheckOverwrite, RadioMissing, RadioAll,
                          ComboRegion, ComboLanguage })
                 c.IsEnabled = !running;
             RadioSelected.IsEnabled = !running && _selected.Count > 0;

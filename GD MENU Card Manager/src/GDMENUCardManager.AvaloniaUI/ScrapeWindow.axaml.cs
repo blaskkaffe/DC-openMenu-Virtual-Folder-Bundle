@@ -19,7 +19,8 @@ namespace GDMENUCardManager
         private CancellationTokenSource _cts;
 
         private CheckBox CheckScreenScraper, CheckLibretro, CheckFront, CheckBack, CheckDisc, CheckInfo, CheckOverwrite;
-        private TextBox TextSsUser, TextSsPassword, TextDevId, TextDevPassword, TextLog;
+        private TextBox TextLog;
+        private TextBlock TextAccount;
         private RadioButton RadioMissing, RadioSelected, RadioAll;
         private ComboBox ComboRegion, ComboLanguage;
         private ProgressBar Progress;
@@ -43,10 +44,7 @@ namespace GDMENUCardManager
             CheckDisc = this.FindControl<CheckBox>("CheckDisc");
             CheckInfo = this.FindControl<CheckBox>("CheckInfo");
             CheckOverwrite = this.FindControl<CheckBox>("CheckOverwrite");
-            TextSsUser = this.FindControl<TextBox>("TextSsUser");
-            TextSsPassword = this.FindControl<TextBox>("TextSsPassword");
-            TextDevId = this.FindControl<TextBox>("TextDevId");
-            TextDevPassword = this.FindControl<TextBox>("TextDevPassword");
+            TextAccount = this.FindControl<TextBlock>("TextAccount");
             TextLog = this.FindControl<TextBox>("TextLog");
             RadioMissing = this.FindControl<RadioButton>("RadioMissing");
             RadioSelected = this.FindControl<RadioButton>("RadioSelected");
@@ -79,10 +77,7 @@ namespace GDMENUCardManager
         {
             CheckScreenScraper.IsChecked = s.UseScreenScraper;
             CheckLibretro.IsChecked = s.UseLibretro;
-            TextSsUser.Text = s.ScreenScraperUser;
-            TextSsPassword.Text = s.ScreenScraperPassword;
-            TextDevId.Text = s.DeveloperId;
-            TextDevPassword.Text = s.DeveloperPassword;
+            ShowAccount(s);
             CheckFront.IsChecked = s.FrontCover;
             CheckBack.IsChecked = s.BackCover;
             CheckDisc.IsChecked = s.DiscLabel;
@@ -102,14 +97,15 @@ namespace GDMENUCardManager
         private ScraperSettings ReadSettings()
         {
             var languages = new[] { "en", "fr", "de", "es", "it", "pt" };
+            var account = ScraperSettings.Load(); // the account is set in its own window
             return new ScraperSettings
             {
                 UseScreenScraper = CheckScreenScraper.IsChecked == true,
                 UseLibretro = CheckLibretro.IsChecked == true,
-                ScreenScraperUser = TextSsUser.Text ?? string.Empty,
-                ScreenScraperPassword = TextSsPassword.Text ?? string.Empty,
-                DeveloperId = TextDevId.Text ?? string.Empty,
-                DeveloperPassword = TextDevPassword.Text ?? string.Empty,
+                ScreenScraperUser = account.ScreenScraperUser,
+                ScreenScraperPassword = account.ScreenScraperPassword,
+                DeveloperId = account.DeveloperId,
+                DeveloperPassword = account.DeveloperPassword,
                 FrontCover = CheckFront.IsChecked == true,
                 BackCover = CheckBack.IsChecked == true,
                 DiscLabel = CheckDisc.IsChecked == true,
@@ -123,6 +119,20 @@ namespace GDMENUCardManager
             };
         }
 
+        private void ShowAccount(ScraperSettings s)
+        {
+            TextAccount.Text = string.IsNullOrWhiteSpace(s.ScreenScraperUser)
+                ? "No account (ScreenScraper's lower limits). Set one with Account..."
+                : $"Account: {s.ScreenScraperUser}";
+        }
+
+        private async void ButtonAccount_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ScraperAccountWindow();
+            await window.ShowDialog(this);
+            ShowAccount(ScraperSettings.Load());
+        }
+
         private void Log(string line)
         {
             TextLog.Text = string.IsNullOrEmpty(TextLog.Text) ? line : TextLog.Text + Environment.NewLine + line;
@@ -134,7 +144,7 @@ namespace GDMENUCardManager
             ButtonStart.IsEnabled = !running;
             ButtonClose.Content = running ? "Stop" : "Close";
             foreach (var c in new Control[] { CheckScreenScraper, CheckLibretro, CheckFront, CheckBack, CheckDisc, CheckInfo,
-                         CheckOverwrite, TextSsUser, TextSsPassword, TextDevId, TextDevPassword, RadioMissing, RadioAll,
+                         CheckOverwrite, RadioMissing, RadioAll,
                          ComboRegion, ComboLanguage })
                 c.IsEnabled = !running;
             RadioSelected.IsEnabled = !running && _selected.Count > 0;

@@ -49,6 +49,44 @@ namespace GDMENUCardManager.Core.Scraper
             return q;
         }
 
+        /// <summary>
+        /// Logs in (ssuserInfos.php) and returns the account's limits, as EmulationStation's and Recalbox's account
+        /// screens do. Throws ScraperException with a readable reason when the login or the developer ID is refused.
+        /// </summary>
+        public async Task<ScreenScraperAccount> CheckAccountAsync(CancellationToken ct)
+        {
+            if (!IsConfigured)
+                throw new ScraperException("No ScreenScraper developer ID: enter one under Advanced.", true);
+            if (string.IsNullOrEmpty(_user))
+                throw new ScraperException("Enter your ScreenScraper user name and password.", true);
+            var json = await GetAsync($"{Api}ssuserInfos.php?{Credentials()}", ct);
+            if (json == null)
+                throw new ScraperException("ScreenScraper does not know this user name.", true);
+            var account = ParseAccount(json);
+            if (account == null)
+                throw new ScraperException("ScreenScraper's answer had no account in it.", false);
+            return account;
+        }
+
+        /// <summary>The account of an ssuserInfos.php answer (or of any answer that carries "ssuser").</summary>
+        public ScreenScraperAccount ParseAccount(string json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("response", out var response) ||
+                !response.TryGetProperty("ssuser", out var user) || user.ValueKind != JsonValueKind.Object)
+                return null;
+            ReadUser(response);
+            return new ScreenScraperAccount
+            {
+                User = Str(user, "id") ?? _user,
+                Level = Int(Str(user, "niveau")),
+                MaxThreads = Math.Max(1, Int(Str(user, "maxthreads"))),
+                RequestsToday = Int(Str(user, "requeststoday")),
+                MaxRequestsPerDay = Int(Str(user, "maxrequestsperday")),
+                FavouriteRegion = Str(user, "favregion") ?? string.Empty,
+            };
+        }
+
         /// <summary>The game, or null when ScreenScraper does not know it. Throws ScraperException when it cannot answer.</summary>
         public async Task<(ScrapedGame game, string rawJson)> LookupAsync(string serial, string fileName, string title,
             IReadOnlyList<string> regionOrder, CancellationToken ct)

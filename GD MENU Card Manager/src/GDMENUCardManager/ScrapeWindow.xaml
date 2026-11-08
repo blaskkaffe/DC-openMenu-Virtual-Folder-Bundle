@@ -14,36 +14,10 @@
                 <CheckBox x:Name="CheckScreenScraper" FontWeight="Bold">ScreenScraper (screenscraper.fr)</CheckBox>
             </GroupBox.Header>
             <StackPanel>
-                <Grid Margin="0 0 0 6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="100"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="80"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center">User name</TextBlock>
-                    <TextBox Grid.Column="1" x:Name="TextSsUser"/>
-                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="10 0 0 0">Password</TextBlock>
-                    <PasswordBox Grid.Column="3" x:Name="TextSsPassword"/>
-                </Grid>
-                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050">A free account on screenscraper.fr raises the daily limit and speed. Your password is kept in your user folder (scraper.json), not on the SD card.</TextBlock>
-                <Expander Header="Advanced: developer ID" Margin="0 6 0 0">
-                    <StackPanel Margin="0 6 0 0">
-                        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050" Margin="0 0 0 6">ScreenScraper needs a developer ID for every program that uses it. Leave these empty to use the one built into this program; if there is none, ask for your own on the ScreenScraper forum.</TextBlock>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="100"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="80"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" VerticalAlignment="Center">Developer ID</TextBlock>
-                            <TextBox Grid.Column="1" x:Name="TextDevId"/>
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="10 0 0 0">Password</TextBlock>
-                            <PasswordBox Grid.Column="3" x:Name="TextDevPassword"/>
-                        </Grid>
-                    </StackPanel>
-                </Expander>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Margin="10 0 0 0" Padding="10 4" Click="ButtonAccount_Click">Account...</Button>
+                    <TextBlock x:Name="TextAccount" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </DockPanel>
                 <CheckBox x:Name="CheckLibretro" FontWeight="Bold" Margin="0 8 0 0">libretro thumbnails (front covers, no account)</CheckBox>
             </StackPanel>
         </GroupBox>
