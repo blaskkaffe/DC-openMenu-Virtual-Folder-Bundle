@@ -1,0 +1,81 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="640"
+        x:Class="GDMENUCardManager.ScrapeWindow"
+        Title="Scrape Artwork and Info" Width="620" SizeToContent="Height" CanResize="False" CanMinimize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="12" Spacing="10">
+    <TextBlock TextWrapping="Wrap" Foreground="Black">Finds covers, disc labels and game information online, shrinks the pictures and converts them to the Dreamcast's PVR format. ScreenScraper is asked first (by serial and file name); libretro's thumbnails fill in front covers it does not have. Nothing is written to the SD card until you press Save Changes.</TextBlock>
+
+    <Border BorderBrush="#C0C0C0" BorderThickness="1" Padding="10">
+      <StackPanel Spacing="6">
+        <CheckBox x:Name="CheckScreenScraper" FontWeight="Bold">ScreenScraper (screenscraper.fr)</CheckBox>
+        <Grid ColumnDefinitions="110,*,90,*" RowDefinitions="Auto">
+          <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="Black">User name</TextBlock>
+          <TextBox Grid.Column="1" x:Name="TextSsUser"/>
+          <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="10 0 0 0" Foreground="Black">Password</TextBlock>
+          <TextBox Grid.Column="3" x:Name="TextSsPassword" PasswordChar="*"/>
+        </Grid>
+        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050">A free account on screenscraper.fr raises the daily limit and speed. Your password is kept in your user folder (scraper.json), not on the SD card.</TextBlock>
+        <Expander Header="Advanced: developer ID" x:Name="ExpanderAdvanced">
+          <StackPanel Spacing="6" Margin="0 6 0 0">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050">ScreenScraper needs a developer ID for every program that uses it. Leave these empty to use the one built into this program; if there is none, ask for your own on the ScreenScraper forum.</TextBlock>
+            <Grid ColumnDefinitions="110,*,90,*">
+              <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="Black">Developer ID</TextBlock>
+              <TextBox Grid.Column="1" x:Name="TextDevId"/>
+              <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="10 0 0 0" Foreground="Black">Password</TextBlock>
+              <TextBox Grid.Column="3" x:Name="TextDevPassword" PasswordChar="*"/>
+            </Grid>
+          </StackPanel>
+        </Expander>
+        <CheckBox x:Name="CheckLibretro" FontWeight="Bold" Margin="0 4 0 0">libretro thumbnails (front covers, no account)</CheckBox>
+      </StackPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="*,*">
+      <StackPanel Grid.Column="0" Spacing="2">
+        <TextBlock FontWeight="Bold" Foreground="Black">Get</TextBlock>
+        <CheckBox x:Name="CheckFront">Front cover (BOX.DAT, ICON.DAT)</CheckBox>
+        <CheckBox x:Name="CheckBack">Back cover (BACK.DAT)</CheckBox>
+        <CheckBox x:Name="CheckDisc">Disc label (DISC.DAT)</CheckBox>
+        <CheckBox x:Name="CheckInfo">Description and info (META.DAT, INFO.DAT)</CheckBox>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Spacing="2">
+        <TextBlock FontWeight="Bold" Foreground="Black">Games</TextBlock>
+        <RadioButton x:Name="RadioMissing" GroupName="Scope">Only games missing something</RadioButton>
+        <RadioButton x:Name="RadioSelected" GroupName="Scope">Selected games</RadioButton>
+        <RadioButton x:Name="RadioAll" GroupName="Scope">All games</RadioButton>
+        <CheckBox x:Name="CheckOverwrite" Margin="0 4 0 0">Replace art and text they already have</CheckBox>
+      </StackPanel>
+    </Grid>
+
+    <Grid ColumnDefinitions="Auto,140,Auto,100">
+      <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0 0 8 0" Foreground="Black">Region</TextBlock>
+      <ComboBox Grid.Column="1" x:Name="ComboRegion" HorizontalAlignment="Stretch">
+        <ComboBoxItem>Disc's own</ComboBoxItem>
+        <ComboBoxItem>USA</ComboBoxItem>
+        <ComboBoxItem>Europe</ComboBoxItem>
+        <ComboBoxItem>Japan</ComboBoxItem>
+      </ComboBox>
+      <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="16 0 8 0" Foreground="Black">Text language</TextBlock>
+      <ComboBox Grid.Column="3" x:Name="ComboLanguage" HorizontalAlignment="Stretch">
+        <ComboBoxItem>en</ComboBoxItem>
+        <ComboBoxItem>fr</ComboBoxItem>
+        <ComboBoxItem>de</ComboBoxItem>
+        <ComboBoxItem>es</ComboBoxItem>
+        <ComboBoxItem>it</ComboBoxItem>
+        <ComboBoxItem>pt</ComboBoxItem>
+      </ComboBox>
+    </Grid>
+
+    <ProgressBar x:Name="Progress" Height="16" Minimum="0" Maximum="1" Value="0"/>
+    <TextBox x:Name="TextLog" Height="190" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontSize="11"/>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button x:Name="ButtonStart" Padding="16 6" FontWeight="Bold" Click="ButtonStart_Click">Start</Button>
+      <Button x:Name="ButtonClose" Padding="16 6" Click="ButtonClose_Click">Close</Button>
+    </StackPanel>
+  </StackPanel>
+</Window>

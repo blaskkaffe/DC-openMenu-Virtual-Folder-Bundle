@@ -153,6 +153,66 @@ namespace GDMENUCardManager.Core
         public MetaDatManager MetaDat { get; private set; }
         public FolderArtDatManager FolderArtDat { get; private set; }
 
+        /// <summary>BACK.DAT: back covers (256x256, BOX.DAT's format), for the BIOS-style openMenu's 3D case.</summary>
+        public BoxDatManager BackDat { get; private set; }
+
+        /// <summary>
+        /// Scraped disc labels (128x128, ICON.DAT's format), kept with the menu data as DISCART.DAT. When the menu is
+        /// built they fill DISC.DAT for the games whose own disc label (0GDTEX.PVR) cannot be read. Not copied to the
+        /// card as it is.
+        /// </summary>
+        public IconDatManager DiscArtDat { get; private set; }
+
+        /// <summary>INFO.DAT: release date, developer, publisher and the like (see InfoDatManager).</summary>
+        public InfoDatManager InfoDat { get; private set; }
+
+        public const string BackDatFileName = "BACK.DAT";
+        public const string DiscArtDatFileName = "DISCART.DAT";
+        public const string InfoDatFileName = "INFO.DAT";
+
+        public string GetBackDatPath() => Path.Combine(GetMenuDataPath(), BackDatFileName);
+        public string GetDiscArtDatPath() => Path.Combine(GetMenuDataPath(), DiscArtDatFileName);
+        public string GetInfoDatPath() => Path.Combine(GetMenuDataPath(), InfoDatFileName);
+
+        /// <summary>Some of the DATs written by the scraper (or by hand) are not saved yet.</summary>
+        public bool HasUnsavedScrapedData =>
+            MetaDat?.HasUnsavedChanges == true || BackDat?.HasUnsavedChanges == true ||
+            DiscArtDat?.HasUnsavedChanges == true || InfoDat?.HasUnsavedChanges == true;
+
+        /// <summary>Writes META.DAT, BACK.DAT, DISCART.DAT and INFO.DAT where they changed. Returns the errors, if any.</summary>
+        public string SaveScrapedData()
+        {
+            var errors = new List<string>();
+            try
+            {
+                if (MetaDat?.HasUnsavedChanges == true)
+                {
+                    var (ok, error) = SaveMetaDat(true);
+                    if (!ok || !string.IsNullOrEmpty(error))
+                        errors.Add(error);
+                }
+                if (BackDat?.HasUnsavedChanges == true)
+                {
+                    var (ok, error) = BackDat.BackupAndSave(GetBackDatPath(), GetDatBackupFolder(), true);
+                    if (!ok || !string.IsNullOrEmpty(error))
+                        errors.Add($"BACK.DAT: {error}");
+                }
+                if (DiscArtDat?.HasUnsavedChanges == true)
+                {
+                    var (ok, error) = DiscArtDat.BackupAndSave(GetDiscArtDatPath(), GetDatBackupFolder(), true);
+                    if (!ok || !string.IsNullOrEmpty(error))
+                        errors.Add($"DISCART.DAT: {error}");
+                }
+                if (InfoDat?.HasUnsavedChanges == true)
+                    InfoDat.Save(GetInfoDatPath());
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex.Message);
+            }
+            return string.Join("\n", errors.Where(e => !string.IsNullOrEmpty(e)));
+        }
+
         public UndoManager UndoManager { get; } = new UndoManager();
 
         public string GetBoxDatPath() =>
@@ -223,6 +283,15 @@ namespace GDMENUCardManager.Core
             {
                 FolderArtDat = new FolderArtDatManager();
             }
+
+            BackDat ??= new BoxDatManager();
+            DiscArtDat ??= new IconDatManager();
+            InfoDat ??= new InfoDatManager();
+            if (File.Exists(GetBackDatPath()))
+                BackDat.Load(GetBackDatPath());
+            if (File.Exists(GetDiscArtDatPath()))
+                DiscArtDat.Load(GetDiscArtDatPath());
+            InfoDat.Load(GetInfoDatPath());
 
             var boxDatPath = GetBoxDatPath();
             if (File.Exists(boxDatPath))
@@ -2297,8 +2366,9 @@ namespace GDMENUCardManager.Core
                     bool hasBoxChanges = BoxDat?.HasUnsavedChanges == true;
                     bool hasIconChanges = IconDat?.HasUnsavedChanges == true;
                     bool hasFolderArtChanges = FolderArtDat?.HasUnsavedChanges == true;
+                    bool hasScrapedChanges = HasUnsavedScrapedData;
 
-                    if (hasBoxChanges || hasIconChanges || hasFolderArtChanges)
+                    if (hasBoxChanges || hasIconChanges || hasFolderArtChanges || hasScrapedChanges)
                     {
                         // If DAT files aren't writable and user cancels, skip DAT update
                         // but continue with save anyway
@@ -2323,6 +2393,11 @@ namespace GDMENUCardManager.Core
                                 if (hasFolderArtChanges)
                                 {
                                     SaveFolderArtDat(true); // non-fatal as well
+                                }
+
+                                if (hasScrapedChanges)
+                                {
+                                    SaveScrapedData(); // META, BACK, DISCART, INFO: non-fatal as well
                                 }
                             }
                             finally
@@ -2845,6 +2920,21 @@ namespace GDMENUCardManager.Core
                 }
             }
 
+            // Scraped disc labels (DISCART.DAT) for the games whose own label could not be read
+            if (DiscArtDat != null)
+            {
+                foreach (var item in ItemList.ToList())
+                {
+                    if (item.IsMenuItem || string.IsNullOrWhiteSpace(item.ProductNumber) || labels.HasIconForSerial(item.ProductNumber))
+                        continue;
+                    var scraped = DiscArtDat.GetPvrDataForSerial(item.ProductNumber);
+                    if (scraped == null)
+                        continue;
+                    labels.SetIconForSerial(item.ProductNumber, scraped);
+                    added++;
+                }
+            }
+
             var outPath = Path.Combine(dataPath, "DISC.DAT");
             if (added > 0)
                 labels.Save(outPath);
@@ -2924,8 +3014,9 @@ namespace GDMENUCardManager.Core
                 // On macOS, user data files live in Application Support, not the bundle.
                 // Exclude them from the bulk bundle copy so they don't overwrite user data.
                 var excludeFromBundle = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP" }
-                    : null;
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP", BackDatFileName, InfoDatFileName }
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                excludeFromBundle.Add(DiscArtDatFileName); // goes into DISC.DAT below, not onto the card as it is
                 await Helper.CopyDirectoryAsync(menuDataSrc, dataPath, excludeFromBundle);
 
                 // Copy DATs from their authoritative source (Application Support on macOS, bundle on others).
@@ -2945,6 +3036,10 @@ namespace GDMENUCardManager.Core
                     File.Copy(GetDefaultsIniPath(), Path.Combine(dataPath, "DEFAULTS.INI"), overwrite: true);
                 if (File.Exists(GetBgmPath()))
                     File.Copy(GetBgmPath(), Path.Combine(dataPath, "BGM.ADP"), overwrite: true);
+                if (File.Exists(GetBackDatPath()))
+                    File.Copy(GetBackDatPath(), Path.Combine(dataPath, BackDatFileName), overwrite: true);
+                if (File.Exists(GetInfoDatPath()))
+                    File.Copy(GetInfoDatPath(), Path.Combine(dataPath, InfoDatFileName), overwrite: true);
 
                 if (stageUnsavedMenuData)
                     StageUnsavedMenuData(dataPath);
@@ -3012,8 +3107,17 @@ namespace GDMENUCardManager.Core
             bool boxChanged = BoxDat?.HasUnsavedChanges == true;
             bool iconChanged = IconDat?.HasUnsavedChanges == true;
             bool folderArtChanged = FolderArtDat?.HasUnsavedChanges == true;
+            bool metaChanged = MetaDat?.HasUnsavedChanges == true;
+            bool backChanged = BackDat?.HasUnsavedChanges == true;
+            bool infoChanged = InfoDat?.HasUnsavedChanges == true;
             try
             {
+                if (metaChanged)
+                    MetaDat.Save(Path.Combine(dataPath, "META.DAT"));
+                if (backChanged)
+                    BackDat.Save(Path.Combine(dataPath, BackDatFileName));
+                if (infoChanged)
+                    InfoDat.Save(Path.Combine(dataPath, InfoDatFileName));
                 if (boxChanged)
                     BoxDat.Save(Path.Combine(dataPath, "BOX.DAT"));
                 if (iconChanged)
@@ -3031,6 +3135,12 @@ namespace GDMENUCardManager.Core
                     IconDat.HasUnsavedChanges = true;
                 if (folderArtChanged)
                     FolderArtDat.HasUnsavedChanges = true;
+                if (metaChanged)
+                    MetaDat.HasUnsavedChanges = true;
+                if (backChanged)
+                    BackDat.HasUnsavedChanges = true;
+                if (infoChanged)
+                    InfoDat.HasUnsavedChanges = true;
             }
         }
 

@@ -2461,6 +2461,21 @@ namespace GDMENUCardManager
             await window.ShowDialog(this);
         }
 
+        private async void ButtonScrape_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selected = dg1.SelectedItems?.OfType<GdItem>().ToList() ?? new List<GdItem>();
+                var window = new ScrapeWindow(Manager, selected);
+                await window.ShowDialog(this);
+            }
+            catch (Exception ex)
+            {
+                await MessageBoxManager.GetMessageBoxStandard("Error", ex.Message,
+                    icon: MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
+            }
+        }
+
         private async void ButtonMenuOptions_Click(object sender, RoutedEventArgs e)
         {
             try

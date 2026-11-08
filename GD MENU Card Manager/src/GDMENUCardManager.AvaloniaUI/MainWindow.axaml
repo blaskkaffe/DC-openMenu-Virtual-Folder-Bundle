@@ -183,6 +183,10 @@
             <Button Padding="10 5" Margin="10 0 0 0" Click="ButtonDatTools_Click"
                     IsVisible="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}" ToolTip.Tip="Various DAT file maintenance tasks"
                     IsEnabled="{Binding HasSdPath}">DAT Tools</Button>
+            <Button Padding="10 5" Margin="10 0 0 0" Click="ButtonScrape_Click"
+                    IsVisible="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}"
+                    ToolTip.Tip="Find covers, disc labels and game info online (ScreenScraper, libretro thumbnails)"
+                    IsEnabled="{Binding HasSdPath}">Scrape</Button>
             <Button Padding="10 5" Margin="10 0 0 0" Click="ButtonFolderTools_Click"
                     IsVisible="{Binding MenuKindSelected, Converter={StaticResource IsOpenMenuMode}}" ToolTip.Tip="Folder artwork and batch folder move/rename tools"
                     IsEnabled="{Binding HasSdPath}">Folder Tools</Button>

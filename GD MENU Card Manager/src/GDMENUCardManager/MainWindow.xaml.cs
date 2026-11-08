@@ -1369,6 +1369,13 @@ namespace GDMENUCardManager
             window.ShowDialog();
         }
 
+        private void ButtonScrape_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = dg1.SelectedItems.OfType<GdItem>().ToList();
+            var window = new ScrapeWindow(Manager, selected) { Owner = this };
+            window.ShowDialog();
+        }
+
         private void ButtonMenuOptions_Click(object sender, RoutedEventArgs e)
         {
             try

@@ -1,0 +1,58 @@
+name: Build Card Manager
+
+# Builds the GD MENU Card Manager (WPF for Windows and the Avalonia version) and runs the scraper's offline tests.
+# The Windows build is uploaded as an artifact. ScreenScraper developer credentials, if the repository has the secrets
+# SS_DEVID and SS_DEVPASSWORD, are put into the build here; they are never committed.
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - "GD MENU Card Manager/**"
+      - ".github/workflows/build-card-manager.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: "GD MENU Card Manager"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "GD MENU Card Manager/global.json"
+          dotnet-version: "6.0.x"
+
+      - name: ScreenScraper developer credentials (from secrets, when there are any)
+        env:
+          SS_DEVID: ${{ secrets.SS_DEVID }}
+          SS_DEVPASSWORD: ${{ secrets.SS_DEVPASSWORD }}
+        run: |
+          if ($env:SS_DEVID -and $env:SS_DEVPASSWORD) {
+            $f = "src/GDMENUCardManager.Core/Scraper/ScreenScraperDevCredentials.cs"
+            $c = Get-Content $f -Raw
+            $id = $env:SS_DEVID.Replace('\', '\\').Replace('"', '\"')
+            $pw = $env:SS_DEVPASSWORD.Replace('\', '\\').Replace('"', '\"')
+            $c = $c.Replace('DevId = "";', "DevId = `"$id`";").Replace('DevPassword = "";', "DevPassword = `"$pw`";")
+            Set-Content $f $c -NoNewline
+            Write-Host "Built-in ScreenScraper developer ID set."
+          } else {
+            Write-Host "No SS_DEVID / SS_DEVPASSWORD secrets: users enter their own developer ID under Advanced."
+          }
+
+      - name: Scraper tests (offline)
+        run: dotnet run -c Release --project src/GDMENUCardManager.ScraperTests/GDMENUCardManager.ScraperTests.csproj
+
+      - name: Build Avalonia version
+        run: dotnet build src/GDMENUCardManager.AvaloniaUI/GDMENUCardManager.AvaloniaUI.csproj -c Release
+
+      - name: Publish Windows (WPF) version
+        run: dotnet publish src/GDMENUCardManager/GDMENUCardManager.csproj -c Release -o "_out/GDMENUCardManager-win-x64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GDMENUCardManager-win-x64
+          path: "GD MENU Card Manager/_out/GDMENUCardManager-win-x64"
