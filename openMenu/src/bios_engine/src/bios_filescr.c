@@ -61,7 +61,11 @@ static const signed char browser_table[26][4] = { /* 0x8C0389B8: 0 the card (all
 static const signed char single_table[1][4] = {{0, 0, 0, 0}};
 static signed char popup_table[5][4];
 
-/* Popups (DAT_8C038EC4 ...): panel w h, text surface w h, text x y, button offset, spacing, position * 256 */
+/* Popups (DAT_8C038EC4 ...): panel w h, text surface w h, text x y, button offset, spacing, position * 256.
+ * Fields left out at the end (an item's text, the popup's lines) are zero, as C makes them: the warning for that is
+ * off for these tables only. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #define POPUP_Z (-85000)
 /* The card's popup (A on the card in the file window): the BIOS's Copy all, Delete all (memory reset) and Cancel, with this app's
  * Change Color and Logo and Use full size between them and Cancel. */
@@ -90,6 +94,7 @@ static const bfs_popup_def pop_dest = {350, 212, 256, 256, 30, 116, 0, 0, 212, -
                                        {{0, 0x260}, {0, 0x261}, {0, 0x25F}}};
 static const bfs_popup_def pop_yes_no = {190, 140, 256, 256, 100, 115, 0, 0, 140, 0, 0, POPUP_Z, 2, 1,
                                          {{0, 0x263}, {0, 0x264}}};
+#pragma GCC diagnostic pop
 
 int bfs_message_box_(bfs* fs, int id);
 int bfs_format_flow_(bfs* fs);
