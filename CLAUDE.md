@@ -45,6 +45,10 @@ has no right panel; real text/art only on the PVR path (hardware).
   Scraper/ but ArtScraper, plus InfoDat/MetaDat) compile locally with `apt install dotnet-sdk-8.0` and a project whose
   nuget.config clears the sources.
 - ScreenScraper developer credentials are never committed (secrets SS_DEVID / SS_DEVPASSWORD, or the user's own).
+- The Card Manager ships this repo's openMenu: `build-card-manager.yml` first runs `build-newopenmenu.yml`
+  (`workflow_call`) and puts its 1ST_READ.BIN into `Core/tools/openMenu/menu_data` before packaging (the committed file
+  there is still Derek's v1.7.0; `build.bat` on a PC packs that one). The updater (`UpdateManager.DefaultRepo`) looks at
+  this repo's releases, not Derek's.
 
 ## Open items
 - Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.

@@ -7,6 +7,8 @@ on:
       - 'openMenu/**'
       - '.github/workflows/build-newopenmenu.yml'
   workflow_dispatch:
+  # Also run as the first job of "Build Card Manager", which packs this 1ST_READ.BIN into the Card Manager
+  workflow_call:
 
 jobs:
   build:

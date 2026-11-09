@@ -54,7 +54,7 @@ namespace GDMENUCardManager
 
         private void ReleasesLink_Click(object sender, RoutedEventArgs e)
         {
-            var url = "https://github.com/DerekPascarella/openMenu-Virtual-Folder-Bundle/releases";
+            var url = "https://github.com/blaskkaffe/DC-openMenu-Virtual-Folder-Bundle/releases";
             try
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

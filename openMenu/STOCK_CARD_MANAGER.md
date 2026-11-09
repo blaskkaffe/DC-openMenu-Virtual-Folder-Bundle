@@ -1,5 +1,8 @@
 # Using this openMenu with Derek's stock Card Manager (1.7.1)
 
+This repository's own Card Manager (the Build Card Manager workflow) already carries this openMenu and has the
+scraper (`GD MENU Card Manager/SCRAPER.md`); this page is for Derek's unmodified one.
+
 This branch runs from a card built by the unmodified GD MENU Card Manager 1.7.1. The Card Manager copies everything in
 its `tools/openMenu/menu_data` folder into the menu image, and it keeps the `DEFAULTS.INI` sections it does not know when
 it rewrites that file. Both are what this branch uses.

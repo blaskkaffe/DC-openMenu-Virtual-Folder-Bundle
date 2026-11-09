@@ -59,7 +59,7 @@ namespace GDMENUCardManager
 
         private void Changelog_Click(object sender, RoutedEventArgs e)
         {
-            var url = "https://github.com/DerekPascarella/openMenu-Virtual-Folder-Bundle?tab=readme-ov-file#changelog";
+            var url = "https://github.com/blaskkaffe/DC-openMenu-Virtual-Folder-Bundle/releases";
             try
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

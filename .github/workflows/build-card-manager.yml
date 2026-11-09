@@ -1,7 +1,8 @@
 name: Build Card Manager
 
 # Builds the GD MENU Card Manager (WPF for Windows and the Avalonia version) and runs the scraper's offline tests.
-# Artifacts: the Windows build, and macOS app bundles for Apple Silicon (arm64) and Intel (x64). The bundles are
+# Every build packs this repository's openMenu (the Build NewOpenMenu workflow runs first), not the 1ST_READ.BIN
+# committed in the Card Manager's tools folder. Artifacts: the Windows build, and macOS app bundles for Apple Silicon (arm64) and Intel (x64). The bundles are
 # cross-built on Linux and ad-hoc signed with rcodesign by Derek's create-macos-bundle.sh, as his releases are (hosted
 # macOS runners are often not available). Such a bundle runs, but fails `codesign --verify --strict`; on a Mac it can
 # be re-sealed with `codesign --force --deep -s - GDMENUCardManager.app`. ScreenScraper developer credentials, if the repository has the secrets
@@ -12,10 +13,18 @@ on:
     branches: [dev]
     paths:
       - "GD MENU Card Manager/**"
+      - "openMenu/**"
       - ".github/workflows/build-card-manager.yml"
+      - ".github/workflows/build-newopenmenu.yml"
 
 jobs:
+  # This repository's openMenu (Build NewOpenMenu), packed into every Card Manager below instead of the 1ST_READ.BIN
+  # that is committed in the Card Manager's tools folder (Derek's release)
+  openmenu:
+    uses: ./.github/workflows/build-newopenmenu.yml
+
   build:
+    needs: openmenu
     runs-on: windows-latest
     defaults:
       run:
@@ -28,6 +37,12 @@ jobs:
         with:
           global-json-file: "GD MENU Card Manager/global.json"
           dotnet-version: "6.0.x"
+
+      - name: This repository's openMenu into the Card Manager's menu data
+        uses: actions/download-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: "GD MENU Card Manager/src/GDMENUCardManager.Core/tools/openMenu/menu_data"
 
       - name: ScreenScraper developer credentials (from secrets, when there are any)
         env:
@@ -46,6 +61,14 @@ jobs:
             Write-Host "No SS_DEVID / SS_DEVPASSWORD secrets: users enter their own developer ID under Advanced."
           }
 
+      - name: Check the packed openMenu
+        run: |
+          $f = "src/GDMENUCardManager.Core/tools/openMenu/menu_data/1ST_READ.BIN"
+          Get-Item $f | Format-List Name, Length, LastWriteTime
+          git diff --quiet -- $f
+          if ($LASTEXITCODE -eq 0) { Write-Error "1ST_READ.BIN is still the committed one"; exit 1 }
+          exit 0
+
       - name: Scraper tests (offline)
         run: dotnet run -c Release --project src/GDMENUCardManager.ScraperTests/GDMENUCardManager.ScraperTests.csproj
 
@@ -61,6 +84,7 @@ jobs:
           path: "GD MENU Card Manager/_out/GDMENUCardManager-win-x64"
 
   macos:
+    needs: openmenu
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -95,6 +119,18 @@ jobs:
           else
             echo "No SS_DEVID / SS_DEVPASSWORD secrets: users enter their own developer ID under Advanced."
           fi
+
+      - name: This repository's openMenu into the Card Manager's menu data
+        uses: actions/download-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: "GD MENU Card Manager/src/GDMENUCardManager.Core/tools/openMenu/menu_data"
+
+      - name: Check the packed openMenu
+        run: |
+          f=src/GDMENUCardManager.Core/tools/openMenu/menu_data/1ST_READ.BIN
+          ls -l "$f"; sha1sum "$f"
+          if git diff --quiet -- "$f"; then echo "::error::1ST_READ.BIN is still the committed one"; exit 1; fi
 
       - name: rcodesign (ad-hoc signing on Linux)
         env:
