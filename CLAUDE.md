@@ -47,8 +47,11 @@ has no right panel; real text/art only on the PVR path (hardware).
 - ScreenScraper developer credentials are never committed (secrets SS_DEVID / SS_DEVPASSWORD, or the user's own).
 - The Card Manager ships this repo's openMenu: `build-card-manager.yml` first runs `build-newopenmenu.yml`
   (`workflow_call`) and puts its 1ST_READ.BIN into `Core/tools/openMenu/menu_data` before packaging (the committed file
-  there is still Derek's v1.7.0; `build.bat` on a PC packs that one). The updater (`UpdateManager.DefaultRepo`) looks at
+  there is Derek's 1.7.1; `build.bat` on a PC packs that one). The updater (`UpdateManager.DefaultRepo`) looks at
   this repo's releases, not Derek's.
+- The Card Manager is Derek's 1.7.1 with this repo's changes on top (merged by three-way patch, not git merge: his
+  openMenu sources must not come over). BOX.DAT/ICON.DAT in its menu_data are Git LFS files and still 1.7.0's: the
+  cloud session cannot fetch or push LFS objects.
 
 ## Open items
 - Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.

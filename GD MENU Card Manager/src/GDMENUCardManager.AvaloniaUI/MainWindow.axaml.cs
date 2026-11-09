@@ -1841,22 +1841,6 @@ namespace GDMENUCardManager
             }
         }
 
-        private void SaveFatSortConfig()
-        {
-            if (Core.Manager.ConfigReadOnly) return;
-            try
-            {
-                var config = ConfigurationManager.OpenExeConfiguration(System.Configuration.ConfigurationUserLevel.None);
-                SetOrAddSetting(config, "FatSort", Manager.EnableFatSort.ToString());
-                config.Save(System.Configuration.ConfigurationSaveMode.Modified);
-                ConfigurationManager.RefreshSection("appSettings");
-            }
-            catch
-            {
-                // Ignore errors saving config
-            }
-        }
-
         private void RestoreWindowBounds()
         {
             try
