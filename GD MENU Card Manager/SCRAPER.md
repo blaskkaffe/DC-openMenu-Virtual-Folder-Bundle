@@ -72,6 +72,7 @@ reads it as it reads the others (checked on the host). Strings are ASCII and NUL
 
 - The BIOS-style openMenu does not read `BACK.DAT` or `INFO.DAT` yet: the back of the case stays blank and the year
   sort still uses the IP.BIN date. That is menu-side work (`gfx.c` art loader, `ui_bios.c` information panel).
+- macOS builds come from the workflow (artifacts GDMENUCardManager-osx-arm64 and -osx-x64). redump2cdi (Redump to CDI conversion) is not in this repository and is missing from these builds.
 - No per-game "scrape this one" button in the Artwork window: select the game and choose **Selected games**.
 - Tests: `src/GDMENUCardManager.ScraperTests` (offline: matching against real libretro names, a ScreenScraper answer,
   the META/INFO entries, PVR sizes) runs in the workflow. The live ScreenScraper API has not been called from here (no

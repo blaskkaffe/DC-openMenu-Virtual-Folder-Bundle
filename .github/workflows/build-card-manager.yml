@@ -1,7 +1,8 @@
 name: Build Card Manager
 
 # Builds the GD MENU Card Manager (WPF for Windows and the Avalonia version) and runs the scraper's offline tests.
-# The Windows build is uploaded as an artifact. ScreenScraper developer credentials, if the repository has the secrets
+# Artifacts: the Windows build, and macOS app bundles for Apple Silicon (arm64) and Intel (x64), ad-hoc signed with
+# Apple's codesign by Derek's create-macos-bundle.sh. ScreenScraper developer credentials, if the repository has the secrets
 # SS_DEVID and SS_DEVPASSWORD, are put into the build here; they are never committed.
 on:
   workflow_dispatch:
@@ -56,3 +57,62 @@ jobs:
         with:
           name: GDMENUCardManager-win-x64
           path: "GD MENU Card Manager/_out/GDMENUCardManager-win-x64"
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    defaults:
+      run:
+        shell: bash
+        working-directory: "GD MENU Card Manager"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "GD MENU Card Manager/global.json"
+
+      - name: ScreenScraper developer credentials (from secrets, when there are any)
+        env:
+          SS_DEVID: ${{ secrets.SS_DEVID }}
+          SS_DEVPASSWORD: ${{ secrets.SS_DEVPASSWORD }}
+        run: |
+          if [ -n "$SS_DEVID" ] && [ -n "$SS_DEVPASSWORD" ]; then
+            python3 - <<'PY'
+          import os
+          f = "src/GDMENUCardManager.Core/Scraper/ScreenScraperDevCredentials.cs"
+          esc = lambda v: v.replace("\\", "\\\\").replace('"', '\\"')
+          c = open(f).read()
+          c = c.replace('DevId = "";', 'DevId = "%s";' % esc(os.environ["SS_DEVID"]))
+          c = c.replace('DevPassword = "";', 'DevPassword = "%s";' % esc(os.environ["SS_DEVPASSWORD"]))
+          open(f, "w").write(c)
+          PY
+            echo "Built-in ScreenScraper developer ID set."
+          else
+            echo "No SS_DEVID / SS_DEVPASSWORD secrets: users enter their own developer ID under Advanced."
+          fi
+
+      - name: Publish (osx-${{ matrix.arch }}, self-contained)
+        run: |
+          OUT="_releases/temp-osx-${{ matrix.arch }}"
+          dotnet publish src/GDMENUCardManager.AvaloniaUI/GDMENUCardManager.AvaloniaUI.csproj -c Release \
+            --self-contained true -r osx-${{ matrix.arch }} -p:PublishSingleFile=false \
+            -p:IncludeNativeLibrariesForSelfExtract=true -o "$OUT"
+          # as build.bat: the tools folder, without user-made menu options files
+          mkdir -p "$OUT/tools"
+          cp -R src/GDMENUCardManager.Core/tools/. "$OUT/tools/"
+          rm -f "$OUT/tools/openMenu/menu_data/DEFAULTS.INI" "$OUT/tools/openMenu/menu_data/BGM.ADP"
+          cp LICENSE README.md "$OUT/"
+
+      - name: App bundle (signed ad hoc)
+        run: |
+          VERSION="$(tr -d '\r\n' < src/version.txt)"
+          bash create-macos-bundle.sh "_releases/temp-osx-${{ matrix.arch }}" "$VERSION" "_releases" "${{ matrix.arch }}"
+          ls -l _releases/*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GDMENUCardManager-osx-${{ matrix.arch }}
+          path: "GD MENU Card Manager/_releases/*.tar.gz"
