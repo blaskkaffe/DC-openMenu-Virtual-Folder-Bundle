@@ -518,12 +518,11 @@ bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const f
 static uint32_t mesh_seed = 12345u;
 
 static void
-draw_grid_mesh(const bscene* s, const bvm_obj* o, const nj_mat4* m, const float* offs, const bscene_sink* sink) {
+draw_grid_mesh(const bvm_obj* o, const nj_mat4* m, const float* offs, const bscene_sink* sink) {
     int cols = o->mesh_cols, rows = o->mesh_rows;
     if (cols < 1 || rows < 1 || cols > 32 || rows > 8 || o->mesh_mode != 5) {
         return;
     }
-    (void)s;
     int v = o->var[0], full = v / 256, part = (v % 256) * 255 / 256;
     static bscene_vtx vt[33][9];
     static int ok[33][9];
@@ -597,21 +596,315 @@ draw_object_panel(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     s->parts = saved;
 }
 
+/* The object's own matrix: T * S * Rx * Ry * Rz, with the model's offset and scale (model_off, model_scale). */
+static void
+object_matrix(const bvm_obj* o, const float scl[3], nj_mat4* out) {
+    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2] + o->model_off[2]};
+    nj_mat_object(out, mpos, scl, o->rot);
+}
+
+/* Transform, project and light every vertex of a mesh once, into the scratch arrays; the polygons only index into
+ * them. `m` is the mesh's node matrix in view space. */
+static void
+transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
+    /* Environment-mapped strips take u, v from the normal; work those out only if the mesh has one. */
+    int any_env = 0;
+    for (int p = 0; p < mesh->npolys; p++) {
+        any_env |= mesh->polys[p].strip_flags & STRIP_ENV;
+    }
+    /* Transform and project every vertex once; triangles only index into this. */
+    for (int i = 0; i < mesh->nverts; i++) {
+        const nj_vertex* vx = &mesh->verts[i];
+        scratch_ok[i] = 0;
+        if (vx->valid) {
+            nj_vec3 src = vx->pos;
+            if (s->panel_on) { /* 37 vertices per corner: 0 top left, 1 top right, 2 bottom right, 3 bottom left */
+                int q = i / 37;
+                src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
+                src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
+            }
+            if (s->small_left && mesh->nverts == 23 && i < 13) { /* model 41: the left cap's outline points */
+                /* corner arc of radius 1.0 as the right end's (offsets from the corner), then the straight edge */
+                static const float arc[5][2] = {{0.0f, 0.0f}, {0.38f, 0.08f}, {0.71f, 0.29f}, {0.92f, 0.62f}, {1.0f, 1.0f}};
+                const float xl = -30.75f, top = 2.75f;
+                if (i >= 1 && i <= 5) {
+                    src.x = xl + 1.0f - arc[i - 1][0];
+                    src.y = top - arc[i - 1][1];
+                } else if (i >= 7 && i <= 11) {
+                    src.x = xl + 1.0f - arc[11 - i][0];
+                    src.y = -(top - arc[11 - i][1]);
+                } else if (i == 6) {
+                    src.x = xl;
+                }
+            }
+            if (s->stretch_on) {
+                if (src.x > s->stretch_b) {
+                    src.x = s->stretch_a + (s->stretch_b - s->stretch_a) * s->stretch_f + (src.x - s->stretch_b);
+                } else if (src.x > s->stretch_a) {
+                    src.x = s->stretch_a + (src.x - s->stretch_a) * s->stretch_f;
+                }
+            }
+            if (s->stretch_yd != 0.0f) { /* grow the model along y: the middle band is scaled, the ends move along */
+                float c = s->stretch_yc, d = s->stretch_yd;
+                if (src.y <= c && src.y >= -c && src.x < s->stretch_yx + 0.2f) { /* the end point and its neighbours on one straight edge */
+                    src.x = s->stretch_yx;
+                }
+                src.y = src.y > c ? src.y + d : (src.y < -c ? src.y - d : src.y * (c + d) / c);
+            }
+            nj_vec3 w = nj_mat_apply(m, src);
+            scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
+            {
+                /* 0x8C0989D8 with the light (0, 0, -1) in view space: d = max(0, nz) of the transformed normal,
+                 * not renormalised (the object's scale counts) */
+                float d = 1.0f;
+                if (vx->has_nrm) {
+                    d = m->m[2][0] * vx->nrm.x + m->m[2][1] * vx->nrm.y + m->m[2][2] * vx->nrm.z;
+                    d = d > 0.0f ? d : 0.0f;
+                }
+                scratch_d[i] = s->fullbright ? 1.0f : d;
+            }
+            if (!any_env) {
+                /* nothing reads scratch_eu / scratch_ev */
+            } else if (vx->has_nrm) {
+                /* the normal in view space picks the point of the picture (a sphere map) */
+                float nx = m->m[0][0] * vx->nrm.x + m->m[0][1] * vx->nrm.y + m->m[0][2] * vx->nrm.z;
+                float ny = m->m[1][0] * vx->nrm.x + m->m[1][1] * vx->nrm.y + m->m[1][2] * vx->nrm.z;
+                float nz = m->m[2][0] * vx->nrm.x + m->m[2][1] * vx->nrm.y + m->m[2][2] * vx->nrm.z;
+                float len = sqrtf(nx * nx + ny * ny + nz * nz);
+                if (len > 1e-6f) {
+                    nx /= len;
+                    ny /= len;
+                }
+                scratch_eu[i] = 0.5f + 0.5f * nx;
+                scratch_ev[i] = 0.5f - 0.5f * ny;
+            } else {
+                scratch_eu[i] = scratch_ev[i] = 0.5f;
+            }
+        }
+    }
+}
+
+/* The polygons of mesh `n` of the object's model, from the scratch arrays transform_mesh() filled. */
+static void
+draw_polys(const bscene* s, const bvm_obj* o, int n, const nj_mesh* mesh, const nj_mat4* m, const float* offs,
+           const bscene_sink* sink) {
+    for (int p = 0; p < mesh->npolys; p++) {
+        const nj_poly* poly = &mesh->polys[p];
+        if (s->no_decals && poly->tex == 0) { /* texture 0 of a button is its picture */
+            continue;
+        }
+        bscene_texref tex = {BSCENE_TEX_NONE, 0, 0, 0};
+        if (poly->tex >= 0) {
+            tex.kind = BSCENE_TEX_TEXLIST;
+            tex.a = o->texlist;
+            tex.b = poly->tex;
+            tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
+        }
+        uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
+        int forced = 0; /* a colour the scripts pick is shown as it is */
+        uint32_t forced_argb = 0;
+        for (int k = 0; k < s->ovr_n; k++) {
+            if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
+                if (s->ovr[k].lit) {
+                    diffuse = s->ovr[k].argb;
+                } else {
+                    forced_argb = s->ovr[k].argb;
+                    forced = 1;
+                }
+            }
+        }
+        if (!forced && s->header_bar_argb && o->model == HEADER_MODEL && poly->tex < 0) {
+            forced_argb = s->header_bar_argb; /* dark mode: the bar's grey */
+            forced = 1;
+        }
+        const fcolour mat = material(diffuse, offs);
+        uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
+        if (s->panel_on && p == 0) {
+            poly_argb = s->panel_accent; /* the rim */
+            forced = 1;
+        } else if (forced) {
+            poly_argb = forced_argb;
+        }
+        if (forced && offs && offs[0] != 0.0f) { /* the constant alpha still fades a forced colour */
+            float a = (float)(poly_argb >> 24) + offs[0] * 255.0f;
+            a = a < 0.0f ? 0.0f : (a > 255.0f ? 255.0f : a);
+            poly_argb = (poly_argb & 0x00FFFFFFu) | ((uint32_t)a << 24);
+        }
+        if (poly->tex == 0 && o->texlist >= BSCENE_ROUND_FACE_TEXLIST && poly->has_uv && poly->ntris == 2) {
+            draw_round_face(mesh, poly, m, poly_argb, tex, sink);
+            continue;
+        }
+        int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
+        const int amb_on = !(poly->strip_flags & STRIP_IGNORE_AMBIENT);
+        const int spec_on = poly->tex >= 0 && poly->has_specular && !(poly->strip_flags & STRIP_IGNORE_SPECULAR);
+        int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
+        const int use_lit = lit && poly->has_diffuse && !forced && !s->fullbright;
+        if (++lit_now == 0) { /* stamps wrapped: forget them all */
+            memset(lit_stamp, 0, sizeof(lit_stamp));
+            lit_now = 1;
+        }
+        run_n = 0;
+        for (int t = 0; t < poly->ntris; t++) {
+            bscene_vtx v[3];
+            int ok = 1;
+            for (int k = 0; k < 3 && ok; k++) {
+                const nj_corner* c = &poly->corners[t * 3 + k];
+                ok = scratch_ok[c->idx];
+                v[k].x = scratch_x[c->idx];
+                v[k].y = scratch_y[c->idx];
+                v[k].invw = scratch_w[c->idx];
+                if (poly->strip_flags & STRIP_ENV) {
+                    v[k].u = scratch_eu[c->idx];
+                    v[k].v = scratch_ev[c->idx];
+                } else {
+                    v[k].u = c->u;
+                    v[k].v = c->v;
+                }
+                uint32_t base = poly_argb;
+                if (!poly->has_diffuse) {
+                    const nj_vertex* vx = &mesh->verts[c->idx];
+                    base = pack(material(vx->has_col ? vx->col : 0xFFFFFFFFu, offs));
+                }
+                v[k].oargb = 0;
+                if (use_lit && mesh->verts[c->idx].has_nrm) {
+                    if (lit_stamp[c->idx] != lit_now) {
+                        lit_stamp[c->idx] = lit_now;
+                        lit_argb[c->idx] = bios_lit(mat, amb_on, scratch_d[c->idx]);
+                        lit_oargb[c->idx] = spec_on ? bios_offset(poly->specular, scratch_d[c->idx]) : 0;
+                    }
+                    v[k].argb = lit_argb[c->idx];
+                    v[k].oargb = lit_oargb[c->idx];
+                } else {
+                    v[k].argb = base;
+                }
+            }
+            if (ok && cull) {
+                /* Front faces are counter-clockwise in view space (all the menu models are
+                 * wound that way); the screen's y axis points down, so they come out with
+                 * a negative area here. Back faces are not drawn. */
+                float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+                ok = area < 0.0f;
+            }
+            if (ok) {
+                /* the strip handler of the BIOS (0x8C0CAD88) sends strips: a triangle that shares the last two
+                 * vertices of the one before goes on the same strip */
+                const nj_corner* tc = &poly->corners[t * 3];
+                int a = -1, b = -1;
+                if (run_n >= 3 && run_n < RUN_MAX) {
+                    for (int k = 0; k < 3; k++) {
+                        if (a < 0 && tc[k].idx == run_i[run_n - 2] && v[k].u == run_v[run_n - 2].u && v[k].v == run_v[run_n - 2].v) {
+                            a = k;
+                        } else if (b < 0 && tc[k].idx == run_i[run_n - 1] && v[k].u == run_v[run_n - 1].u && v[k].v == run_v[run_n - 1].v) {
+                            b = k;
+                        }
+                    }
+                }
+                if (a >= 0 && b >= 0) {
+                    run_v[run_n] = v[3 - a - b];
+                    run_i[run_n++] = tc[3 - a - b].idx;
+                } else {
+                    if (run_n >= 3) {
+                        emit_strip(sink, run_v, run_n, tex);
+                    }
+                    for (int k = 0; k < 3; k++) {
+                        run_v[k] = v[k];
+                        run_i[k] = tc[k].idx;
+                    }
+                    run_n = 3;
+                }
+            }
+        }
+        if (run_n >= 3) {
+            emit_strip(sink, run_v, run_n, tex);
+            run_n = 0;
+        }
+    }
+}
+
+/* The model of an object: every visible mesh of it, posed by the object's motion. */
+static void
+draw_model(bscene* s, const bvm_obj* o, const nj_mat4* obj_m, const float* offs, const bscene_sink* sink) {
+    const nj_object* obj = get_model(s, o->model);
+    if (!obj) {
+        return;
+    }
+    const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
+    nj_mat4* world = s->pose;
+    nj_object_pose(obj, mo, o->motion_tw.cur, world);
+    for (int n = 0; n < obj->count; n++) {
+        const nj_mesh* mesh = obj->nodes[n].mesh;
+        if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE)) {
+            continue;
+        }
+        nj_mat4 m;
+        nj_mat_mul(&m, obj_m, &world[n]);
+        transform_mesh(s, mesh, &m);
+        draw_polys(s, o, n, mesh, &m, offs, sink);
+    }
+}
+
+/* Send the kept triangles of a drawing state again. 0 if it is not in the cache. */
+static int
+cache_replay(const draw_key* key, uint32_t hash, const bscene_sink* sink) {
+    for (int i = 0; i < cache_entry_n; i++) {
+        const cache_entry* e = &cache_entries[i];
+        if (e->valid && e->hash == hash && !memcmp(&e->key, key, sizeof(*key))) {
+            for (int t = 0; t < e->count; t++) {
+                const cached_run* cr = &cache_runs[e->first + t];
+                emit_strip(sink, &cache_vpool[cr->first], cr->n, cr->tex);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Draw the model and keep its triangles under `key` (if they fit; the pool is emptied first when it is nearly full). */
+static void
+draw_model_captured(bscene* s, const bvm_obj* o, const nj_mat4* obj_m, const float* offs, const draw_key* key, uint32_t hash,
+                    const bscene_sink* sink) {
+    if (cache_entry_n >= CACHE_ENTRIES || cache_runs_n > CACHE_RUNS - 128 || cache_vpool_n > CACHE_VERTS - 1024) {
+        cache_flush();
+    }
+    cache_entry* ce = &cache_entries[cache_entry_n++];
+    ce->key = *key;
+    ce->hash = hash;
+    ce->valid = 0;
+    ce->first = cache_runs_n;
+    cap_out = sink;
+    cap_first_run = cache_runs_n;
+    cap_first_vtx = cache_vpool_n;
+    cap_overflow = 0;
+    draw_model(s, o, obj_m, offs, &cap_sink);
+    if (cap_overflow) {
+        cache_entry_n--; /* did not fit: drawn, but not kept */
+        cache_runs_n = cap_first_run;
+        cache_vpool_n = cap_first_vtx;
+    } else {
+        ce->count = cache_runs_n - cap_first_run;
+        ce->valid = 1;
+    }
+}
+
 void
 bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     if (!o->active || (o->flags & BVM_F_HIDE)) {
         return;
     }
     text_fade = s->fade;
-    if ((o->flags & BVM_F_PANEL) && o->panel_w > 0 && o->panel_h > 0 && (s->parts & BSCENE_PART_MODEL)) {
+    const int models = (s->parts & BSCENE_PART_MODEL) != 0;
+    if (models && (o->flags & BVM_F_PANEL) && o->panel_w > 0 && o->panel_h > 0) {
         draw_object_panel(s, o, sink);
+    }
+    const int has_model = models && (o->flags & BVM_F_MODEL);
+    const int has_grid = models && o->mesh_cols > 0 && o->mesh_mode == 5;
+    const int has_text = (s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text;
+    if (!has_model && !has_grid && !has_text) {
+        return; /* nothing of it in this pass (every object comes by once per pass) */
     }
 
     const float ms = o->model_scale > 0.0f ? o->model_scale : 1.0f;
-    float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
-    nj_mat4 obj_m;
-    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2] + o->model_off[2]};
-    nj_mat_object(&obj_m, mpos, scl, o->rot);
+    const float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
     /* constant material (a, r, g, b offsets), and the screen transition's fade */
     float eoff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float* offs = NULL;
@@ -624,295 +917,53 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         offs = eoff;
     }
 
-    /* replay, or capture, the model's triangles (see the object output cache) */
-    cache_entry* ce = NULL;
-    const bscene_sink* real_sink = sink;
-    if ((o->flags & BVM_F_MODEL) && (s->parts & BSCENE_PART_MODEL) && !cache_disabled) {
+    /* The matrix costs three rotations: it is only built when something is really transformed (not for a model that
+     * comes out of the cache). */
+    nj_mat4 obj_m;
+    int have_m = 0;
+
+    if (has_model) {
         draw_key key;
-        make_key(s, o, scl, offs, &key);
-        uint32_t h = key_hash(&key);
-        for (int i = 0; i < cache_entry_n; i++) {
-            cache_entry* e = &cache_entries[i];
-            if (e->valid && e->hash == h && !memcmp(&e->key, &key, sizeof(key))) {
-                for (int t = 0; t < e->count; t++) {
-                    const cached_run* cr = &cache_runs[e->first + t];
-                    emit_strip(sink, &cache_vpool[cr->first], cr->n, cr->tex);
-                }
-                goto model_done;
-            }
+        uint32_t hash = 0;
+        int replayed = 0;
+        if (!cache_disabled) {
+            make_key(s, o, scl, offs, &key);
+            hash = key_hash(&key);
+            replayed = cache_replay(&key, hash, sink);
         }
-        if (!seen_before(h)) {
-            goto draw_model; /* changed since its last draw: draw it, keep nothing */
-        }
-        if (cache_entry_n >= CACHE_ENTRIES || cache_runs_n > CACHE_RUNS - 128 || cache_vpool_n > CACHE_VERTS - 1024) {
-            cache_flush();
-        }
-        ce = &cache_entries[cache_entry_n++];
-        ce->key = key;
-        ce->hash = h;
-        ce->valid = 0;
-        ce->first = cache_runs_n;
-        cap_out = sink;
-        cap_first_run = cache_runs_n;
-        cap_first_vtx = cache_vpool_n;
-        cap_overflow = 0;
-        sink = &cap_sink;
-    }
-draw_model:
-    if ((o->flags & BVM_F_MODEL) && (s->parts & BSCENE_PART_MODEL)) {
-        const nj_object* obj = get_model(s, o->model);
-        if (obj) {
-            const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
-            nj_mat4* world = s->pose;
-            nj_object_pose(obj, mo, o->motion_tw.cur, world);
-
-            for (int n = 0; n < obj->count; n++) {
-                const nj_mesh* mesh = obj->nodes[n].mesh;
-                if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE)) {
-                    continue;
-                }
-                nj_mat4 m;
-                nj_mat_mul(&m, &obj_m, &world[n]);
-
-                /* Environment-mapped strips take u, v from the normal; work those out only if the mesh has one. */
-                int any_env = 0;
-                for (int p = 0; p < mesh->npolys; p++) {
-                    any_env |= mesh->polys[p].strip_flags & STRIP_ENV;
-                }
-                /* Transform and project every vertex once; triangles only index into this. */
-                for (int i = 0; i < mesh->nverts; i++) {
-                    const nj_vertex* vx = &mesh->verts[i];
-                    scratch_ok[i] = 0;
-                    if (vx->valid) {
-                        nj_vec3 src = vx->pos;
-                        if (s->panel_on) { /* 37 vertices per corner: 0 top left, 1 top right, 2 bottom right, 3 bottom left */
-                            int q = i / 37;
-                            src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
-                            src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
-                        }
-                        if (s->small_left && mesh->nverts == 23 && i < 13) { /* model 41: the left cap's outline points */
-                            /* corner arc of radius 1.0 as the right end's (offsets from the corner), then the straight edge */
-                            static const float arc[5][2] = {{0.0f, 0.0f}, {0.38f, 0.08f}, {0.71f, 0.29f}, {0.92f, 0.62f}, {1.0f, 1.0f}};
-                            const float xl = -30.75f, top = 2.75f;
-                            if (i >= 1 && i <= 5) {
-                                src.x = xl + 1.0f - arc[i - 1][0];
-                                src.y = top - arc[i - 1][1];
-                            } else if (i >= 7 && i <= 11) {
-                                src.x = xl + 1.0f - arc[11 - i][0];
-                                src.y = -(top - arc[11 - i][1]);
-                            } else if (i == 6) {
-                                src.x = xl;
-                            }
-                        }
-                        if (s->stretch_on) {
-                            if (src.x > s->stretch_b) {
-                                src.x = s->stretch_a + (s->stretch_b - s->stretch_a) * s->stretch_f + (src.x - s->stretch_b);
-                            } else if (src.x > s->stretch_a) {
-                                src.x = s->stretch_a + (src.x - s->stretch_a) * s->stretch_f;
-                            }
-                        }
-                        if (s->stretch_yd != 0.0f) { /* grow the model along y: the middle band is scaled, the ends move along */
-                            float c = s->stretch_yc, d = s->stretch_yd;
-                            if (src.y <= c && src.y >= -c && src.x < s->stretch_yx + 0.2f) { /* the end point and its neighbours on one straight edge */
-                                src.x = s->stretch_yx;
-                            }
-                            src.y = src.y > c ? src.y + d : (src.y < -c ? src.y - d : src.y * (c + d) / c);
-                        }
-                        nj_vec3 w = nj_mat_apply(&m, src);
-                        scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
-                        {
-                            /* 0x8C0989D8 with the light (0, 0, -1) in view space: d = max(0, nz) of the transformed normal,
-                             * not renormalised (the object's scale counts) */
-                            float d = 1.0f;
-                            if (vx->has_nrm) {
-                                d = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                                d = d > 0.0f ? d : 0.0f;
-                            }
-                            scratch_d[i] = s->fullbright ? 1.0f : d;
-                        }
-                        if (!any_env) {
-                            /* nothing reads scratch_eu / scratch_ev */
-                        } else if (vx->has_nrm) {
-                            /* the normal in view space picks the point of the picture (a sphere map) */
-                            float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
-                            float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
-                            float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                            float len = sqrtf(nx * nx + ny * ny + nz * nz);
-                            if (len > 1e-6f) {
-                                nx /= len;
-                                ny /= len;
-                            }
-                            scratch_eu[i] = 0.5f + 0.5f * nx;
-                            scratch_ev[i] = 0.5f - 0.5f * ny;
-                        } else {
-                            scratch_eu[i] = scratch_ev[i] = 0.5f;
-                        }
-                    }
-                }
-
-                for (int p = 0; p < mesh->npolys; p++) {
-                    const nj_poly* poly = &mesh->polys[p];
-                    if (s->no_decals && poly->tex == 0) { /* texture 0 of a button is its picture */
-                        continue;
-                    }
-                    bscene_texref tex = {BSCENE_TEX_NONE, 0, 0, 0};
-                    if (poly->tex >= 0) {
-                        tex.kind = BSCENE_TEX_TEXLIST;
-                        tex.a = o->texlist;
-                        tex.b = poly->tex;
-                        tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
-                    }
-                    uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
-                    int forced = 0; /* a colour the scripts pick is shown as it is */
-                    uint32_t forced_argb = 0;
-                    for (int k = 0; k < s->ovr_n; k++) {
-                        if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
-                            if (s->ovr[k].lit) {
-                                diffuse = s->ovr[k].argb;
-                            } else {
-                                forced_argb = s->ovr[k].argb;
-                                forced = 1;
-                            }
-                        }
-                    }
-                    if (!forced && s->header_bar_argb && o->model == HEADER_MODEL && poly->tex < 0) {
-                        forced_argb = s->header_bar_argb; /* dark mode: the bar's grey */
-                        forced = 1;
-                    }
-                    const fcolour mat = material(diffuse, offs);
-                    uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
-                    if (s->panel_on && p == 0) {
-                        poly_argb = s->panel_accent; /* the rim */
-                        forced = 1;
-                    } else if (forced) {
-                        poly_argb = forced_argb;
-                    }
-                    if (forced && offs && offs[0] != 0.0f) { /* the constant alpha still fades a forced colour */
-                        float a = (float)(poly_argb >> 24) + offs[0] * 255.0f;
-                        a = a < 0.0f ? 0.0f : (a > 255.0f ? 255.0f : a);
-                        poly_argb = (poly_argb & 0x00FFFFFFu) | ((uint32_t)a << 24);
-                    }
-                    if (poly->tex == 0 && o->texlist >= BSCENE_ROUND_FACE_TEXLIST && poly->has_uv && poly->ntris == 2) {
-                        draw_round_face(mesh, poly, &m, poly_argb, tex, sink);
-                        continue;
-                    }
-                    int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
-                    const int amb_on = !(poly->strip_flags & STRIP_IGNORE_AMBIENT);
-                    const int spec_on = poly->tex >= 0 && poly->has_specular && !(poly->strip_flags & STRIP_IGNORE_SPECULAR);
-                    int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
-                    const int use_lit = lit && poly->has_diffuse && !forced && !s->fullbright;
-                    if (++lit_now == 0) { /* stamps wrapped: forget them all */
-                        memset(lit_stamp, 0, sizeof(lit_stamp));
-                        lit_now = 1;
-                    }
-                    run_n = 0;
-                    for (int t = 0; t < poly->ntris; t++) {
-                        bscene_vtx v[3];
-                        int ok = 1;
-                        for (int k = 0; k < 3 && ok; k++) {
-                            const nj_corner* c = &poly->corners[t * 3 + k];
-                            ok = scratch_ok[c->idx];
-                            v[k].x = scratch_x[c->idx];
-                            v[k].y = scratch_y[c->idx];
-                            v[k].invw = scratch_w[c->idx];
-                            if (poly->strip_flags & STRIP_ENV) {
-                                v[k].u = scratch_eu[c->idx];
-                                v[k].v = scratch_ev[c->idx];
-                            } else {
-                                v[k].u = c->u;
-                                v[k].v = c->v;
-                            }
-                            uint32_t base = poly_argb;
-                            if (!poly->has_diffuse) {
-                                const nj_vertex* vx = &mesh->verts[c->idx];
-                                base = pack(material(vx->has_col ? vx->col : 0xFFFFFFFFu, offs));
-                            }
-                            v[k].oargb = 0;
-                            if (use_lit && mesh->verts[c->idx].has_nrm) {
-                                if (lit_stamp[c->idx] != lit_now) {
-                                    lit_stamp[c->idx] = lit_now;
-                                    lit_argb[c->idx] = bios_lit(mat, amb_on, scratch_d[c->idx]);
-                                    lit_oargb[c->idx] = spec_on ? bios_offset(poly->specular, scratch_d[c->idx]) : 0;
-                                }
-                                v[k].argb = lit_argb[c->idx];
-                                v[k].oargb = lit_oargb[c->idx];
-                            } else {
-                                v[k].argb = base;
-                            }
-                        }
-                        if (ok && cull) {
-                            /* Front faces are counter-clockwise in view space (all the menu models are
-                             * wound that way); the screen's y axis points down, so they come out with
-                             * a negative area here. Back faces are not drawn. */
-                            float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
-                            ok = area < 0.0f;
-                        }
-                        if (ok) {
-                            /* the strip handler of the BIOS (0x8C0CAD88) sends strips: a triangle that shares the last two
-                             * vertices of the one before goes on the same strip */
-                            const nj_corner* tc = &poly->corners[t * 3];
-                            int a = -1, b = -1;
-                            if (run_n >= 3 && run_n < RUN_MAX) {
-                                for (int k = 0; k < 3; k++) {
-                                    if (a < 0 && tc[k].idx == run_i[run_n - 2] && v[k].u == run_v[run_n - 2].u && v[k].v == run_v[run_n - 2].v) {
-                                        a = k;
-                                    } else if (b < 0 && tc[k].idx == run_i[run_n - 1] && v[k].u == run_v[run_n - 1].u && v[k].v == run_v[run_n - 1].v) {
-                                        b = k;
-                                    }
-                                }
-                            }
-                            if (a >= 0 && b >= 0) {
-                                run_v[run_n] = v[3 - a - b];
-                                run_i[run_n++] = tc[3 - a - b].idx;
-                            } else {
-                                if (run_n >= 3) {
-                                    emit_strip(sink, run_v, run_n, tex);
-                                }
-                                for (int k = 0; k < 3; k++) {
-                                    run_v[k] = v[k];
-                                    run_i[k] = tc[k].idx;
-                                }
-                                run_n = 3;
-                            }
-                        }
-                    }
-                    if (run_n >= 3) {
-                        emit_strip(sink, run_v, run_n, tex);
-                        run_n = 0;
-                    }
-                }
+        if (!replayed) {
+            object_matrix(o, scl, &obj_m);
+            have_m = 1;
+            /* only a state that is drawn a second time is kept: one that changes every frame would only fill the pool */
+            if (!cache_disabled && seen_before(hash)) {
+                draw_model_captured(s, o, &obj_m, offs, &key, hash, sink);
+            } else {
+                draw_model(s, o, &obj_m, offs, sink);
             }
         }
     }
-
-    if (ce) {
-        if (cap_overflow) {
-            cache_entry_n--; /* did not fit: drawn, but not kept */
-            cache_runs_n = cap_first_run;
-            cache_vpool_n = cap_first_vtx;
-        } else {
-            ce->count = cache_runs_n - cap_first_run;
-            ce->valid = 1;
+    if (has_grid) {
+        if (!have_m) {
+            object_matrix(o, scl, &obj_m);
+            have_m = 1;
         }
-        sink = real_sink;
+        draw_grid_mesh(o, &obj_m, offs, sink);
     }
-model_done:
-    if (o->mesh_cols > 0 && o->mesh_mode == 5 && (s->parts & BSCENE_PART_MODEL)) {
-        draw_grid_mesh(s, o, &obj_m, offs, sink);
-    }
-    if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
-        /* text_surface_draw (0x8C014D78) projects the surface's offset through the object's matrix: the offset is scaled and
-         * turned with the object, then moved to its place */
-        /* (a model that was moved or resized for its icon, see model_off / model_scale, leaves its caption where it was) */
+    if (has_text) {
+        /* text_surface_draw (0x8C014D78) projects the surface's offset through the object's matrix: the offset is scaled
+         * and turned with the object, then moved to its place. A model that was moved or resized for its icon (model_off,
+         * model_scale) leaves its caption where it was: the model may turn, the caption does not. */
         nj_mat4 text_m;
+        const nj_mat4* tm = &obj_m;
         if (o->model_scale > 0.0f || o->model_off[0] != 0.0f || o->model_off[1] != 0.0f || o->model_off[2] != 0.0f) {
             const float tscl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
-            const int32_t still[3] = {0, 0, 0}; /* the model may turn, the caption does not */
+            const int32_t still[3] = {0, 0, 0};
             nj_mat_object(&text_m, o->pos, tscl, still);
-        } else {
-            text_m = obj_m;
+            tm = &text_m;
+        } else if (!have_m) {
+            object_matrix(o, scl, &obj_m);
         }
-        nj_vec3 anchor = nj_mat_apply(&text_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
+        nj_vec3 anchor = nj_mat_apply(tm, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {
             sink->text(sink->user, o, sx, sy, iw);
@@ -934,45 +985,63 @@ bscene_set_background_tint(uint32_t rgb) {
     background_tint = rgb ? (rgb & 0xFFFFFFu) : 0xFFFFFFu;
 }
 
+/* c * t / 255 for two bytes, without the division (a library call on the SH-4): exact for every pair. */
+static inline uint32_t
+mul255(uint32_t c, uint32_t t) {
+    uint32_t n = c * t;
+    return (n + 1u + (n >> 8)) >> 8;
+}
+
 static uint32_t
 tinted(uint32_t argb) {
     if (background_tint == 0xFFFFFFu) {
         return argb;
     }
-    uint32_t r = ((argb >> 16) & 0xFF) * ((background_tint >> 16) & 0xFF) / 255u;
-    uint32_t g = ((argb >> 8) & 0xFF) * ((background_tint >> 8) & 0xFF) / 255u;
-    uint32_t b = (argb & 0xFF) * (background_tint & 0xFF) / 255u;
+    uint32_t r = mul255((argb >> 16) & 0xFF, (background_tint >> 16) & 0xFF);
+    uint32_t g = mul255((argb >> 8) & 0xFF, (background_tint >> 8) & 0xFF);
+    uint32_t b = mul255(argb & 0xFF, background_tint & 0xFF);
     return (argb & 0xFF000000u) | r << 16 | g << 8 | b;
 }
 
+/* One background mesh. Every grid point is turned into a screen vertex once; a column of cells is then one zigzag
+ * strip down the grid (point (i, j), (i + 1, j), (i, j + 1), ...: triangle 2j is the upper left half of cell j,
+ * 2j + 1 its lower right half, the same triangles in the same order as cell by cell). Much of the swirl is fully
+ * transparent: those triangles are not sent, the strip is cut around them. */
 static void
 draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
-    dcbg_vertex out[(DCBG_MAX_COLS + 1) * (DCBG_MAX_ROWS + 1)];
+    enum { MAX_POINTS = (DCBG_MAX_COLS + 1) * (DCBG_MAX_ROWS + 1) };
+    dcbg_vertex out[MAX_POINTS];
+    bscene_vtx column[2 * (DCBG_MAX_ROWS + 1)];
+    uint8_t shown[2 * (DCBG_MAX_ROWS + 1)]; /* the point has some alpha */
     dcbg_project(m, o, out);
-    bscene_texref tex = {BSCENE_TEX_GBIX, m->tex, 0, 0};
-    if (m->tex == 0) {
-        tex.kind = BSCENE_TEX_NONE;
-    }
-    int stride = m->rows + 1;
+    const int stride = m->rows + 1, len = 2 * stride;
+    bscene_texref tex = {m->tex ? BSCENE_TEX_GBIX : BSCENE_TEX_NONE, m->tex, 0, 0};
     for (int i = 0; i < m->cols; i++) {
-        for (int j = 0; j < m->rows; j++) {
-            const dcbg_vertex* q[4] = {&out[i * stride + j], &out[(i + 1) * stride + j], &out[i * stride + j + 1],
-                                       &out[(i + 1) * stride + j + 1]};
-            static const int order[2][3] = {{0, 1, 2}, {2, 1, 3}};
-            for (int t = 0; t < 2; t++) {
-                bscene_vtx v[3];
-                for (int k = 0; k < 3; k++) {
-                    const dcbg_vertex* src = q[order[t][k]];
-                    v[k].x = src->sx;
-                    v[k].y = src->sy;
-                    v[k].invw = src->invw;
-                    v[k].u = src->u;
-                    v[k].v = src->v;
-                    v[k].argb = tinted(src->argb);
-                    v[k].oargb = 0;
+        for (int k = 0; k < len; k++) {
+            const dcbg_vertex* src = &out[(i + (k & 1)) * stride + (k >> 1)];
+            bscene_vtx* v = &column[k];
+            v->x = src->sx;
+            v->y = src->sy;
+            v->invw = src->invw;
+            v->u = src->u;
+            v->v = src->v;
+            v->argb = tinted(src->argb);
+            v->oargb = 0;
+            shown[k] = (src->argb >> 24) != 0;
+        }
+        int first = -1; /* first triangle of the run being collected */
+        for (int t = 0; t + 2 < len; t++) {
+            if (shown[t] | shown[t + 1] | shown[t + 2]) {
+                if (first < 0) {
+                    first = t;
                 }
-                sink->triangle(sink->user, v, tex);
+            } else if (first >= 0) {
+                emit_strip(sink, &column[first], t - first + 2, tex);
+                first = -1;
             }
+        }
+        if (first >= 0) {
+            emit_strip(sink, &column[first], len - first, tex);
         }
     }
 }

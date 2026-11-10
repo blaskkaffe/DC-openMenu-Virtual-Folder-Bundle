@@ -25,8 +25,6 @@
 #include <backend/dat_format.h>
 #include <texture/serial_sanitize.h>
 
-#include <bios_menu.h>
-
 #include "gfx.h"
 
 #define MAX_LOGO_FILE (256 * 1024)
@@ -52,7 +50,8 @@ typedef struct {
 typedef struct {
     char str[MAX_TEXT_CHARS + 1];
     pvr_ptr_t ptr;
-    int w;
+    int w;    /* of the picture, a power of two */
+    int used; /* columns of it that hold the text (btext_width) */
     uint32_t last_frame;
 } text_tex;
 
@@ -131,7 +130,6 @@ static int num_labels;
 static pvr_ptr_t last_ptr;
 static int last_untextured;
 static int last_uv;  /* NJ_TEX_* flip / clamp bits of the current header */
-static int hdr_uv;   /* the ones the next header gets (set by sink_triangle, 0 for everything else) */
 static int hdr_valid;
 
 static uint16_t text_canvas[MAX_TEXT_W * GFX_LINE_H] __attribute__((aligned(32)));
@@ -934,8 +932,9 @@ submit_header(pvr_poly_cxt_t* cxt) {
     pvr_poly_compile((pvr_poly_hdr_t*)&cmdbuf[cmd_n++], cxt);
 }
 
+/* `uv`: the NJ_TEX_* flip / clamp bits of a model's texture (used with `tex` only). */
 static void
-send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
+send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w, int uv) {
     pvr_poly_cxt_t cxt;
 
     if (tex) {
@@ -943,8 +942,8 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
                          tex->nearest ? PVR_FILTER_NONE : PVR_FILTER_BILINEAR);
         cxt.gen.specular = PVR_SPECULAR_ENABLE; /* the offset colour: the BIOS' specular on textured strips */
         /* the model's texture chunk: mirror or hold u and v past 0..1 (the disc's hub is a quarter, mirrored) */
-        cxt.txr.uv_flip = ((hdr_uv & NJ_TEX_FLIP_U) ? PVR_UVFLIP_U : 0) | ((hdr_uv & NJ_TEX_FLIP_V) ? PVR_UVFLIP_V : 0);
-        cxt.txr.uv_clamp = ((hdr_uv & NJ_TEX_CLAMP_U) ? PVR_UVCLAMP_U : 0) | ((hdr_uv & NJ_TEX_CLAMP_V) ? PVR_UVCLAMP_V : 0);
+        cxt.txr.uv_flip = ((uv & NJ_TEX_FLIP_U) ? PVR_UVFLIP_U : 0) | ((uv & NJ_TEX_FLIP_V) ? PVR_UVFLIP_V : 0);
+        cxt.txr.uv_clamp = ((uv & NJ_TEX_CLAMP_U) ? PVR_UVCLAMP_U : 0) | ((uv & NJ_TEX_CLAMP_V) ? PVR_UVCLAMP_V : 0);
     } else if (text_ptr) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED, text_w, GFX_LINE_H, text_ptr,
                          PVR_FILTER_NONE);
@@ -964,29 +963,31 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
 
 static void strip_close(void);
 
+/* The polygon header for what is drawn next: a ROM / art picture (`tex`, with the model's uv bits), a text picture
+ * (`text_ptr`, `text_w` wide) or flat colour (both NULL). Sent only when it differs from the one in force; ends a
+ * pending strip of sink_triangle(). */
 static void
-ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
+ensure_header_uv(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w, int uv) {
     strip_close();
     pvr_ptr_t key = tex ? tex->ptr : text_ptr;
     int untextured = (key == NULL);
-    int uv = tex ? hdr_uv : 0;
-    hdr_uv = 0;
+    if (!tex) {
+        uv = 0;
+    }
     if (hdr_valid && key == last_ptr && untextured == last_untextured && uv == last_uv) {
         return;
     }
-    hdr_uv = uv;
-    send_header_tr(tex, text_ptr, text_w);
-    hdr_uv = 0;
+    send_header_tr(tex, text_ptr, text_w, uv);
     last_ptr = key;
     last_untextured = untextured;
     last_uv = uv;
     hdr_valid = 1;
 }
 
-/* Vertices of the polygon being built (a triangle or a quad strip); sent when the one marked
- * as last arrives, so there is one submission per polygon. */
-static pvr_vertex_t* cur_poly;
-static uint32_t vtx_offset; /* the PVR offset colour of the vertices being sent (specular of textured strips) */
+static void
+ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
+    ensure_header_uv(tex, text_ptr, text_w, 0);
+}
 
 /* 16:9: the picture is squeezed to 3/4 of its width around the centre; a wide TV stretches it back. */
 static float aspect_x = 1.0f;
@@ -997,17 +998,14 @@ gfx_set_aspect(int wide) {
     aspect_x = wide ? 0.75f : 1.0f;
 }
 
-static void
-put_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
+/* One vertex into the command buffer. `oargb` is the PVR offset colour (the specular of textured strips, 0 otherwise).
+ * The buffer may fill up in the middle of a strip: the TA takes a strip in pieces. */
+static inline void
+put_vertex(float x, float y, float z, float u, float v, uint32_t argb, uint32_t oargb, int last) {
     if (!aspect_bypass) {
         x = 320.0f + (x - 320.0f) * aspect_x;
     }
-    if (!cur_poly) {
-        cmd_reserve(4);
-        cur_poly = &cmdbuf[cmd_n];
-    } else {
-        cmd_reserve(1); /* a long strip: the buffer may fill up in its middle (the TA takes it in pieces) */
-    }
+    cmd_reserve(1);
     pvr_vertex_t* vert = &cmdbuf[cmd_n++];
     vert->flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
     vert->x = x;
@@ -1016,10 +1014,7 @@ put_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last)
     vert->u = u;
     vert->v = v;
     vert->argb = argb;
-    vert->oargb = vtx_offset;
-    if (last) {
-        cur_poly = NULL;
-    }
+    vert->oargb = oargb;
 }
 
 /* The scene sends separate triangles, but most come from the models' triangle strips: a triangle that shares the
@@ -1038,11 +1033,9 @@ vtx_same(const bscene_vtx* a, const bscene_vtx* b) {
            && a->oargb == b->oargb;
 }
 
-static void
+static inline void
 strip_vertex(const bscene_vtx* p, const rom_tex* tex, int last) {
-    vtx_offset = tex ? p->oargb : 0;
-    put_vertex(p->x, p->y, p->invw, p->u, p->v, p->argb, last);
-    vtx_offset = 0;
+    put_vertex(p->x, p->y, p->invw, p->u, p->v, p->argb, tex ? p->oargb : 0, last);
 }
 
 static void
@@ -1056,7 +1049,23 @@ strip_close(void) {
 static void
 send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
     strip_close();
-    put_vertex(x, y, z, u, v, argb, last);
+    put_vertex(x, y, z, u, v, argb, 0, last);
+}
+
+/* A rectangle of the picture of the header in force (u0..u1, v0..v1), one colour. */
+static void
+send_quad(float x, float y, float w, float h, float z, float u0, float v0, float u1, float v1, uint32_t argb) {
+    send_vertex(x, y, z, u0, v0, argb, 0);
+    send_vertex(x + w, y, z, u1, v0, argb, 0);
+    send_vertex(x, y + h, z, u0, v1, argb, 0);
+    send_vertex(x + w, y + h, z, u1, v1, argb, 1);
+}
+
+/* The whole picture `tex` in a rectangle. */
+static void
+picture_quad(const rom_tex* tex, float x, float y, float w, float h, float z, uint32_t argb) {
+    ensure_header(tex, NULL, 0);
+    send_quad(x, y, w, h, z, 0.0f, 0.0f, 1.0f, 1.0f, argb);
 }
 
 static void
@@ -1097,8 +1106,7 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
             return;
         }
     }
-    hdr_uv = ref.uv;
-    ensure_header(tex, NULL, 0); /* also ends a pending strip */
+    ensure_header_uv(tex, NULL, 0, ref.uv); /* also ends a pending strip */
     strip_uv = ref.uv;
     strip_vertex(&v[0], tex, 0);
     strip_vertex(&v[1], tex, 0);
@@ -1204,10 +1212,7 @@ draw_surface(const bvm_obj* obj, float x, float y, float invw) {
     uint32_t argb = ((uint32_t)(a * 255.0f) << 24) | 0x00FFFFFFu;
     float x0 = x - (float)sf->w / 2.0f, y0 = y - (float)sf->h / 2.0f, z = invw + TEXT_Z_BIAS;
     ensure_header(t, NULL, 0);
-    send_vertex(x0, y0, z, 0.0f, 0.0f, argb, 0);
-    send_vertex(x0 + (float)sf->w, y0, z, 1.0f, 0.0f, argb, 0);
-    send_vertex(x0, y0 + (float)sf->h, z, 0.0f, 1.0f, argb, 0);
-    send_vertex(x0 + (float)sf->w, y0 + (float)sf->h, z, 1.0f, 1.0f, argb, 1);
+    send_quad(x0, y0, (float)sf->w, (float)sf->h, z, 0.0f, 0.0f, 1.0f, 1.0f, argb);
     return 1;
 }
 
@@ -1282,13 +1287,30 @@ sink_strip(void* user, const bscene_vtx* v, int n, bscene_texref ref) {
         }
     }
     tri_count += (unsigned)(n - 2);
-    hdr_uv = ref.uv;
-    ensure_header(tex, NULL, 0); /* also ends a pending strip of sink_triangle() */
-    for (int i = 0; i < n; i++) {
-        vtx_offset = tex ? v[i].oargb : 0;
-        put_vertex(v[i].x, v[i].y, v[i].invw, v[i].u, v[i].v, v[i].argb, i == n - 1);
+    ensure_header_uv(tex, NULL, 0, ref.uv); /* also ends a pending strip of sink_triangle() */
+    /* straight into the command buffer, as many as fit at a time */
+    const uint32_t offset_mask = tex ? 0xFFFFFFFFu : 0u;
+    while (n > 0) {
+        cmd_reserve(1);
+        int k = CMD_SLOTS - cmd_n;
+        if (k > n) {
+            k = n;
+        }
+        pvr_vertex_t* vert = &cmdbuf[cmd_n];
+        for (int i = 0; i < k; i++, v++, vert++) {
+            vert->flags = PVR_CMD_VERTEX;
+            vert->x = aspect_bypass ? v->x : 320.0f + (v->x - 320.0f) * aspect_x;
+            vert->y = v->y;
+            vert->z = v->invw;
+            vert->u = v->u;
+            vert->v = v->v;
+            vert->argb = v->argb;
+            vert->oargb = v->oargb & offset_mask;
+        }
+        cmd_n += k;
+        n -= k;
     }
-    vtx_offset = 0;
+    cmdbuf[cmd_n - 1].flags = PVR_CMD_VERTEX_EOL;
 }
 
 static const bscene_sink the_sink = {NULL, sink_triangle, sink_text, sink_strip};
@@ -1356,7 +1378,9 @@ gfx_set_label(uint16_t obj_id, const char* text) {
 
 /* ---- Text ------------------------------------------------------------------------------- */
 
+#ifndef BIOS_FONT_ROM /* gfx_host_test puts its own bytes here */
 #define BIOS_FONT_ROM ((const uint8_t*)0xA0100020u) /* what syscall_font_address() returns */
+#endif
 
 int
 gfx_text_width(const char* str) {
@@ -1416,6 +1440,7 @@ get_text_texture(const char* str) {
     victim->w = w;
     strncpy(victim->str, str, MAX_TEXT_CHARS);
     victim->str[MAX_TEXT_CHARS] = '\0';
+    victim->used = btext_width(victim->str);
     victim->last_frame = frame_no;
 
     memset(text_canvas, 0, (size_t)w * GFX_LINE_H * 2);
@@ -1427,7 +1452,7 @@ get_text_texture(const char* str) {
 }
 
 void
-gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) {
+gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale) {
     if (!str || !str[0]) {
         return;
     }
@@ -1442,38 +1467,15 @@ gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) 
     ensure_header(NULL, t->ptr, t->w);
 
     /* only the part of the picture that holds text: less to blend, and nothing sticks out over its neighbours */
-    int used = btext_width(clipped) + 3;
+    int used = t->used + 3;
     if (used > t->w) used = t->w;
-    float w = (float)used, h = 26.0f;
-    float u1 = (float)used / (float)t->w, v1 = 26.0f / (float)GFX_LINE_H;
-    (void)shadow; /* the glyphs carry their own shade, see btext_blit() */
-    send_vertex(x, y, z, 0.0f, 0.0f, argb, 0);
-    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
-    send_vertex(x, y + h, z, 0.0f, v1, argb, 0);
-    send_vertex(x + w, y + h, z, u1, v1, argb, 1);
+    send_quad(x, y, (float)used * scale, 26.0f * scale, z, 0.0f, 0.0f, (float)used / (float)t->w, 26.0f / (float)GFX_LINE_H, argb);
 }
 
 void
-gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale) {
-    if (!str || !str[0]) {
-        return;
-    }
-    char clipped[MAX_TEXT_CHARS + 1];
-    strncpy(clipped, str, MAX_TEXT_CHARS);
-    clipped[MAX_TEXT_CHARS] = '\0';
-    text_tex* t = get_text_texture(clipped);
-    if (!t) {
-        return;
-    }
-    ensure_header(NULL, t->ptr, t->w);
-    int used = btext_width(clipped) + 3;
-    if (used > t->w) used = t->w;
-    float w = (float)used * scale, h = 26.0f * scale;
-    float u1 = (float)used / (float)t->w, v1 = 26.0f / (float)GFX_LINE_H;
-    send_vertex(x, y, z, 0.0f, 0.0f, argb, 0);
-    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
-    send_vertex(x, y + h, z, 0.0f, v1, argb, 0);
-    send_vertex(x + w, y + h, z, u1, v1, argb, 1);
+gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) {
+    (void)shadow; /* the glyphs carry their own shade, see btext_blit() */
+    gfx_text_scaled(str, x, y, z, argb, 1.0f);
 }
 
 /* A string shown through a window of `window` pixels, moved `offset` pixels to the left. */
@@ -1486,17 +1488,13 @@ text_windowed(const char* str, float x, float y, float z, uint32_t argb, int win
     if (!t) {
         return;
     }
-    int full = gfx_text_width(clipped);
+    int full = t->used;
     if (offset < 0) offset = 0;
     if (offset > full - window) offset = full > window ? full - window : 0;
     int win = window < full ? window : full;
     float u0 = (float)offset / (float)t->w, u1 = (float)(offset + win) / (float)t->w;
     ensure_header(NULL, t->ptr, t->w);
-    float w = (float)win, h = (float)GFX_LINE_H;
-    send_vertex(x, y, z, u0, 0.0f, argb, 0);
-    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
-    send_vertex(x, y + h, z, u0, 1.0f, argb, 0);
-    send_vertex(x + w, y + h, z, u1, 1.0f, argb, 1);
+    send_quad(x, y, (float)win, (float)GFX_LINE_H, z, u0, 0.0f, u1, 1.0f, argb);
 }
 
 void
@@ -1510,10 +1508,7 @@ gfx_set_row_scroll(int slot, int window_px, int offset_px) {
 void
 gfx_rect(float x, float y, float w, float h, float z, uint32_t argb) {
     ensure_header(NULL, NULL, 0);
-    send_vertex(x, y, z, 0, 0, argb, 0);
-    send_vertex(x + w, y, z, 0, 0, argb, 0);
-    send_vertex(x, y + h, z, 0, 0, argb, 0);
-    send_vertex(x + w, y + h, z, 0, 0, argb, 1);
+    send_quad(x, y, w, h, z, 0.0f, 0.0f, 0.0f, 0.0f, argb);
 }
 
 /* ---- Small pictures made at run time (file icons of the memory cards) ----------------------------- */
@@ -1527,23 +1522,8 @@ gfx_dyn_create(const unsigned short* argb4444, int w, int h) {
         if (dyn_tex[i].valid) {
             continue;
         }
-        size_t size = ((size_t)w * (size_t)h * 2u + 31u) & ~(size_t)31u;
-        void* staging = memalign(32, size);
-        pvr_ptr_t ptr = staging ? pvr_mem_malloc(size) : NULL;
-        if (!ptr) {
-            free(staging);
-            return -1;
-        }
-        memset(staging, 0, size);
-        memcpy(staging, argb4444, (size_t)w * (size_t)h * 2u);
-        pvr_txr_load(staging, ptr, size);
-        free(staging);
-        dyn_tex[i].ptr = ptr;
-        dyn_tex[i].w = w;
-        dyn_tex[i].h = h;
-        dyn_tex[i].fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
-        dyn_tex[i].valid = 1;
-        return i;
+        upload_argb4444(argb4444, w, h, &dyn_tex[i]);
+        return dyn_tex[i].valid ? i : -1;
     }
     return -1;
 }
@@ -1568,11 +1548,7 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
     if (id < 0 || id >= DYN_MAX || !dyn_tex[id].valid) {
         return;
     }
-    ensure_header(&dyn_tex[id], NULL, 0);
-    send_vertex(x, y, z, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
-    send_vertex(x + w, y, z, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
-    send_vertex(x, y + h, z, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
-    send_vertex(x + w, y + h, z, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
+    picture_quad(&dyn_tex[id], x, y, w, h, z, 0xFFFFFFFFu);
 }
 
 /* Where the header logo is on the screen (measured on the preview: the 128x32 texture covers x 27..165, y 28..61). */
@@ -1592,22 +1568,14 @@ gfx_logo_badge(void) {
     const uint32_t tint = logo_seen ? logo_argb : 0xFFFFFFFFu;
     float x = logo_mode == 1 ? ox + 127.0f * sx - 2.0f : ox + (float)LOGO_D_END * sx, y = oy;
     float w = (float)text->w * sx, h = (float)LOGO_H * sy;
-    ensure_header(text, NULL, 0);
-    send_vertex(x, y, 0.5f, 0.0f, 0.0f, tint, 0);
-    send_vertex(x + w, y, 0.5f, 1.0f, 0.0f, tint, 0);
-    send_vertex(x, y + h, 0.5f, 0.0f, 1.0f, tint, 0);
-    send_vertex(x + w, y + h, 0.5f, 1.0f, 1.0f, tint, 1);
+    picture_quad(text, x, y, w, h, 0.5f, tint);
 }
 
 void
 gfx_art_box(const char* product, float x, float y, float w, float h, float z) {
     art_entry* e = art_get(product, 1);
     if (e && e->tex.valid) {
-        ensure_header(&e->tex, NULL, 0);
-        send_vertex(x, y, z, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
-        send_vertex(x + w, y, z, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
-        send_vertex(x, y + h, z, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
-        send_vertex(x + w, y + h, z, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
+        picture_quad(&e->tex, x, y, w, h, z, 0xFFFFFFFFu);
     } else {
         gfx_rect(x, y, w, h, z, 0x40FFFFFFu); /* no picture (yet) */
     }
@@ -1629,10 +1597,7 @@ gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb) {
     float ws[3] = {w - 2.0f * r, w, w - 2.0f * r};
     float hs[3] = {r, h - 2.0f * r, r};
     for (int i = 0; i < 3; i++) {
-        send_vertex(xs[i], ys[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i] + ws[i], ys[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i], ys[i] + hs[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i] + ws[i], ys[i] + hs[i], z, 0, 0, argb, 1);
+        send_quad(xs[i], ys[i], ws[i], hs[i], z, 0.0f, 0.0f, 0.0f, 0.0f, argb);
     }
     /* corners: centre of each arc and the direction of its quarter */
     float cx[4] = {x + w - r, x + r, x + r, x + w - r};
@@ -1666,10 +1631,7 @@ gfx_pane(float x, float y, float w, float h, float z, uint32_t argb) {
     float ws[3] = {w - 2.0f * PANE_R, w, w - 2.0f * PANE_R};
     float hs[3] = {PANE_RV, h - 2.0f * PANE_RV, PANE_RV};
     for (int i = 0; i < 3; i++) {
-        send_vertex(xs[i], ys[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i] + ws[i], ys[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i], ys[i] + hs[i], z, 0, 0, argb, 0);
-        send_vertex(xs[i] + ws[i], ys[i] + hs[i], z, 0, 0, argb, 1);
+        send_quad(xs[i], ys[i], ws[i], hs[i], z, 0.0f, 0.0f, 0.0f, 0.0f, argb);
     }
     /* each corner: a fan from its inner point (x side + PANE_R, y side + PANE_RV) */
     for (int c = 0; c < 4; c++) {

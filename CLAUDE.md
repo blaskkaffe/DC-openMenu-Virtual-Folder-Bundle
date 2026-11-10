@@ -16,7 +16,10 @@ cd openMenu/src
 gcc -O2 -o <out>/bios_preview bios_engine/tools/bios_preview.c bios_engine/src/*.c bios_rom/src/*.c -Ibios_engine/include -Ibios_rom/include -lm
 <out>/bios_preview dc_boot.bin list.ppm 60 <selected row> -3     # game list; BLIST_SLOTS=n, BLIST_DISC=n
 ```
-Engine test: same gcc line with `bios_engine/test/bios_engine_test.c`, run `./t dc_boot.bin`. The preview draws text as outline boxes and
+Engine test: same gcc line with `bios_engine/test/bios_engine_test.c`, run `./t dc_boot.bin`. Changes that must not alter the
+output (clean-ups, speed): `bios_engine/tools/scene_dump.c` prints every triangle the scene code sends and
+`openmenu/test/gfx_host/gfx_host_test.c` everything `gfx.c` would send to the PVR (stand-in KOS headers in `gfx_host/kos`; this
+also compiles `gfx.c` on the host). Both need no ROM: run before and after, `cmp` the two outputs (build lines in the files). The preview draws text as outline boxes and
 has no right panel; real text/art only on the PVR path (hardware).
 
 ## Game list (current state, see NEWMENU.md "Game browser")

@@ -523,7 +523,8 @@ test_scene(const bios_rom* rom) {
     bscene_draw_objects(&sc, &vm, &sink);
     CHECK(t.tris == 2);
 
-    /* background layers produce a full grid of triangles */
+    /* background layers: the triangles of the two grids that have a visible corner (the rest are fully transparent and
+     * are left out), the same ones to a sink that takes strips */
     static dcbg_state bg;
     dcbg_init(&bg, 0, 0);
     for (int i = 0; i < 30; i++) {
@@ -531,7 +532,12 @@ test_scene(const bios_rom* rom) {
     }
     t.tris = 0;
     bscene_draw_background(&bg, &sink);
-    CHECK(t.tris == 2 * (15 * 15 + 12 * 12));
+    CHECK(t.tris > 100 && t.tris <= 2 * (15 * 15 + 12 * 12));
+    tally ts = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
+    bscene_sink strips = {&ts, tally_tri, tally_text, tally_strip};
+    bscene_draw_background(&bg, &strips);
+    CHECK(ts.tris == t.tris);
+    CHECK(ts.textured <= 2 * (15 + 12)); /* strips counted here: at most a few a column */
     bscene_free(&sc);
 }
 

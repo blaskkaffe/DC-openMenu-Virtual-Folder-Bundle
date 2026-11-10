@@ -41,6 +41,17 @@ jobs:
             openMenu/src/openmenu/test/bench_test.c openMenu/src/openmenu/src/bench.c -o bench_test
           ./bench_test
 
+      # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
+      - name: gfx host test
+        working-directory: openMenu/src
+        run: |
+          gcc -O1 -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+            -DBIOS_FONT_ROM=host_font -include openmenu/test/gfx_host/host_font.h \
+            openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c bios_engine/src/*.c bios_rom/src/*.c \
+            -Iopenmenu/test/gfx_host/kos -I../external/uthash/include -Ibios_engine/include -Ibios_rom/include \
+            -Iopenmenu_shared/include -Iopenmenu/src -lm -o gfx_host_test
+          ./gfx_host_test > /dev/null
+
       - uses: docker/setup-buildx-action@v3
 
       # The KOS toolchain build takes the better part of an hour, so cache it.
