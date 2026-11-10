@@ -27,6 +27,10 @@
 
 #include "gfx.h"
 
+#ifndef GFX_REGION_BYTE /* the console's region byte, set by the BIOS (gfx_host_test has its own) */
+#define GFX_REGION_BYTE (*(volatile uint8_t*)0x8C000072)
+#endif
+
 #define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 48
@@ -718,7 +722,7 @@ build_logo_variants(void) {
     unsigned short* swirl_d = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
     unsigned short* full_dark = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
     unsigned short* swirl_d_dark = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
-    if (argb && swirl_d && full_dark && swirl_d_dark && bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0 && t.width == LOGO_W
+    if (argb && swirl_d && full_dark && swirl_d_dark && bios_header_logo(g_rom, GFX_REGION_BYTE & 0xF, &t) == 0 && t.width == LOGO_W
         && t.height == LOGO_H && bios_texture_decode(&t, argb) == 0) {
         int best = -1;
         for (int y = 0; y < LOGO_H; y++) {
@@ -848,7 +852,7 @@ get_rom_texture_uncached(bscene_texref ref) {
         ok = bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0;
     } else if (ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
         /* the logo with the swirl, or the plain one on a European console, as the BIOS picks it */
-        ok = bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0;
+        ok = bios_header_logo(g_rom, GFX_REGION_BYTE & 0xF, &t) == 0;
     } else {
         ok = bios_texlist_texture(g_rom, ref.a, ref.b, &t) == 0;
     }

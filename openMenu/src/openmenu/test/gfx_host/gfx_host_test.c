@@ -5,11 +5,16 @@
  * makes a change to gfx.c that should not alter the output provable: run it before and after and compare.
  *
  *   cd openMenu/src
- *   gcc -O2 -Wall -Wextra -DBIOS_FONT_ROM=host_font -include openmenu/test/gfx_host/host_font.h -o gfx_host_test \
+ *   gcc -O2 -Wall -Wextra -DBIOS_FONT_ROM=host_font -DGFX_REGION_BYTE=host_region -include openmenu/test/gfx_host/host_font.h -o gfx_host_test \
  *       openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c \
  *       bios_engine/src/[a-z]*.c bios_rom/src/[a-z]*.c -Iopenmenu/test/gfx_host/kos -I../external/uthash/include \
  *       -Ibios_engine/include -Ibios_rom/include -Iopenmenu_shared/include -Iopenmenu/src -lm
  *   ./gfx_host_test > after.txt ; cmp before.txt after.txt
+ *
+ * With a BIOS dump it also measures the screens: `./gfx_host_test --survey dc_boot.bin [frames]` builds main menu, game list,
+ * settings, card grid and CD player as ui_bios.c does and prints per screen the host time of a frame, triangles, TA vertices
+ * and headers. Time is x86: compare two builds of the code (alternate the runs, pin one core: taskset -c 1), never read it as
+ * console fps. The dump stays outside the repo (git-ignored).
  *
  * The split of the stream into pvr_prim() calls is not part of the output (only the bytes are), so the batching may change.
  */
@@ -25,16 +30,25 @@
 #include <kos/sem.h>
 #include <kos/thread.h>
 
+#include <time.h>
+
 #include <backend/dat_format.h>
 #include <texture/serial_sanitize.h>
 
 #include "gfx.h"
+#include <bios_cdplayer.h>
+#include <bios_files.h>
+#include <bios_list.h>
+#include <bios_menu.h>
+#include <bios_page.h>
+#include <bios_rom.h>
 
 /* the engine's test scene (models at rest, turning, tinted, the grid, the scene switches) */
 #define main scene_dump_main
 #include "../../../bios_engine/tools/scene_dump.c"
 #undef main
 
+static int quiet; /* survey mode: no listing */
 static uint32_t out_hash = 2166136261u;
 static unsigned long prim_bytes, prim_calls, uploads;
 
@@ -46,7 +60,7 @@ static size_t events_n;
 static void
 event(const char* fmt, unsigned long a, unsigned long b, unsigned long c) {
     if (events_n < sizeof(events) - 96) {
-        events_n += (size_t)snprintf(events + events_n, 96, fmt, a, b, c);
+        if (!quiet) events_n += (size_t)snprintf(events + events_n, 96, fmt, a, b, c);
     }
 }
 
@@ -74,6 +88,7 @@ timer_us_gettime64(void) {
 
 /* gfx.c reads the BIOS font at its address in the console's memory: built with -DBIOS_FONT_ROM=host_font it reads this */
 unsigned char host_font[0x100000];
+unsigned char host_region = 1; /* USA */
 
 uint8_t*
 syscall_font_address(void) {
@@ -177,7 +192,7 @@ serial_santize_art(const char* id) {
 
 int
 pvr_init(pvr_init_params_t* params) {
-    printf("init dma %d presort %d\n", params->dma_enabled, params->autosort_disabled);
+    if (!quiet) printf("init dma %d presort %d\n", params->dma_enabled, params->autosort_disabled);
     return 0;
 }
 
@@ -189,7 +204,7 @@ pvr_shutdown(void) {
 void*
 pvr_set_vertbuf(pvr_list_t list, void* buffer, size_t len) {
     (void)buffer;
-    printf("vertbuf %u %zu\n", (unsigned)list, len);
+    if (!quiet) printf("vertbuf %u %zu\n", (unsigned)list, len);
     return NULL;
 }
 
@@ -256,6 +271,11 @@ pvr_poly_compile(pvr_poly_hdr_t* dst, const pvr_poly_cxt_t* c) {
 int
 pvr_prim(const void* data, size_t size) {
     const uint32_t* w = (const uint32_t*)data;
+    if (quiet) {
+        prim_bytes += size;
+        prim_calls++;
+        return 0;
+    }
     for (size_t i = 0; i + 32 <= size; i += 32, w += 8) {
         if ((w[0] >> 28) >= 0xE) {
             const pvr_vertex_t* v = (const pvr_vertex_t*)w;
@@ -292,25 +312,25 @@ pvr_set_bg_color(float r, float g, float b) {
 
 void
 pvr_scene_begin(void) {
-    printf("scene\n");
+    if (!quiet) printf("scene\n");
 }
 
 int
 pvr_list_begin(pvr_list_t list) {
-    printf("list %u\n", (unsigned)list);
+    if (!quiet) printf("list %u\n", (unsigned)list);
     return 0;
 }
 
 int
 pvr_list_finish(void) {
-    printf("list end\n");
+    if (!quiet) printf("list end\n");
     return 0;
 }
 
 int
 pvr_scene_finish(void) {
     events_write();
-    printf("scene end\n");
+    if (!quiet) printf("scene end\n");
     return 0;
 }
 
@@ -343,8 +363,165 @@ overlay(int f) {
     gfx_logo_badge();
 }
 
+/* ---- survey: the screens of the menu with the real ROM, what each one costs a frame ----
+ *   gfx_host_test --survey dc_boot.bin [frames]
+ * Each screen is built and drawn through gfx.c as ui_bios.c does (background, objects, text labels), frame after frame; the
+ * time is the host's (x86), good for comparing two builds of the code, not for the console's frame rate. The counts are
+ * what the console's TA gets. Art pictures (ICON.DAT, BOX.DAT) and the case panel are not part of it. */
+static double
+now_us(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec * 1e6 + (double)t.tv_nsec / 1e3;
+}
+
+static void
+page_row(void* user, int index, bpage_row* out) {
+    (void)user;
+    out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+}
+
+static const char* const titles[] = {"Shenmue II", "Crazy Taxi 2 (Disc 1)", "Sonic Adventure 2: The Trial", "Jet Set Radio",
+                                     "Skies of Arcadia (Disc 2)", "Power Stone 2", "Soul Calibur", "Rez", "Ikaruga",
+                                     "Marvel vs. Capcom 2", "Grandia II", "Space Channel 5: Part 2"};
+enum { SC_MAIN, SC_MAIN_MOVE, SC_LIST, SC_LIST_SCROLL, SC_SETTINGS, SC_FILES, SC_CD, SC_N };
+static const char* const sc_name[SC_N] = {"main menu, at rest", "main menu, changing icon", "game list, at rest",
+                                          "game list, scrolling", "settings page", "memory card grid", "CD player"};
+
+static void
+survey_one(const bios_rom* rom, int sc, int frames) {
+    static bmenu menu;
+    static blist list;
+    static bpage page;
+    static bfiles files;
+    static bcdplayer cd;
+    bmenu_init(&menu, rom, NULL);
+    menu.hw_autosort = gfx_set_autosort(1); /* every screen of ui_bios.c: the PVR sorts, not the CPU */
+    switch (sc) {
+        case SC_MAIN:
+        case SC_MAIN_MOVE:
+            bmenu_show_main(&menu, 0);
+            break;
+        case SC_LIST:
+        case SC_LIST_SCROLL:
+            blist_open(&list, &menu, 7, 300);
+            blist_goto(&list, 10);
+            break;
+        case SC_SETTINGS:
+            bpage_open(&page, &menu, 10);
+            break;
+        case SC_FILES:
+            bfiles_open(&files, &menu, 0);
+            files.present[0] = files.present[2] = files.present[3] = 1;
+            break;
+        case SC_CD:
+            bcd_open(&cd, &menu, 1, 12, 3725);
+            break;
+    }
+    gfx_stats st;
+    unsigned long tris = 0, calls_before = prim_calls, bytes_before = prim_bytes;
+    unsigned text_uploads = 0, headers = 0, vertices = 0;
+    double total = 0, worst = 0, setup_frames = 90;
+    int measured = 0;
+    gfx_stats_take(&st);
+    for (int f = 0; f < frames + (int)setup_frames; f++) {
+        double t0 = now_us();
+        if (sc == SC_MAIN_MOVE && f % 45 == 0) {
+            bmenu_select(&menu, (f / 45) % 4);
+        }
+        if (sc == SC_LIST_SCROLL && f % 5 == 0) {
+            blist_move(&list, 1);
+        }
+        bmenu_update(&menu);
+        for (int s = 0; s < 7; s++) {
+            gfx_set_label((uint16_t)BLIST_TEXT_ID(s), titles[(s + (sc == SC_LIST_SCROLL ? f / 5 : 0)) % 12]);
+            gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), titles[s % 12]);
+        }
+        if (sc <= SC_MAIN_MOVE) {
+            static const char* const icons[] = {"Play", "File", "Music", "Settings"};
+            for (int i = 0; i < 4; i++) {
+                gfx_set_label((uint16_t)BMENU_ID_ICON(i), icons[i]);
+            }
+            gfx_set_label(BMENU_ID_HEADER, "10/10/2026 10:27");
+        }
+        gfx_begin_frame(0xFF204080u, 0xFF80C0FFu);
+        bscene_draw_background(&menu.bg, gfx_sink());
+        switch (sc) {
+            case SC_MAIN:
+            case SC_MAIN_MOVE:
+                bmenu_draw_objects(&menu, gfx_sink());
+                break;
+            case SC_LIST:
+            case SC_LIST_SCROLL:
+                list.disc_number = 2;
+                blist_sync(&list);
+                blist_draw(&list, gfx_sink());
+                break;
+            case SC_SETTINGS:
+                bpage_sync(&page, page_row, NULL);
+                bpage_draw(&page, gfx_sink());
+                break;
+            case SC_FILES:
+                bfiles_sync(&files);
+                bfiles_draw(&files, gfx_sink());
+                break;
+            case SC_CD:
+                bcd_sync(&cd);
+                bcd_draw(&cd, gfx_sink());
+                break;
+        }
+        gfx_end_frame();
+        double dt = now_us() - t0;
+        gfx_stats_take(&st);
+        if (f >= (int)setup_frames) { /* the first frames fill the caches: not counted */
+            total += dt;
+            if (dt > worst) {
+                worst = dt;
+            }
+            tris += gfx_triangles();
+            text_uploads += st.text_uploads;
+            headers += st.headers;
+            vertices += st.vertices;
+            measured++;
+        }
+    }
+    (void)calls_before;
+    (void)bytes_before;
+    bmenu_free(&menu);
+    printf("%-26s %7.0f us/frame (worst %6.0f)  %5lu tris  %5u TA vertices  %3u headers  %4.1f text pictures\n", sc_name[sc],
+           total / measured, worst, tris / (unsigned long)measured, vertices / (unsigned)measured, headers / (unsigned)measured,
+           (double)text_uploads / measured);
+}
+
+static int
+survey(const char* rom_path, int frames) {
+    static uint8_t data[BIOS_ROM_SIZE];
+    FILE* f = fopen(rom_path, "rb");
+    size_t got = f ? fread(data, 1, sizeof(data), f) : 0;
+    if (f) {
+        fclose(f);
+    }
+    static bios_rom rom;
+    if (bios_rom_init(&rom, data, got) != 0) {
+        fprintf(stderr, "not a usable BIOS: %s\n", rom_path);
+        return 1;
+    }
+    quiet = 1;
+    memcpy(host_font, data + 0x100020, sizeof(host_font) - 0x20);
+    if (gfx_init(&rom) != 0) {
+        return 1;
+    }
+    for (int sc = 0; sc < SC_N; sc++) {
+        survey_one(&rom, sc, frames);
+    }
+    return 0;
+}
+
 int
 main(int argc, char** argv) {
+    if (argc > 2 && !strcmp(argv[1], "--survey")) {
+        return survey(argv[2], argc > 3 ? atoi(argv[3]) : 600);
+    }
     int frames = argc > 1 ? atoi(argv[1]) : 60;
     uint32_t r = 12345u; /* the font: any bytes, the same every run */
     for (size_t i = 0; i < sizeof(host_font); i++) {

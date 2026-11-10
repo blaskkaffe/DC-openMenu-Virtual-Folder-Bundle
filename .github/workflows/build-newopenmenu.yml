@@ -46,7 +46,7 @@ jobs:
         working-directory: openMenu/src
         run: |
           gcc -O1 -fsanitize=address,undefined -fno-sanitize-recover=undefined \
-            -DBIOS_FONT_ROM=host_font -include openmenu/test/gfx_host/host_font.h \
+            -DBIOS_FONT_ROM=host_font -DGFX_REGION_BYTE=host_region -include openmenu/test/gfx_host/host_font.h \
             openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c bios_engine/src/*.c bios_rom/src/*.c \
             -Iopenmenu/test/gfx_host/kos -I../external/uthash/include -Ibios_engine/include -Ibios_rom/include \
             -Iopenmenu_shared/include -Iopenmenu/src -lm -o gfx_host_test
