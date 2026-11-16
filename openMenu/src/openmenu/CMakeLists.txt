@@ -36,6 +36,9 @@ set(OPENMENU_SOURCES
         src/online.c
         src/backend/gdemu_sdk.c
         src/backend/dcnow_net.c
+        src/backend/netsel.c
+        src/backend/w5500.c
+        src/backend/w5500_net.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
         src/backend/events_fetch.c
