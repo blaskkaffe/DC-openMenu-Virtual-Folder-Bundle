@@ -18,6 +18,7 @@ set(OPENMENU_SOURCES
         src/history.c
         src/dbglog.c
         src/favorites.c
+        src/netprefs.c
         src/serial_log.c
         src/input.c
         src/launch.c

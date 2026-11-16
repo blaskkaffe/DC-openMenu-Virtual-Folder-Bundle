@@ -40,6 +40,15 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
             openMenu/src/openmenu/test/bench_test.c openMenu/src/openmenu/src/bench.c -o bench_test
           ./bench_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src/backend \
+            openMenu/src/openmenu/test/netsel_test.c openMenu/src/openmenu/src/backend/netsel.c -o netsel_test
+          ./netsel_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src/backend \
+            openMenu/src/openmenu/test/w5500_test.c openMenu/src/openmenu/src/backend/w5500.c -o w5500_test
+          ./w5500_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/netprefs_test.c openMenu/src/openmenu/src/netprefs.c -o netprefs_test
+          ./netprefs_test
 
       # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
       - name: gfx host test

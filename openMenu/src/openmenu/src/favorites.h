@@ -33,3 +33,6 @@ int favorites_save_ok(void);
 #define FORK_FLAG_DARK 0x10
 unsigned favorites_flags(void);
 void favorites_set_flags(unsigned flags);
+
+/* Writes the file now (the Internet settings of netprefs.h call this on every change). */
+void favorites_save_now(void);

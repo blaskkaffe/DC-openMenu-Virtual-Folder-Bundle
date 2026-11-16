@@ -7,6 +7,7 @@
 #include <backend/gd_list.h>
 
 #include "favorites.h"
+#include "netprefs.h"
 
 #ifdef _arch_dreamcast
 #include <fcntl.h>
@@ -25,7 +26,8 @@
 #define FAV_OLD_SD_FILE "/sd/OPENMENU/FAVORITES.DAT"
 #define FAV_SD_DIR "/sd/OPENMENU"
 #define FAV_VERSION 1
-#define FAV_CARD_BLOCKS 3               /* header 0x80 + icon 512 + data 8 + 4 * FAV_MAX = 1048 bytes */
+#define FAV_CARD_BLOCKS 4               /* header 0x80 + icon 512 + data 8 + 4 * FAV_MAX + NP_MAX_BYTES (the Internet settings, netprefs.h) = 1648 bytes */
+#define FAV_PAYLOAD (8 + 4 * FAV_MAX + NP_MAX_BYTES)
 
 static uint32_t hashes[FAV_MAX];
 static int hash_count;
@@ -49,7 +51,9 @@ fav_pack(uint8_t* out) {
             out[8 + i * 4 + b] = (uint8_t)(hashes[i] >> (8 * b));
         }
     }
-    return 8 + hash_count * 4;
+    int len = 8 + hash_count * 4;
+    len += np_pack(out + len, FAV_PAYLOAD - len); /* the Internet settings follow the hashes; a file without them reads as the defaults */
+    return len;
 }
 
 static int
@@ -67,6 +71,7 @@ fav_unpack(const uint8_t* in, int size) {
                     | ((uint32_t)in[11 + i * 4] << 24);
     }
     hash_count = n;
+    np_unpack(in + 8 + n * 4, size - 8 - n * 4); /* -1 and the defaults when the file has no such tail */
     return 0;
 }
 
@@ -97,7 +102,7 @@ put_text(uint8_t* dst, int len, const char* text) {
 /* Returns the size of the file written into `out` (at least VMS_DATA + 8 + 4 * FAV_MAX bytes). */
 static int
 vms_wrap(uint8_t* out) {
-    uint8_t payload[8 + 4 * FAV_MAX];
+    uint8_t payload[FAV_PAYLOAD];
     int len = fav_pack(payload);
     memset(out, 0, VMS_DATA);
     put_text(out + 0x00, 16, "OPENMENU EXTEND");
@@ -146,7 +151,7 @@ sd_load(void) {
     if (!sd_savefile_available()) {
         return -1;
     }
-    uint8_t buf[8 + 4 * FAV_MAX];
+    uint8_t buf[FAV_PAYLOAD];
     int fd = open(FAV_SD_FILE, O_RDONLY);
     if (fd < 0) {
         fd = open(FAV_OLD_SD_FILE, O_RDONLY);
@@ -186,7 +191,7 @@ sd_save(void) {
     if (!sd_savefile_available()) {
         return -1;
     }
-    uint8_t buf[8 + 4 * FAV_MAX];
+    uint8_t buf[FAV_PAYLOAD];
     int len = fav_pack(buf);
     mkdir(FAV_SD_DIR, 0755); /* fails if it is there already, which is fine */
     int fd = open(FAV_SD_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -201,7 +206,7 @@ sd_save(void) {
 
 static int
 card_save(void) {
-    uint8_t file[VMS_DATA + 8 + 4 * FAV_MAX];
+    uint8_t file[VMS_DATA + FAV_PAYLOAD];
     int size = vms_wrap(file);
     if (card_slot >= 0 && vf_write_named(card_slot, FAV_FILE, file, size) == 0) {
         return 0;
@@ -229,11 +234,27 @@ resolve(void) {
     }
 }
 
+static void
+save_all(void) {
+#ifdef _arch_dreamcast
+    int sd = sd_save();
+    int card = card_save();
+    last_save_ok = sd == 0 || card == 0;
+#endif
+}
+
+void
+favorites_save_now(void) {
+    save_all();
+}
+
 void
 favorites_init(void) {
     hash_count = 0;
     fork_flags = 0;
     card_slot = -1;
+    np_reset();
+    np_set_changed_hook(save_all);
 #ifdef _arch_dreamcast
     if (sd_load() != 0) {
         hash_count = 0;
