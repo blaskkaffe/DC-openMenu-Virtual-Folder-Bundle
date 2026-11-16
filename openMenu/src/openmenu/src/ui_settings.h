@@ -61,6 +61,10 @@ void uis_change(int row, int delta);
 
 /* Write the changes to the save file. Returns 0 on success. */
 int uis_commit(void);
+/* Remember the settings as they are now (when the Settings screen opens): uis_commit() then writes the save file only if
+ * something was changed since. Writing it to the memory card or SD takes a good part of a second in which the menu stands
+ * still (every block waits for a vblank), so leaving Settings without a change must not do it. */
+void uis_snapshot(void);
 
 /* The clock format as the Settings row shows it (0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat), and the move of an
  * older build's .beat choice out of the shared save file. */

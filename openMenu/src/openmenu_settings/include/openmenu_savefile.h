@@ -30,6 +30,10 @@ bool savefile_lcd_owned(void);
 
 int8_t savefile_save();
 
+/* A checksum of every saved setting (the savefile's variables as they are in memory now): two equal values mean nothing was
+ * changed in between, so a save would write the same bytes again. */
+uint32_t savefile_content_hash(void);
+
 /* Save/Load window helper functions */
 int8_t savefile_get_device_status(int8_t device_id);
 uint32_t savefile_get_device_version(int8_t device_id);

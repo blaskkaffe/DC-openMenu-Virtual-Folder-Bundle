@@ -59,6 +59,14 @@ typedef struct bmenu {
  * still starts from its first frame. As the BIOS's gui_init registers its textures before the first frame. */
 void bmenu_prewarm(bmenu* m, const bscene_sink* sink, int frames);
 
+/* The same for the game list, the Settings page, the file grid and the CD player (their models, motions and ROM textures):
+ * each is opened on m, run for a few frames and drawn into `sink`, then m's scripts are put back as they were. `row` is the
+ * Settings page's row callback (its icons), NULL for plain ones; `page_rows` its number of rows. Takes a good part of a
+ * second on the console, so it belongs before the first frame (behind the start colour), not in the loop. */
+struct bpage_row;
+typedef void (*bmenu_page_row_fn)(void* user, int index, struct bpage_row* out);
+void bmenu_prewarm_screens(bmenu* m, const bscene_sink* sink, bmenu_page_row_fn row, void* user, int page_rows);
+
 void bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy, float dz);
 
 void bmenu_init(bmenu* m, const bios_rom* rom, const bvm_host* host);

@@ -1553,6 +1553,7 @@ handle_main(button_t b) {
                 screen = SCREEN_FILE;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
+                uis_snapshot();
                 bpage_open(&page, &menu, uis_count());
                 page.pal = console_is_pal();
                 settings_popup = 0;
@@ -2466,6 +2467,8 @@ ui_bios_run(const bios_rom* rom) {
      * of the art DATs (else read when the game list first opens), and the Clock extender's one flash write (else in frame 1). */
     bmenu_prewarm(&menu, gfx_warm_sink(), 60);
     dbglog_boot("warm", (unsigned)timer_ms_gettime64());
+    bmenu_prewarm_screens(&menu, gfx_warm_sink(), page_row, NULL, uis_count()); /* game list, Settings, file grid, CD player */
+    dbglog_boot("warm2", (unsigned)timer_ms_gettime64());
     gfx_preload_art_index();
     dbglog_boot("art", (unsigned)timer_ms_gettime64());
     clock_extender_tick();

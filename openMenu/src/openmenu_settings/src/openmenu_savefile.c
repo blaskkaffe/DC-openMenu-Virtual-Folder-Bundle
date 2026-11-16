@@ -1028,6 +1028,22 @@ void
 clock_extender_tick(void) {}
 #endif
 
+uint32_t
+savefile_content_hash(void) {
+    static const unsigned char width[CRAYON_NUM_TYPES] = {8, 4, 4, 4, 2, 2, 1, 1, 1}; /* the order of the CRAYON_TYPE_ enum */
+    const crayon_savefile_data_t* d = &savefile_details.savedata;
+    const void* const data[CRAYON_NUM_TYPES] = {d->doubles, d->floats, d->u32, d->s32, d->u16, d->s16, d->u8, d->s8, d->chars};
+    uint32_t h = 2166136261u;
+    for (int t = 0; t < CRAYON_NUM_TYPES; t++) {
+        const unsigned char* p = (const unsigned char*)data[t];
+        const size_t n = p ? (size_t)d->lengths[t] * width[t] : 0;
+        for (size_t i = 0; i < n; i++) {
+            h = (h ^ p[i]) * 16777619u;
+        }
+    }
+    return h;
+}
+
 int8_t
 savefile_save() {
     settings_sanitize();

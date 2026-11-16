@@ -324,13 +324,29 @@ uis_run(int row) {
     }
 }
 
+static uint32_t snapshot_hash;
+static int snapshot_valid;
+
+void
+uis_snapshot(void) {
+    snapshot_hash = savefile_content_hash();
+    snapshot_valid = 1;
+}
+
 int
 uis_commit(void) {
+    if (snapshot_valid && !sys_dirty && savefile_content_hash() == snapshot_hash) {
+        return 0; /* nothing changed since the screen was opened */
+    }
     if (sys_dirty) {
         sys_dirty = 0;
         save_syscfg_settings();
     }
-    return savefile_save() >= 0 ? 0 : -1;
+    if (savefile_save() < 0) {
+        return -1;
+    }
+    uis_snapshot(); /* what is on the card now */
+    return 0;
 }
 
 /* ---- Card defaults: the [BIOSMENU] section of DEFAULTS.INI on the menu disc ------------------------------------------

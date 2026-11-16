@@ -42,6 +42,7 @@ session); the debug log's boot marks (`dbglog_boot`) and `HITCH` lines measure t
 | 11 | `sound_init` | sound.c | driver to sound RAM, **250 ms sleep** for the driver to start, banks |
 | 12 | `bmenu_init`, `bmenu_show_main`, `set_icon_labels`, `update_clock` | ui_bios | the scripts are created, the globe icon set |
 | 13 | **new: `bmenu_prewarm`** | bios_menu.c | runs a copy of the scripts 60 frames and "draws" it into `gfx_warm_sink`: all main-menu models, motions and ROM textures (and the clouds) are loaded now. Before, each was loaded in the frame where it first appeared, i.e. during the fade-in (ROM textures are copied from the uncached ROM, models parsed). As the BIOS's `gui_register_rom_textures`. The menu itself is not advanced (checked on the host: same object state after 90 frames with and without). |
+| 13b | **new: `bmenu_prewarm_screens`** | bios_prewarm.c | the same for the game list, the Settings page, the file grid and the CD player: each is opened on the menu's scene, run 20 frames and drawn into `gfx_warm_sink`, then the main menu's scripts are put back (checked on the host: byte-identical). Boot mark `warm2`. Before, the first visit to each loaded its models and textures in its first frame (a stall: the fps counter dipped when A was pressed on Play). Costs boot time behind the start colour: see `warm2` in the boot log and tell me if it is too long (then it can be cut to the list only). |
 | 14 | **new: `gfx_preload_art_index`** | gfx.c | the tables of DISC/ICON/BOX DATs; before, read on the menu thread when the game list first opened |
 | 15 | **moved: `clock_extender_tick`** | settings | the Clock extender's flash write; before, in frame 1 of the loop |
 | 16 | 3 frames in the start colour | ui_bios | |
@@ -66,8 +67,8 @@ session); the debug log's boot marks (`dbglog_boot`) and `HITCH` lines measure t
 ## Not changed (yet)
 
 - `sound_init`'s 250 ms sleep and the VMU reads of `savefile_init`: boot time only (screen not up yet).
-- Opening a screen for the first time (Play, File, Settings, Internet) still loads that screen's models and textures in its first
-  frames; the same prewarm can be done per screen if the HITCH log shows it.
+- Opening the Internet screen and the file screen's popups for the first time still loads their models and textures in their first
+  frames (Play, Settings, the file grid and the CD player are warmed at start, step 13b).
 - The restore before a game reads the 128 KB image on the menu thread (a modal popup is up; one dropped frame).
 - KOS's own drivers (modem, libppp reader thread, BBA, DHCP) are not ours; if the HITCH log still shows long frames while
   connecting, they are the next suspects.

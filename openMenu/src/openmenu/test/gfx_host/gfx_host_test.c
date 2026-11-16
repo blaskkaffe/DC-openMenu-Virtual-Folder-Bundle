@@ -396,6 +396,16 @@ survey_one(const bios_rom* rom, int sc, int frames) {
     static bfiles files;
     static bcdplayer cd;
     bmenu_init(&menu, rom, NULL);
+    bmenu_show_main(&menu, 0);
+    if (getenv("SURVEY_WARM")) { /* as ui_bios.c at start-up: the main menu, then the other screens */
+        bmenu_prewarm(&menu, gfx_warm_sink(), 60);
+        static bvm before;
+        memcpy(&before, &menu.vm, sizeof(bvm));
+        bmenu_prewarm_screens(&menu, gfx_warm_sink(), page_row, NULL, 10);
+        if (memcmp(&before, &menu.vm, sizeof(bvm)) != 0) {
+            printf("PREWARM CHANGED THE MENU\n");
+        }
+    }
     menu.hw_autosort = gfx_set_autosort(1); /* every screen of ui_bios.c: the PVR sorts, not the CPU */
     switch (sc) {
         case SC_MAIN:
@@ -421,7 +431,7 @@ survey_one(const bios_rom* rom, int sc, int frames) {
     gfx_stats st;
     unsigned long tris = 0, calls_before = prim_calls, bytes_before = prim_bytes;
     unsigned text_uploads = 0, headers = 0, vertices = 0;
-    double total = 0, worst = 0, setup_frames = 90;
+    double total = 0, worst = 0, setup_frames = 90, first_worst = 0;
     int measured = 0;
     gfx_stats_take(&st);
     for (int f = 0; f < frames + (int)setup_frames; f++) {
@@ -472,6 +482,9 @@ survey_one(const bios_rom* rom, int sc, int frames) {
         }
         gfx_end_frame();
         double dt = now_us() - t0;
+        if (f < 12 && dt > first_worst) {
+            first_worst = dt;
+        }
         gfx_stats_take(&st);
         if (f >= (int)setup_frames) { /* the first frames fill the caches: not counted */
             total += dt;
@@ -488,6 +501,11 @@ survey_one(const bios_rom* rom, int sc, int frames) {
     (void)calls_before;
     (void)bytes_before;
     bmenu_free(&menu);
+    if (getenv("SURVEY_FIRST")) {
+        printf("%-26s slowest of the first 12 frames: %6.0f us (a frame at rest: %4.0f)\n", sc_name[sc], first_worst, total / measured);
+        bmenu_free(&menu);
+        return;
+    }
     printf("%-26s %7.0f us/frame (worst %6.0f)  %5lu tris  %5u TA vertices  %3u headers  %4.1f text pictures\n", sc_name[sc],
            total / measured, worst, tris / (unsigned long)measured, vertices / (unsigned)measured, headers / (unsigned)measured,
            (double)text_uploads / measured);
@@ -512,6 +530,9 @@ survey(const char* rom_path, int frames) {
         return 1;
     }
     for (int sc = 0; sc < SC_N; sc++) {
+        if (getenv("SURVEY_ONLY") && atoi(getenv("SURVEY_ONLY")) != sc) {
+            continue;
+        }
         survey_one(&rom, sc, frames);
     }
     return 0;

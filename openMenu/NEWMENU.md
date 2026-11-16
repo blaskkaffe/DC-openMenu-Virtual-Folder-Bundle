@@ -380,6 +380,16 @@ BACK marker: selectable on the game list, Settings (BIOS cursor table 0x8C037D70
   method as the big box. Same height as before. To go back: restore the old `set_scale(pill, ...)` line in `blist_sync` and remove the
   `stretch_y*` lines of the pill branch in `blist_draw`.
 
+## Leaving Settings, opening Play (hitches reported on the console)
+
+- Leaving the Settings page rewrote the whole save file (memory card or SD, plus the VMU icon and beep) every time, even when nothing
+  was changed. Each VMU block write waits for a vblank, so the menu stood still for a good part of a second and the fps counter
+  showed 30-40 for a while. `uis_snapshot()` (when Settings opens) and `savefile_content_hash()` now let `uis_commit()` skip the
+  write when no setting was changed. A changed setting is saved as before. The list is still rebuilt on leaving (back to the root
+  folder, as before); if that is also slow on the console it is the next thing to look at.
+- Pressing A on Play for the first time loaded the list's models and textures in that frame. `bmenu_prewarm_screens` does it at start-up
+  (BOOT_TIMELINE.md, 13b). To undo: remove the call in `ui_bios.c` (the `warm2` mark).
+
 ## Frame time
 
 Measured as SH-4 instructions per frame of the engine (scene building only, `qemu-sh4` with one instruction per
