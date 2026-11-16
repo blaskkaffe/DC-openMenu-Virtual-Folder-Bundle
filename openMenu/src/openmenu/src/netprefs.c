@@ -354,3 +354,8 @@ int
 np_event_toggle(const char* title) {
     return title ? hash_toggle(star_event, &star_event_n, NP_STAR_EVENTS, title_hash(title)) : -1;
 }
+
+int
+np_event_starred_any(void) {
+    return star_event_n > 0;
+}

@@ -19,6 +19,7 @@ set(OPENMENU_SOURCES
         src/dbglog.c
         src/favorites.c
         src/netprefs.c
+        src/event_phase.c
         src/serial_log.c
         src/input.c
         src/launch.c
@@ -40,6 +41,7 @@ set(OPENMENU_SOURCES
         src/backend/netsel.c
         src/backend/w5500.c
         src/backend/w5500_net.c
+        src/backend/net_test.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
         src/backend/events_fetch.c

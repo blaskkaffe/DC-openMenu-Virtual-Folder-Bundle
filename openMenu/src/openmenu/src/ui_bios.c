@@ -32,6 +32,7 @@
 #include <bios_surface.h>
 #include "gfx.h"
 #include "favorites.h"
+#include "netprefs.h"
 #include "history.h"
 #include "input.h"
 #include "launch.h"
@@ -218,6 +219,7 @@ update_clock(void) {
     if (oh.shown && oh.state == 2 && oh.players >= 0) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
+
     char key[64];
     int dark = uis_dark();
     snprintf(key, sizeof(key), "%s|%s|%d", text, counts, dark);
@@ -1460,6 +1462,12 @@ draw_frame(void) {
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
+    if (screen == SCREEN_MAIN || screen == SCREEN_GAMES) { /* a starred player, game or event that is on (Internet screen, Y): about 20 seconds */
+        char star_note[64];
+        if (online_notice_get(star_note, sizeof(star_note))) {
+            gfx_text(star_note, TEXT_X, (screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL) - 30.0f, 0.5f, 0xFFF0E060u, 1);
+        }
+    }
     if (report_page) {
         draw_report();
     }
@@ -1590,6 +1598,7 @@ svmu_active(void) {
  * here and only returned because the launch failed. */
 static int
 start_game(const gd_item* g) {
+    online_select_network_for(g); /* the game's own network (or the preferred one) when the DreamPi add-on offers both */
     if (svmu_applies(g)) {
         svmu_item = g;
         svmu_row = 0;
@@ -1796,7 +1805,14 @@ options_name(int index) {
         case OPT_EMU: return launch_psx_emulator() ? "Emulator  < Bloom >" : "Emulator  < Bleem! >";
         case OPT_FAVORITE: return favorites_is(uil_item(uil_cursor())) ? "Favorite  < On >" : "Favorite  < Off >";
         case OPT_INFO: return "Game information";
-        case OPT_NETWORK: return "Network (coming soon)";
+        case OPT_NETWORK: {
+            static char net[40];
+            const gd_item* it = uil_item(uil_cursor());
+            int saved = it ? np_game_net_saved(gd_item_recent_hash(it)) : NP_NET_NONE;
+            int shown = saved != NP_NET_NONE ? saved : np_net();
+            snprintf(net, sizeof(net), saved != NP_NET_NONE ? "Network  < %s >" : "Network  < %s, preferred >", shown == NP_NET_DCNET ? "DCNet" : "DCNow!");
+            return net;
+        }
         case OPT_CHEATS: return "Cheats (coming soon)";
         default: return "?";
     }
@@ -1805,7 +1821,7 @@ options_name(int index) {
 static int
 options_dim(int index) {
     int id = index >= 0 && index < opt_count ? opt_ids[index] : -1;
-    return id == OPT_NETWORK || id == OPT_CHEATS;
+    return id == OPT_CHEATS;
 }
 
 static void
@@ -1861,6 +1877,24 @@ toggle_favorite(void) {
     }
 }
 
+/* The game's own network: DCNow! -> DCNet -> the preferred one (nothing saved for it). Used when the game is started online. */
+static void
+cycle_game_network(void) {
+    const gd_item* it = uil_item(uil_cursor());
+    if (!it) {
+        return;
+    }
+    unsigned int h = gd_item_recent_hash(it);
+    int saved = np_game_net_saved(h);
+    int next = saved == NP_NET_NONE ? NP_NET_DCNOW : saved == NP_NET_DCNOW ? NP_NET_DCNET : NP_NET_NONE;
+    if (np_set_game_net(h, next) < 0) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("Too many games have their own network");
+        return;
+    }
+    sound_sfx(BAUDIO_SFX_CURSOR);
+}
+
 static void
 handle_options(button_t b) {
     options_build();
@@ -1888,6 +1922,8 @@ handle_options(button_t b) {
                 sound_sfx(BAUDIO_SFX_CURSOR);
             } else if (id == OPT_FAVORITE) {
                 toggle_favorite();
+            } else if (id == OPT_NETWORK) {
+                cycle_game_network();
             }
             break;
         case BTN_A:
@@ -1900,6 +1936,7 @@ handle_options(button_t b) {
                 case OPT_DISC:
                 case OPT_EMU: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
                 case OPT_FAVORITE: toggle_favorite(); break;
+                case OPT_NETWORK: cycle_game_network(); break;
                 case OPT_INFO:
                     options_open = 0;
                     if (!viewer_open) {

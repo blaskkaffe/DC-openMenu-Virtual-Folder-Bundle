@@ -60,3 +60,4 @@ int np_star_game_count(void);
 uint32_t np_star_game(int index);
 int np_event_starred(const char* title);
 int np_event_toggle(const char* title);
+int np_event_starred_any(void); /* at least one event is starred */

@@ -3,6 +3,14 @@
  * online_time_sync) is the main branch's, so the saved settings and the connection behave the same. */
 #pragma once
 
+/* Hands the saved Internet settings (netprefs.h: the Connection setting, the adapter's address mode, the dial number and login) to the
+ * connection engine. Called at boot and after any of them changed. */
+void online_apply_prefs(void);
+
+struct gd_item;
+/* Before a game starts: switches the DreamPi to the game's network (netprefs.h) when it differs. */
+void online_select_network_for(const struct gd_item* g);
+
 /* At boot, after the settings are loaded: Auto-Connect starts dialing on its own thread, as the main branch does. */
 void online_boot(void);
 
@@ -26,3 +34,6 @@ typedef struct online_header {
     int network; /* the network the DreamPi has selected while online: 0 not known (plain Dreamcast Now!), 1 DCNow!, 2 DCNET */
 } online_header;
 void online_header_get(online_header* out);
+
+/* A starred player, game or event that is on now (netprefs.h): a short text (about 17 characters) for the top bar's upper row for some seconds. Returns 1 while there is one. */
+int online_notice_get(char* out, size_t size);

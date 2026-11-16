@@ -713,6 +713,27 @@ adapter_settings(void) {
     }
 }
 
+/* Asks every way whether it is there (the interface test). Only while no connection is up or coming up: the serial probe takes the port. Worker thread. */
+unsigned
+dcnow_net_probe_all(void) {
+    static const dcnow_device_t ways[] = {DCNOW_DEV_BBA, DCNOW_DEV_LAN, DCNOW_DEV_W5500, DCNOW_DEV_SERIAL, DCNOW_DEV_MODEM};
+    unsigned mask = 0;
+
+    cancel_requested = 0;
+    for (unsigned i = 0; i < sizeof(ways) / sizeof(ways[0]); i++) {
+        if (probe_way(ways[i])) {
+            mask |= netsel_bit(ways[i]);
+            if (ways[i] == DCNOW_DEV_SERIAL) {
+                serial_port_close();
+            } else if (ways[i] == DCNOW_DEV_W5500) {
+                w5500_net_unregister(); /* gives the pins back; nothing was registered */
+            }
+        }
+    }
+    seen_mask |= mask;
+    return mask;
+}
+
 /* Connects by the way the Connection setting names, or by the fastest one that answers (netsel.h order). Each way is probed in turn;
  * the first that is there is used and a failure after that is its own (the network stack is up by then, so no hop to a slower way). */
 static void

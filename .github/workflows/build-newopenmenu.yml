@@ -49,6 +49,9 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
             openMenu/src/openmenu/test/netprefs_test.c openMenu/src/openmenu/src/netprefs.c -o netprefs_test
           ./netprefs_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/event_phase_test.c openMenu/src/openmenu/src/event_phase.c -o event_phase_test
+          ./event_phase_test
 
       # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
       - name: gfx host test

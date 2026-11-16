@@ -29,6 +29,9 @@ const char* dcnow_device_short_name(dcnow_device_t dev);
 void dcnow_net_set_interface(int setting);
 /* Which ways have answered a probe since the start: bits of netsel_bit(). */
 unsigned dcnow_net_seen(void);
+/* Asks every way whether it is there, for the interface test; the connection must be idle. Returns a mask of netsel_bit(). Takes a second or two
+ * (the DreamPi cable is asked on the serial port): worker threads only. */
+unsigned dcnow_net_probe_all(void);
 /* What the modem and the serial link dial and log in with; empty strings keep DreamPi's fixed values. */
 void dcnow_net_set_dial(const char* number, const char* login, const char* password);
 /* The network settings of an adapter (BBA, LAN, W5500): 0 the console's own from the flash ROM, 1 DHCP, 2 the fixed address given. */
