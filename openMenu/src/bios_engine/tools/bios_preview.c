@@ -53,6 +53,7 @@ typedef struct {
 } frag;
 static frag* frags;
 static int frag_n, frag_head[H][W];
+static int last_frags; /* translucent fragments of the last frame resolved (BIOS_PREVIEW_STATS=1 prints it per pixel of the screen) */
 
 static void
 frag_add(int x, int y, float iw, const float col[4]) {
@@ -101,6 +102,9 @@ frag_resolve(void) {
             }
             frag_head[y][x] = -1;
         }
+    }
+    if (frag_n > last_frags) {
+        last_frags = frag_n;
     }
     frag_n = 0;
 }
@@ -1083,5 +1087,8 @@ main(int argc, char** argv) {
     }
     fclose(out);
     printf("wrote %s (%d frames)\n", argv[2], frames);
+    if (getenv("BIOS_PREVIEW_STATS")) {
+        printf("translucent fragments: %d = %.2f layers per screen pixel\n", last_frags, (double)last_frags / (double)(W * H));
+    }
     return 0;
 }

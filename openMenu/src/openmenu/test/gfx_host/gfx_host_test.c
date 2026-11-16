@@ -401,7 +401,9 @@ survey_one(const bios_rom* rom, int sc, int frames) {
         bmenu_prewarm(&menu, gfx_warm_sink(), 60);
         static bvm before;
         memcpy(&before, &menu.vm, sizeof(bvm));
+#ifndef OLD_TREE /* the code before bmenu_prewarm_screens existed (for before/after comparisons) */
         bmenu_prewarm_screens(&menu, gfx_warm_sink(), page_row, NULL, 10);
+#endif
         if (memcmp(&before, &menu.vm, sizeof(bvm)) != 0) {
             printf("PREWARM CHANGED THE MENU\n");
         }
