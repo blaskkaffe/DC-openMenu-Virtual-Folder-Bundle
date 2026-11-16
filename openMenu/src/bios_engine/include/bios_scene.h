@@ -94,6 +94,7 @@ typedef struct bscene {
     /* Give the row bar (model 41) small corners on its left end too, the radius of its right end (the BIOS help box has
      * them on all four): the rounded cap's 13 outline points move onto a flat edge with two corner arcs. */
     int small_left;
+    float invw_mul; /* set while a model is drawn: the object's depth_mul (bvm_obj), applied to the 1/w of its vertices */
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;

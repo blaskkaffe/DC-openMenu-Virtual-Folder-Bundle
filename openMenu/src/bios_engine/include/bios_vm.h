@@ -76,6 +76,7 @@ typedef struct bvm_obj {
     bvm_ftween scale_tw[3]; /* only .cur is used */
     float model_off[3];     /* the model is drawn this far (world units, x y z) from the object's position; the caption text stays on the position */
     float model_scale;      /* multiplies the scale when drawn (0: 1): for models made at another size than the script expects */
+    float depth_mul;        /* multiplies the 1/w of every vertex when drawn (0: 1): below 1 puts the object behind others at the same place without moving or resizing it */
     bvm_ftween motion_tw;   /* current motion frame (.cur), loops at .target back to var[7] */
 
     /* text surface (ops 0x70..0x7B), recorded for the renderer */

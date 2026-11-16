@@ -26,6 +26,9 @@
 #define PILL_CAP_L (-17.1f)
 #define PILL_CAP_R 19.0f
 #define PILL_F 0.9200f
+#define PILL_HALF_H 2.25f     /* the pill model: half its height, */
+#define PILL_STRAIGHT_Y 1.85f /* where its straight sides end (the corners are chamfers of 0.4), */
+#define PILL_LEFT_X (-17.5f)  /* and its leftmost x */
 #define PILL_SCALE 0.859375f
 /* disc number of a multi-disc game: the BIOS 3D digit models (model 21 + digit, about 5.2 x 6.9 units, no
  * motion) at the bottom right of the spinning CD; sizes relative to the disc's scale */
@@ -338,7 +341,7 @@ blist_sync(blist* l) {
             (void)box_h;
         }
         if (pill) {
-            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
+            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE, PILL_SCALE); /* made lower in blist_draw, not squeezed: the corners keep their shape */
             pill->var[1] = sel; /* the selected row is lit */
         }
         if (icon) {
@@ -436,6 +439,12 @@ blist_draw(blist* l, const bscene_sink* sink) {
                 m->scene.stretch_a = PILL_CAP_L;
                 m->scene.stretch_b = PILL_CAP_R;
                 m->scene.stretch_f = PILL_F;
+                /* a row is lower than the settings page's: only the middle band of the pill gets lower, its chamfered corners
+                 * (0.4 units) stay as on the settings page */
+                const float pitch = pitch_px(l->slots);
+                m->scene.stretch_yc = PILL_STRAIGHT_Y;
+                m->scene.stretch_yx = PILL_LEFT_X;
+                m->scene.stretch_yd = PILL_HALF_H * ((pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX - 1.0f);
             } else {
                 m->scene.stretch_on = 0;
             }

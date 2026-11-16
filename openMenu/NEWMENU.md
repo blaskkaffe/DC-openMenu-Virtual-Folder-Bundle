@@ -367,6 +367,19 @@ preview composites the main menu per pixel the same way (`BIOS_PREVIEW_PRESORT=1
 within one level on every icon and pill pixel.
 BACK marker: selectable on the game list, Settings (BIOS cursor table 0x8C037D70) and the File card grid (0x8C03884C).
 
+## Changes after the first hardware test of the rendering clean-up (reversible)
+
+- Main menu, caption pills behind the icons: the pills (object 0x204, model 5) lie only 0.6 to 4 units behind the icons, and on a
+  console the controller, VMU and clock were seen behind their pills. The pills' 1/w is multiplied by `BMENU_PILL_DEPTH` (0.95,
+  `bios_menu.c`, through the object's `depth_mul`): lower in depth only, same place and size on the screen. To go back to the
+  BIOS's own depth set `BMENU_PILL_DEPTH` to 1.0f. The PC preview (per-pixel sorting) cannot show the difference well; judge it on
+  the console. The globe (Music while Online) is still 40 units back on purpose (`ui_bios.c`, `bmenu_set_icon_model`).
+- Game list, the orange pill of the selected row: it was squeezed along y (non-uniform scale), so its chamfered corners (0.4 units)
+  were flatter than on the Settings page. It now keeps the Settings page's pill at full scale and only its middle band is made lower
+  (`stretch_yc/yd/yx` for the pill in `blist_draw`, constants `PILL_HALF_H`, `PILL_STRAIGHT_Y`, `PILL_LEFT_X` in `bios_list.c`), the same
+  method as the big box. Same height as before. To go back: restore the old `set_scale(pill, ...)` line in `blist_sync` and remove the
+  `stretch_y*` lines of the pill branch in `blist_draw`.
+
 ## Frame time
 
 Measured as SH-4 instructions per frame of the engine (scene building only, `qemu-sh4` with one instruction per

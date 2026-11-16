@@ -121,6 +121,19 @@ apply_icon_models(bmenu* m) {
     }
 }
 
+/* The caption pills (object 0x204, model 5) lie only 0.6 to 4 units behind the icons, and the PVR's sorting of translucent
+ * polygons does not always keep the icon in front (the controller, VMU and clock were seen behind their pills on a console).
+ * Their depth is lowered by a few percent, not moved: the pills keep their place and size on the screen.
+ * BMENU_PILL_DEPTH 1.0f gives the BIOS's own depth back. */
+#define BMENU_PILL_DEPTH 0.95f
+static void
+apply_pill_depth(bmenu* m) {
+    bvm_obj* pills = bvm_find(&m->vm, 0x204);
+    if (pills) {
+        pills->depth_mul = BMENU_PILL_DEPTH;
+    }
+}
+
 void
 bmenu_prewarm(bmenu* m, const bscene_sink* sink, int frames) {
     bvm* vm = (bvm*)malloc(sizeof(bvm)); /* a copy of the scripts' state (about 77 KB), for this only */
@@ -155,6 +168,7 @@ void
 bmenu_update(bmenu* m) {
     bvm_update(&m->vm);
     apply_icon_models(m);
+    apply_pill_depth(m);
     dcbg_step(&m->bg);
     m->frames++;
 }

@@ -132,6 +132,7 @@ typedef struct {
     int32_t rot[3];
     float scl[3];
     float color[4];
+    float depth_mul;
     float mframe;
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
@@ -252,6 +253,7 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     if (offs) {
         memcpy(k->color, offs, sizeof(k->color));
     }
+    k->depth_mul = o->depth_mul;
     k->mframe = (o->flags & BVM_F_MOTION) ? o->motion_tw.cur : 0.0f;
     if (s->stretch_on) {
         k->stretch_on = 1;
@@ -653,6 +655,7 @@ transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
             }
             nj_vec3 w = nj_mat_apply(m, src);
             scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
+            scratch_w[i] *= s->invw_mul;
             {
                 /* 0x8C0989D8 with the light (0, 0, -1) in view space: d = max(0, nz) of the transformed normal,
                  * not renormalised (the object's scale counts) */
@@ -831,6 +834,7 @@ draw_model(bscene* s, const bvm_obj* o, const nj_mat4* obj_m, const float* offs,
     const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
     nj_mat4* world = s->pose;
     nj_object_pose(obj, mo, o->motion_tw.cur, world);
+    s->invw_mul = o->depth_mul > 0.0f ? o->depth_mul : 1.0f;
     for (int n = 0; n < obj->count; n++) {
         const nj_mesh* mesh = obj->nodes[n].mesh;
         if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE)) {
