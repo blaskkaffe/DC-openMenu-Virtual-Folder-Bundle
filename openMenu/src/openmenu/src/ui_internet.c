@@ -1560,7 +1560,17 @@ draw_footer(void) {
     } else if (page == PAGE_ONLINE) {
         text = "A: join or start  Y: star  START: players";
     } else if (page == PAGE_PLAY && sel[LIST_PLAY] < ngames) {
-        text = games[sel[LIST_PLAY]].browser ? "A: start the browser" : "A: start  Y: star  START: network";
+        const game_row* g = &games[sel[LIST_PLAY]];
+        struct db_item* meta = NULL;
+        if (g->browser) {
+            text = "A: start the browser";
+        } else if (have_meta && !db_get_meta(g->item->product, &meta) && meta && (meta->network & 3)) { /* what META.DAT says about its connections */
+            static const char* const how[] = {"", "modem", "broadband adapter", "modem or broadband adapter"};
+            snprintf(line, sizeof(line), "Connects by: %s  START: network", how[meta->network & 3]);
+            text = line;
+        } else {
+            text = "A: start  Y: star  START: network";
+        }
     } else if (page == PAGE_EVENTS) {
         text = view[page] == VIEW_A ? (nev_rows > 0 ? "A: open  Y: star  START: news" : "START: news") : (nnews > 0 ? "A: read  START: events" : "START: events");
     } else if (page == PAGE_SETTINGS) {

@@ -194,6 +194,16 @@ I
 - [ ] Clock extender On: one flash write per start (date survives a flat battery); Off: none
 - [ ] DEFAULTS.INI `[BIOSMENU]` keys applied at start with Card defaults On, ignored with it Off; a bad key shows as `OM cfg`
 
+### Internet screen, connection ways, stars (new, nothing of it has run on a console)
+- [ ] Four buttons: Online, Play, Events, Settings; START switches players/games and events/news; B leaves the ISP settings and the test before the screen
+- [ ] Settings > Connect by: Auto with only a modem, only a DreamPi cable, only a BBA, only a W5500 (SD adapter removed): which one is used and what the status lines say; forcing a way that is not there says so
+- [ ] W5500: found, DHCP address, a page loads, the link survives a hang-up and a game launch; debug output (serial log) comes back after a failed probe
+- [ ] Settings > Network test: ways found when idle; address, DNS and server times while online
+- [ ] ISP settings: fixed IP/mask/gateway/DNS reach a BBA, DHCP preset, custom dial number/login/password reach a modem or serial dial; Reset goes back
+- [ ] Y stars a player / game / event; the star shows, survives a restart (memory card and SD copy), a notice appears over the main menu when it is on; the file with 4 blocks fits the card
+- [ ] X popup of a game: Network (DCNow!/DCNet/preferred); on a DreamPi with the add-on the game starts on that network
+- [ ] Events: LIVE for the first three hours after the start, then gone; the time zone of the sources against the console clock
+
 ### Performance test (Settings > Other > Performance test)
 - [ ] Capture running (`serial_capture.py`, or the cable in the DreamPi), not online over the serial cable
 - [ ] The test runs by itself through all screens twice (about 2 minutes), START stops it; the step name shows while it settles

@@ -95,18 +95,20 @@ Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a 
 
 | Item | Status | Notes |
 |---|---|---|
-| Sections | Done (layout) | buttons: Players (online players only), Games (online games of the card, being played first with the player count, then the browsers; A starts), Events (4 per page, A opens), News (4 per page, A opens; read from dc.dreamcastlive.net and dc.segaonline.net, generic heading parser, markup not seen), Settings. Status line above the panel. Untested: written without a console build |
-| Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts |
-| Games being played | Partial | listed; A starts the game when it is on the card (through the game list's start, Serial VMU first; untested on a console), otherwise says so; A on the player column refreshes. Launch by Pi queue works (`dreampi_link.c`) |
-| Star player/game/event + notifications | Missing | needs Pi-side storage or a save-file list, plus the banner (see main menu) |
-| Online game catalogue (features, connection methods, network) | Missing | needs a data source (DreamcastLive / Flycast DCNet lists), best prepared on the Pi |
-| Events (DC99) | Partial | upcoming only; no current/upcoming split, no detail view |
-| News | Partial | `news_fetch.c` + `news_parse.c` (host-tested parser) read dc.dreamcastlive.net/news.html and dc.segaonline.net; needs tuning to the real markup, untested on a console. Pi-side scraper still an option |
-| Companion interface | Partial | DreamPiAutoToggle module: game list upload, launch queue, `/players`, `/api/events/upcoming`, NET, PLAYING. No written spec of the protocol |
-| ISP settings editor | Missing | OPEN item 3; "coming soon" row; flash format partly decoded |
+| Sections | Done in code | the brief's four pages on the CD buttons: Online (players / games being played, START switches), Play (the card's online games and browsers), Events (going on and coming up / news, START switches), Settings (connection, ISP settings, network test). Status line above the panel. Not compiled against KOS here; host syntax check only |
+| Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts; Y stars a player |
+| Games being played | Done in code | Online > Games: the card's games with players, then the titles of the player list that the card lacks ("not on card"); A joins (starts) a game of the card on its network |
+| Star player/game/event + notifications | Done in code, local | Y stars (`netprefs.c`: 8 players, 20 games, 10 events, kept in EXTENDED.SYS). Notice text over the main menu / game list (`online_notice_get`, 20 s) for a starred player online, a starred game being played, a starred event within 15 min. Uses what the app already fetched (the player list, the events list once read). The Pi does not coordinate it (companion ignored by request) |
+| Online game catalogue (features, connection methods, network) | Partial | Play lists the card's online games from META.DAT with the network each will use; the footer names the connection methods META.DAT gives (modem / broadband). No outside catalogue (needs a data source) |
+| Events (DC99) | Done in code | going on (LIVE) and coming up, detail view, star; "going on" = three hours after the start, because the sources give no end time (`event_phase.c`, host-tested) |
+| News | Partial | on the Events page (START); `news_fetch.c` + `news_parse.c` (host-tested parser) read dc.dreamcastlive.net/news.html and dc.segaonline.net; needs tuning to the real markup, untested on a console |
+| Companion interface | Partial | DreamPiAutoToggle module: game list upload, launch queue, `/players`, `/api/events/upcoming`, NET, PLAYING. No written spec of the protocol (left alone by request) |
+| ISP settings editor | Done in code, own storage | Settings > ISP settings: preset (DreamPi / Home network DHCP / custom), adapter address (console's own / DHCP / fixed IP, mask, gateway, DNS), dial number, login, password. Kept in EXTENDED.SYS and handed to the engine, **not written to the console's flash** (the flash format is only partly decoded; a wrong write could damage the console's own settings), so the Dreamcast's own browsers do not see it |
+| Flash partition compaction | Not needed now | only the ISP editor and the clock would have grown the flash; the ISP editor does not write it |
 | DreamPi Ethernet / Wi-Fi settings | Blocked | Pi-side endpoints first |
-| Network selection global + per game | Partial | the Pi switch exists, no UI (decision 6) |
-| Interface tests (modem, BBA, serial, W5500) | Missing | connection engine covers modem/BBA/LAN/serial (as the main branch: modem, BBA, LAN); W5500 is in no engine here or on main |
+| Network selection global + per game | Done in code | Settings > Preferred network (DCNow! / DCNet); per game: X popup "Network" in the game list, START on the Play page; the saved choice (`netprefs.c`, 40 games) is used at launch: if the DreamPi add-on reports another network, it is asked to switch (`online_select_network_for`, waits up to 1.5 s); without the add-on nothing is switched |
+| Connection by modem / broadband / serial / W5500 | Done in code | Settings > Connect by: Auto picks the fastest that answers (BBA, LAN adapter, W5500, serial cable, modem; `netsel.c`), or one is forced (never falls back silently). W5500: `w5500.c` (MACRAW, tested against a chip model only) and `w5500_net.c` (a KOS interface over the serial port's SPI pins, `scif_spi_*`); not tried while an SD card sits on that port; a failure after the network stack is up does not hop to a slower way |
+| Interface tests (modem, BBA, serial, W5500) | Done in code | Settings > Network test: which ways answer (idle only), then the address, a DNS lookup and a server connect with times while online; port forwarding is listed as not tested (needs an outside service) |
 | Serial PPP to DreamPi | Done in code | hardware test open (OPEN item 6) |
 
 ## 7. Settings menu
