@@ -2532,7 +2532,8 @@ ui_bios_run(const bios_rom* rom) {
 
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;
-    uint32_t step_credit = 0;
+    int64_t step_credit_us = 0;
+    uint64_t last_us = timer_us_gettime64();
     int frames_this_second = 0;
 
     uint64_t frame_t0_prev = timer_us_gettime64();
@@ -2641,16 +2642,32 @@ ui_bios_run(const bios_rom* rom) {
 
         /* Real-time logic steps: as many as the elapsed time asks for. */
         uint64_t now = timer_ms_gettime64();
-        uint64_t elapsed = now - last_ms;
-        last_ms = now;
-        if (elapsed > 100) {
-            elapsed = 100; /* after a stall do not fast-forward */
-        }
-        step_credit += (uint32_t)elapsed * (uint32_t)video_refresh_hz();
-        int steps = (int)(step_credit / 1000);
-        step_credit %= 1000;
-        if (steps > MAX_STEPS_PER_FRAME) {
-            steps = MAX_STEPS_PER_FRAME;
+        /* Logic steps (one per refresh). Counting whole milliseconds made a frame of 16.68 ms count 16 or 17 and so give 0 steps one
+         * frame and 2 the next (1% of the frames at 59.94 Hz, 12% at 60.00 Hz): the animation froze for a frame and jumped, a micro
+         * stutter. Now a frame that lasted about one refresh (0.7 to 1.3) is exactly one step and carries nothing; a long frame
+         * (a hitch, or below 40 fps) is worked out from the microseconds with the remainder carried, as before. */
+        int steps;
+        {
+            const int64_t refresh_us = 1000000 / (int64_t)video_refresh_hz();
+            int64_t elapsed_us = (int64_t)(timer_us_gettime64() - last_us);
+            last_us += (uint64_t)elapsed_us;
+            if (elapsed_us > 100000) {
+                elapsed_us = 100000; /* after a stall do not fast-forward */
+            }
+            if (elapsed_us * 10 >= refresh_us * 7 && elapsed_us * 10 <= refresh_us * 13) {
+                steps = 1;
+                step_credit_us = 0;
+            } else {
+                step_credit_us += elapsed_us;
+                steps = (int)((step_credit_us + refresh_us / 2) / refresh_us);
+                if (steps < 0) {
+                    steps = 0;
+                }
+                step_credit_us -= (int64_t)steps * refresh_us;
+            }
+            if (steps > MAX_STEPS_PER_FRAME) {
+                steps = MAX_STEPS_PER_FRAME;
+            }
         }
         for (int i = 0; i < steps; i++) {
             bmenu_update(&menu);
