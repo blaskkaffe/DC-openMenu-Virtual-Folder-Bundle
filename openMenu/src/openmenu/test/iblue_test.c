@@ -76,7 +76,10 @@ static void test_link(void) {
     /* nothing outside the range changed */
     CHECK(board_dst(3, 50) == 50 && board_dst(2, 5) == 5 && board_field(2, 5, 2) == 135);
     CHECK(iblue_link_set_type(&l, 0, 1, 2) == 0 && board_dev(0) == 1 && board_acc(0) == 2);
-    CHECK(iblue_link_set_type(&l, 0, 4, 0) == IBLUE_RES_BAD_ARG && board_dev(0) == 1);
+    CHECK(iblue_link_set_type(&l, 0, 6, 0) == IBLUE_RES_BAD_ARG && board_dev(0) == 1);
+    CHECK(iblue_link_set_type(&l, 0, 5, 3) == 0 && board_dev(0) == 5); /* maracas */
+    CHECK(iblue_link_set_type(&l, 0, 4, 3) == 0 && board_dev(0) == 4); /* racing */
+    CHECK(iblue_link_set_type(&l, 0, 1, 2) == 0 && board_dev(0) == 1);
     m[0].dst_id = 9;
     CHECK(iblue_link_set_map(&l, 3, 0, 1, m, -1) == IBLUE_RES_BAD_ARG);
     m[0].dst_id = 3; m[0].perc_max = 101;

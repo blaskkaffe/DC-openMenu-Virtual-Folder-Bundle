@@ -62,14 +62,12 @@ static inline int brctl_disconnect_all(int port) { return brctl_op(port, BRCTL_O
 static inline int brctl_config_default(int port) { return brctl_op(port, BRCTL_OP_CONFIG_DEFAULT, 0, 0, 0); }
 static inline int brctl_adapter_reset(int port) { return brctl_op(port, BRCTL_OP_ADAPTER_RESET, 0, 0, 0); }
 
-/* Button / touch sensor: choose what each gesture does (BRCTL_ACT_*).
- * BRCTL_ACT_NONE = adapter does nothing, your software reacts to
- * status.btn_seq / btn_last instead. persist=1 keeps it across power cycles. */
+/* Button taps: choose what the single, double and triple tap do (BRCTL_ACT_*). Always kept. */
 static inline int brctl_btn_set(int port, uint32_t gesture, uint32_t action, int persist) {
     return brctl_op(port, BRCTL_OP_BTN_SET, gesture, action, persist ? 1 : 0);
 }
 static inline int brctl_btn_defaults(int port, int persist) {
-    return brctl_op(port, BRCTL_OP_BTN_DEFAULTS, persist ? 1 : 0, 0, 0);
+    return brctl_op(port, BRCTL_OP_BTN_DEFAULTS, 0, 0, 0);
 }
 
 #endif /* _BRCTL_H_ */

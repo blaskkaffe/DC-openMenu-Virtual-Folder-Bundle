@@ -45,7 +45,7 @@ typedef struct iblue_io {
 typedef struct br_map_cfg iblue_map_entry;
 
 typedef struct iblue_port_info {
-    uint8_t dev_mode; /* 0 controller, 1 dual stick (alt), 2 keyboard, 3 mouse */
+    uint8_t dev_mode; /* 0 controller, 1 dual stick (alt), 2 keyboard, 3 mouse, 4 racing, 5 maracas */
     uint8_t acc_mode; /* bit0 VMU, bit1 rumble pack */
     uint8_t connected; /* a Bluetooth controller is assigned to the port */
     uint8_t plugged;   /* the board senses a physical controller in the port */

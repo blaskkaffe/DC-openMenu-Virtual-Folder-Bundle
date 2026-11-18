@@ -161,7 +161,7 @@ iBlueControlMod BlueRetro firmware), like the controller settings of a console:
 - Changes work at once but are saved in the iBlue only with Save (B asks when there is something unsaved).
 
 How it talks to the board: the **brctl** control channel of the iBlueControlMod firmware (Maple frames to the controller with a private function
-code; the library is `src/brctl/`, a copy of `iBlueControlMod/dc/brctl`, protocol 3). `iblue_brctl.c` binds it to the screen, `iblue_link.c`
+code; the library is `src/brctl/`, a copy of `iBlueControlMod/dc/brctl`, protocol 4). `iblue_brctl.c` binds it to the screen, `iblue_link.c`
 (portable) keeps a working copy of the adapter's whole configuration: edits are written to the adapter at once and saved with Save, revert writes the
 saved copy back. `iblue_map.c` has the names and the swap rule, `ui_iblue.c` the screen (returns sounds instead of playing them). Host test:
 `sh openMenu/src/openmenu/test/run_iblue.sh` runs link, rules and screen against a fake adapter that follows the firmware. How the firmware is

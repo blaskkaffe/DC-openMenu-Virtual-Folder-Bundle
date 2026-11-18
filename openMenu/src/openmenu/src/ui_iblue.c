@@ -24,7 +24,7 @@ enum { OPT_SCALE, OPT_THRESHOLD, OPT_DEADZONE, OPT_TURBO, OPT_ALGO, OPTS };
 
 /* "Dual stick" is the alternative controller description: the console is told about the
  * extra buttons and the second stick. */
-static const char* const dev_names[] = {"Controller", "Dual stick", "Keyboard", "Mouse"};
+static const char* const dev_names[] = {"Controller", "Dual stick", "Keyboard", "Mouse", "Racing", "Maracas"};
 
 /* Rapid fire: the board's turbo byte is (frame mask << 1) | phase; a bigger mask is slower. */
 static const uint8_t turbo_values[] = {0, 2, 6, 14, 30};
@@ -207,7 +207,7 @@ change_port(int delta) {
 
 static uib_sound
 step_type(int delta) {
-    int v = (info[port].dev_mode + delta + 4) % 4;
+    int v = (info[port].dev_mode + delta + 6) % 6;
     if (!check(iblue_link_set_type(&lk, port, v, info[port].acc_mode))) {
         return UIB_SND_ERROR;
     }
@@ -354,7 +354,7 @@ port_button(button_t b) {
                     say("Game settings removed");
                     return UIB_SND_CONFIRM;
                 case ROW_REMAP:
-                    if (info[port].dev_mode > 1) {
+                    if (info[port].dev_mode == BR_DEV_KB || info[port].dev_mode == BR_DEV_MOUSE) {
                         say("Remap is for controllers");
                         return UIB_SND_ERROR;
                     }
@@ -689,7 +689,7 @@ draw_port(void) {
                 break;
             case ROW_TYPE:
                 snprintf(label, sizeof(label), "Type");
-                snprintf(value, sizeof(value), "%s", dev_names[info[port].dev_mode & 3]);
+                snprintf(value, sizeof(value), "%s", dev_names[info[port].dev_mode % 6]);
                 hint = "Dual stick: second stick shown to games";
                 break;
             case ROW_VMU:
@@ -778,7 +778,7 @@ draw_profiles(void) {
     gfx_text(line, LEFT_X, 94.0f, 0.6f, GREY, 0);
     for (int i = 0; i < IBLUE_PROFILES; i++) {
         if (prof[i].used) {
-            snprintf(tmp, sizeof(tmp), "%s%s%s", dev_names[prof[i].dev_mode & 3], (prof[i].acc_mode & 2) ? ", rumble" : "",
+            snprintf(tmp, sizeof(tmp), "%s%s%s", dev_names[prof[i].dev_mode % 6], (prof[i].acc_mode & 2) ? ", rumble" : "",
                      (prof[i].acc_mode & 1) ? ", VMU" : "");
         } else {
             snprintf(tmp, sizeof(tmp), "empty");

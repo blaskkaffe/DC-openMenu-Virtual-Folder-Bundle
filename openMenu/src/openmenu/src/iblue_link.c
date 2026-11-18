@@ -201,7 +201,7 @@ iblue_link_set_map(iblue_link* l, int port, int first, int count, const iblue_ma
 
 int
 iblue_link_set_type(iblue_link* l, int port, int dev_mode, int acc_mode) {
-    if (port < 0 || port >= IBLUE_PORTS || dev_mode < 0 || dev_mode > 3 || acc_mode < 0 || acc_mode > 3) {
+    if (port < 0 || port >= IBLUE_PORTS || dev_mode < 0 || dev_mode > 5 || acc_mode < 0 || acc_mode > 3) {
         return IBLUE_RES_BAD_ARG;
     }
     l->cfg.out_cfg[port].dev_mode = (uint8_t)dev_mode;

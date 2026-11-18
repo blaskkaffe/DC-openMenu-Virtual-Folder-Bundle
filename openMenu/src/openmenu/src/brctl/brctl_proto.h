@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 
-#define BRCTL_PROTO_VER 3
+#define BRCTL_PROTO_VER 4
 
 /* Function code in adapter (logical) byte order: bytes 'B' 'R' 'T' 'L' */
 #define BRCTL_FUNC 0x4C545242u
@@ -58,14 +58,16 @@ enum {
     BRCTL_OP_CONFIG_SAVE = 0x06,    /* apply + persist config written via ITEM_CONFIG */
     BRCTL_OP_CONFIG_DEFAULT = 0x07, /* reset config to defaults */
     BRCTL_OP_ADAPTER_RESET = 0x08,  /* restart the adapter */
-    BRCTL_OP_BTN_SET = 0x09,        /* arg0 = BRCTL_GEST_*, arg1 = BRCTL_ACT_*, arg2 bit0 = persist */
-    BRCTL_OP_BTN_DEFAULTS = 0x0A,   /* restore default button actions, arg0 bit0 = persist */
-    BRCTL_OP_PROFILE_SAVE = 0x0B,   /* arg0 = slot 0..3, arg1 = port: keep the port's type + mapping */
-    BRCTL_OP_PROFILE_LOAD = 0x0C,   /* arg0 = slot, arg1 = port, arg2 bit0 = persist */
+    BRCTL_OP_BTN_SET = 0x09,        /* arg0 = BRCTL_GEST_*, arg1 = BRCTL_ACT_* (always kept) */
+    BRCTL_OP_BTN_DEFAULTS = 0x0A,   /* restore the default tap actions */
+    BRCTL_OP_PROFILE_SAVE = 0x0B,   /* arg0 = slot 0..3: the whole configuration (every port) is saved; arg1 is not used */
+    BRCTL_OP_PROFILE_LOAD = 0x0C,   /* arg0 = slot: the whole configuration is loaded and kept; args 1 and 2 are not used */
     BRCTL_OP_PROFILE_DELETE = 0x0D, /* arg0 = slot */
     BRCTL_OP_GAME_SET = 0x0E,       /* use the game id in ITEM_GAME: its own config if it has one */
     BRCTL_OP_GAME_SAVE = 0x0F,      /* the live config becomes the game's */
     BRCTL_OP_GAME_DELETE = 0x10,    /* the game uses the normal config again */
+    BRCTL_OP_MOTION_MODE = 0x11,    /* arg0 = 1 Joy-Con motion mode on, 0 off (kept; reconnect the Joy-Cons) */
+    BRCTL_OP_MOTION_POSE = 0x12,    /* arg0 = pose 0 forward, 1 up, 2 down, 3 out; arg1 = delay in seconds */
 };
 
 /* Result of the last finished operation (status.op_result). Operations run later on the
@@ -78,31 +80,28 @@ enum {
     BRCTL_RES_FAILED = 4,   /* flash write failed */
 };
 
-/* Button / touch sensor gestures (status.btn_last, BRCTL_OP_BTN_SET) */
+/* Button taps (status.btn_map, BRCTL_OP_BTN_SET): one more tap each. The long holds are not mappable: holding 30 s
+ * ALWAYS factory-resets and returns to the vendor firmware (recovery path), whatever the mapping. */
 enum {
-    BRCTL_GEST_TAP = 0,         /* press < 3 s */
-    BRCTL_GEST_DOUBLE_TAP,      /* tap, then a 2nd quick tap within 2 s */
-    BRCTL_GEST_TAP_HOLD,        /* tap, then a 2nd press held > 0.6 s */
-    BRCTL_GEST_HOLD_3S,         /* released between 3 and 6 s */
-    BRCTL_GEST_HOLD_6S,         /* released between 6 and 10 s */
-    BRCTL_GEST_HOLD_10S,        /* released after 10 s (but before 30 s) */
+    BRCTL_GEST_TAP = 0,
+    BRCTL_GEST_DOUBLE_TAP,
+    BRCTL_GEST_TRIPLE_TAP,
     BRCTL_GEST_MAX,
 };
-/* Holding 30 s ALWAYS factory-resets and returns to the vendor firmware
- * (recovery path), whatever the mapping. */
 
-/* Actions a gesture can trigger. Every gesture is also reported in
- * status.btn_seq / btn_last so Dreamcast software can react itself. */
+/* Actions a tap can trigger (the same numbers as the hosted web config uses; main/iblue/iblue_gesture.h) */
 enum {
-    BRCTL_ACT_DEFAULT = 0,      /* built-in behaviour for that gesture */
-    BRCTL_ACT_NONE,             /* report only, adapter does nothing */
-    BRCTL_ACT_PAIR,             /* open the pairing window + start pairing */
-    BRCTL_ACT_PAIR_STOP_OR_DISCONNECT,
-    BRCTL_ACT_DISCONNECT,
-    BRCTL_ACT_LED_NEXT,         /* next LED preset */
-    BRCTL_ACT_LED_ADJUST,       /* colour sweep while held (TAP_HOLD only) */
-    BRCTL_ACT_FACTORY_RESET,    /* erase settings, pairings, VMU */
-    BRCTL_ACT_ADAPTER_RESET,    /* restart the adapter */
+    BRCTL_ACT_NONE = 0,
+    BRCTL_ACT_PAIR,             /* open the pairing window and search for a controller */
+    BRCTL_ACT_PAIR_STOP,
+    BRCTL_ACT_LED_NEXT,         /* next LED colour */
+    BRCTL_ACT_DISCONNECT,       /* disconnect all controllers */
+    BRCTL_ACT_PROFILE_1,        /* load profile 1 ... 4 */
+    BRCTL_ACT_PROFILE_2,
+    BRCTL_ACT_PROFILE_3,
+    BRCTL_ACT_PROFILE_4,
+    BRCTL_ACT_PROFILE_NEXT,     /* the next saved profile, round and round */
+    BRCTL_ACT_GAMEID_TOGGLE,    /* game id on / off */
     BRCTL_ACT_MAX,
 };
 
@@ -132,6 +131,7 @@ struct brctl_info {
 #define BRCTL_FEAT_RGB_LED 0x01
 #define BRCTL_FEAT_PAIR_WINDOW 0x02
 #define BRCTL_FEAT_PROFILES 0x04
+#define BRCTL_FEAT_MOTION 0x08
 
 #define BRCTL_PORTS 4
 
@@ -145,10 +145,10 @@ struct brctl_status {
     uint8_t port_bt_id[BRCTL_PORTS];      /* 0xFF = no BT controller on this port */
     uint8_t port_bt_type[BRCTL_PORTS];    /* BlueRetro BT_* type */
     uint8_t port_bt_subtype[BRCTL_PORTS];
-    uint16_t btn_seq;           /* +1 on every gesture */
-    uint8_t btn_last;           /* last BRCTL_GEST_*, 0xFF = none yet */
-    uint8_t btn_stage;          /* live: 0 released, 1 pressed, 2 >3 s, 3 >6 s, 4 >10 s */
-    uint8_t btn_map[8];         /* current BRCTL_ACT_* per gesture */
+    uint16_t btn_seq;           /* not used since protocol 4 (0) */
+    uint8_t btn_last;           /* not used since protocol 4 (0xFF) */
+    uint8_t btn_stage;          /* not used since protocol 4 (0) */
+    uint8_t btn_map[8];         /* current BRCTL_ACT_* per BRCTL_GEST_* (the first BRCTL_GEST_MAX) */
     /* since protocol 3 */
     uint16_t op_seq;            /* operations finished so far */
     uint8_t op_result;          /* BRCTL_RES_* of the last one */
@@ -163,7 +163,7 @@ struct brctl_status {
 struct brctl_profiles {
     uint32_t magic;
     uint8_t used[BRCTL_PROFILES];
-    uint8_t dev_mode[BRCTL_PROFILES];
+    uint8_t dev_mode[BRCTL_PROFILES];   /* of the first port in the saved configuration */
     uint8_t acc_mode[BRCTL_PROFILES];
 } __attribute__((packed));
 
@@ -180,5 +180,6 @@ struct brctl_game {
 #define BRCTL_ST_PAIRING 0x0001         /* inquiry (pairing) running */
 #define BRCTL_ST_PAIR_ALLOWED 0x0002    /* inside the pairing window */
 #define BRCTL_ST_CONSOLE_ON 0x0004
+#define BRCTL_ST_MOTION 0x0008          /* Joy-Con motion mode is on */
 
 #endif /* _BRCTL_PROTO_H_ */

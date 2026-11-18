@@ -55,7 +55,7 @@ static int
 valid(const struct br_config* c) {
     if (c->magic != BR_CONFIG_MAGIC || c->global_cfg.inquiry_mode > 1) return 0;
     for (int i = 0; i < BR_WIRED_MAX_DEV; i++) {
-        if (c->out_cfg[i].dev_mode > 3 || c->out_cfg[i].acc_mode > 3 || c->in_cfg[i].map_size > BR_MAPPING_MAX) return 0;
+        if (c->out_cfg[i].dev_mode > 5 || c->out_cfg[i].acc_mode > 3 || c->in_cfg[i].map_size > BR_MAPPING_MAX) return 0;
         for (int j = 0; j < c->in_cfg[i].map_size; j++)
             if (c->in_cfg[i].map_cfg[j].dst_id >= BR_WIRED_MAX_DEV) return 0;
     }
@@ -193,7 +193,7 @@ run_op(uint32_t op, uint32_t a0, uint32_t a1, uint32_t a2) {
             if (a0 >= BRCTL_PROFILES || a1 >= 4) return BRCTL_RES_BAD;
             p = &b.prof[a0];
             if (!p->used) return BRCTL_RES_EMPTY;
-            b.live.out_cfg[a1].dev_mode = p->dev_mode & 3;
+            b.live.out_cfg[a1].dev_mode = p->dev_mode % 6;
             b.live.out_cfg[a1].acc_mode = p->acc_mode & 3;
             b.live.in_cfg[a1].map_size = p->map_size;
             memcpy(b.live.in_cfg[a1].map_cfg, p->map, sizeof(p->map));
