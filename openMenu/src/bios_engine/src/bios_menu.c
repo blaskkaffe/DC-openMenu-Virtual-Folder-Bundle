@@ -126,17 +126,8 @@ apply_icon_models(bmenu* m) {
  * Their depth is lowered by a few percent, not moved: the pills keep their place and size on the screen.
  * BMENU_PILL_DEPTH 1.0f gives the BIOS's own depth back. */
 #define BMENU_PILL_DEPTH 0.95f
-/* The caption texts (objects 0x300+i) are drawn between the icon models and the pills: behind the models (1.0), in front of the
- * pills (0.95). BMENU_LABEL_DEPTH 1.0f gives the BIOS's own order back (text in front of the icons). */
-#define BMENU_LABEL_DEPTH 0.97f
 static void
 apply_pill_depth(bmenu* m) {
-    for (int i = 0; i < BMENU_ICONS; i++) {
-        bvm_obj* cap = bvm_find(&m->vm, BMENU_ID_CAPTION(i));
-        if (cap) {
-            cap->text_depth_mul = BMENU_LABEL_DEPTH;
-        }
-    }
     bvm_obj* pills = bvm_find(&m->vm, 0x204);
     if (pills) {
         pills->depth_mul = BMENU_PILL_DEPTH;

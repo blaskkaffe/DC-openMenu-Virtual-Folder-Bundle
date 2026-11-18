@@ -970,7 +970,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         nj_vec3 anchor = nj_mat_apply(tm, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {
-            sink->text(sink->user, o, sx, sy, o->text_depth_mul > 0.0f ? iw * o->text_depth_mul : iw);
+            sink->text(sink->user, o, sx, sy, iw);
         }
     }
 }
