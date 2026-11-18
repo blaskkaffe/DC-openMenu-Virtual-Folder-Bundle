@@ -1,0 +1,83 @@
+/*
+ * bios_list: a dense version of the BIOS Settings look for browsing games. One tall box about 60%
+ * of the screen wide holds 5 to 13 text lines (the box has a fixed height, the line spacing
+ * shrinks as lines are added), leaving room on the right for the box art. Only the selected line
+ * has a lit pill and a 3D disc, which spins like the CD player's. Portable C.
+ */
+#ifndef BIOS_LIST_H
+#define BIOS_LIST_H
+
+#include "bios_menu.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define BLIST_MAX_SLOTS 13
+
+/* Text object ids of the rows (left aligned, one string each). */
+#define BLIST_TEXT_ID(slot) (0x17C0 + (slot))
+#define BLIST_TEXT_FIRST 0x17C0
+#define BLIST_TEXT_LAST (0x17C0 + BLIST_MAX_SLOTS - 1)
+
+/* Row disc textures: the disc of slot `s` uses texlist BLIST_TEXLIST_BASE + s; its texture 0
+ * is the label (the renderer substitutes the game's art), the others are those of the disc. */
+#define BLIST_TEXLIST_BASE 0x1000
+#define BLIST_DISC_MODEL 61
+
+/* Screen area of a row's text surface (pixels), for the renderer. */
+#define BLIST_TEXT_W 300
+#define BLIST_TEXT_H 32
+
+#define BLIST_BUTTONS 5
+
+typedef struct blist {
+    bmenu* m;
+    int slots; /* rows shown: 1..BLIST_MAX_SLOTS, all in the same box */
+    int count; /* rows in the list */
+    int cursor;
+    int top;
+    int back_selected; /* the cursor is on the BACK marker, below the last row */
+    int button;        /* the cursor is on bottom button 0..BLIST_BUTTONS-1, -1 when not (lit as in the CD player) */
+    int pal_console;   /* set by the caller: the console is a PAL one (the BACK marker is blue instead of red) */
+    unsigned anim;     /* frames since the list was opened (the BACK marker's frame blinks) */
+    int disc_number;   /* set by the caller before blist_sync(): disc of a multi-disc game on the selected row (1..99), 0 if not
+                          multi-disc; shown in 3D digits at the bottom right of the spinning CD */
+} blist;
+
+void blist_open(blist* l, bmenu* m, int slots, int count);
+void blist_set_count(blist* l, int count); /* the list changed; keeps the cursor in range */
+int blist_move(blist* l, int delta);       /* returns 1 if the cursor moved */
+void blist_goto(blist* l, int cursor);        /* cursor there, list scrolled to put it mid-screen */
+void blist_set_cursor(blist* l, int cursor); /* cursor there, scrolling only as far as needed */
+int blist_row_in_slot(const blist* l, int slot); /* -1 if empty */
+
+/* Place and light the objects; call once per frame after bmenu_update(). */
+void blist_sync(blist* l);
+void blist_draw(blist* l, const bscene_sink* sink);
+
+/* The five buttons of the CD player along the bottom, without their pictures. The caller writes
+ * text on them: this gives the centre of button i (pixels). */
+void blist_button_center_px(int i, float* x, float* y);
+
+/* Make bottom button i jump, as a CD player button does when pressed. */
+void blist_press_button(blist* l, int i);
+/* The bottom button under a point (pixels), -1 if none. */
+int blist_button_at_px(float x, float y);
+
+/* The BACK marker is under a point (pixels). */
+int blist_back_at_px(float x, float y);
+
+/* The slot whose bar is under a point (pixels), -1 if none; and the buttons row. */
+int blist_slot_at_px(const blist* l, float x, float y);
+
+/* Right edge of the rows (pixels). */
+float blist_row_right_px(void);
+/* Top of the first and bottom of the last row bar in pixels (what a side panel lines up with). */
+void blist_rows_extent_px(const blist* l, float* top, float* bottom);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* BIOS_LIST_H */

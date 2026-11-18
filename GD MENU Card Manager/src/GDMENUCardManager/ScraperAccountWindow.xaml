@@ -1,0 +1,65 @@
+<Window x:Class="GDMENUCardManager.ScraperAccountWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="ScreenScraper Account" SizeToContent="Height" Width="460" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="12">
+        <TextBlock TextWrapping="Wrap" Margin="0 0 0 8">Your screenscraper.fr account, used by Scrape. Logging in gives you more requests a day and faster answers. The account is free.</TextBlock>
+        <Grid Margin="0 0 0 6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">User name</TextBlock>
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="TextUser"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0 6 0 0">Password</TextBlock>
+            <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="TextPassword" Margin="0 6 0 0"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="TextPasswordShown" Margin="0 6 0 0" Visibility="Collapsed"/>
+            <CheckBox Grid.Row="2" Grid.Column="1" x:Name="CheckShowPassword" Margin="0 4 0 0" Click="CheckShowPassword_Click">Show password</CheckBox>
+        </Grid>
+        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050" Margin="0 0 0 6">Kept in your user folder (scraper.json, not encrypted), never on the SD card.</TextBlock>
+        <TextBlock Margin="0 0 0 8">
+            <Hyperlink NavigateUri="https://www.screenscraper.fr/membreinscription.php" RequestNavigate="Hyperlink_RequestNavigate">Create an account on screenscraper.fr</Hyperlink>
+        </TextBlock>
+
+        <Expander Header="Advanced: developer ID" Margin="0 0 0 8">
+            <StackPanel Margin="0 6 0 0">
+                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#505050" Margin="0 0 0 6">Every program that uses ScreenScraper needs a developer ID. Leave these empty to use the one built into this program; if there is none, ask for your own on the ScreenScraper forum.</TextBlock>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">Developer ID</TextBlock>
+                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="TextDevId"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0 6 0 0">Password</TextBlock>
+                    <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="TextDevPassword" Margin="0 6 0 0"/>
+                </Grid>
+            </StackPanel>
+        </Expander>
+
+        <Border BorderBrush="#C0C0C0" BorderThickness="1" Padding="8" MinHeight="40" Margin="0 0 0 10">
+            <TextBlock x:Name="TextStatus" TextWrapping="Wrap">Not checked yet.</TextBlock>
+        </Border>
+
+        <Grid>
+            <Button x:Name="ButtonTest" HorizontalAlignment="Left" Padding="12 6" Click="ButtonTest_Click">Test login</Button>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="ButtonSave" Padding="16 6" FontWeight="Bold" Click="ButtonSave_Click" IsDefault="True">Save</Button>
+                <Button Padding="16 6" Margin="10 0 0 0" IsCancel="True">Cancel</Button>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>

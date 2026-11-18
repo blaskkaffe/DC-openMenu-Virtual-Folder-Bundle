@@ -135,6 +135,11 @@ extern uint8_t* sf_recently_played;
 #define sf_recently_played_type   CRAYON_TYPE_UINT8
 #define sf_recently_played_length 1
 
+/* openMenu 1.7.1: stores the date in the flash at start so a console with a flat clock battery comes back near today */
+extern uint8_t* sf_clock_extender;
+#define sf_clock_extender_type   CRAYON_TYPE_UINT8
+#define sf_clock_extender_length 1
+
 /* Read and write the four byte values that are stored as bytes. Keeping
  * them out of the uint32 block matters because a save holds every uint32
  * ahead of every byte, so a wider uint32 block shifts the settings out
@@ -223,6 +228,7 @@ enum savefile_version {
     SFV_DCNOW_VMU,
     SFV_ONLINE_TIME_SYNC,
     SFV_MOUSE_SPEEDS,
+    SFV_CLOCK_EXTENDER, /* openMenu 1.7.1: keep the versions in step with it, the save file is shared */
     SFV_LATEST_PLUS_ONE // DON'T REMOVE
 };
 
@@ -321,7 +327,17 @@ typedef enum CFG_CUSTOM_THEME_NUM {
     THEME_7,
     THEME_8,
     THEME_9,
-    THEME_NUM_END = THEME_9
+    THEME_10, /* openMenu 1.7.1 has 20 theme slots; kept so its choice survives a save from this build */
+    THEME_11,
+    THEME_12,
+    THEME_13,
+    THEME_14,
+    THEME_15,
+    THEME_16,
+    THEME_17,
+    THEME_18,
+    THEME_19,
+    THEME_NUM_END = THEME_19
 } CFG_CUSTOM_THEME_NUM;
 
 typedef enum CFG_BIOS_3D {
@@ -393,7 +409,7 @@ typedef enum CFG_FOLDERS_ITEM_DETAILS {
 typedef enum CFG_RECENTLY_PLAYED {
     RECENTLY_PLAYED_START = 0,
     RECENTLY_PLAYED_OFF = RECENTLY_PLAYED_START,
-    RECENTLY_PLAYED_10,
+    RECENTLY_PLAYED_10, /* the values of openMenu 1.7.1 (the save file is shared with it) */
     RECENTLY_PLAYED_20,
     RECENTLY_PLAYED_30,
     RECENTLY_PLAYED_40,
@@ -418,6 +434,19 @@ typedef enum CFG_CLOCK {
     CLOCK_OFF,
     CLOCK_END = CLOCK_OFF
 } CFG_CLOCK;
+
+/* Builds of this menu from before the .beat flag moved out of the shared save file stored 3 (12 hour + .beat) and 4 (24 hour + .beat) here, which
+ * openMenu 1.7.1 does not know and resets. They are still read (see sf_clock_legacy) and not written any more. */
+#define CLOCK_LEGACY_12HOUR_BEAT 3
+#define CLOCK_LEGACY_24HOUR_BEAT 4
+extern uint8_t sf_clock_legacy; /* 0, or CLOCK_LEGACY_* when the loaded save had one */
+
+typedef enum CFG_CLOCK_EXTENDER {
+    CLOCK_EXTENDER_START = 0,
+    CLOCK_EXTENDER_OFF = CLOCK_EXTENDER_START,
+    CLOCK_EXTENDER_ON,
+    CLOCK_EXTENDER_END = CLOCK_EXTENDER_ON
+} CFG_CLOCK_EXTENDER;
 
 typedef enum CFG_VM2_SEND_ALL {
     VM2_SEND_START = 0,

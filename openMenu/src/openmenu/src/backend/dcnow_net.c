@@ -21,13 +21,18 @@
 #include <kos/thread.h>
 #include <netinet/in.h>
 #include <openmenu_settings.h>
+#include <sd_savefile.h>
 #include <ppp/ppp.h>
 #include <sys/socket.h>
 
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
 #include "backend/dcnow_vmu.h"
+#include "backend/dreampi_link.h"
+#include "backend/netsel.h"
+#include "backend/w5500_net.h"
 #include "backend/online_time_sync.h"
+#include "backend/serial_port.h"
 
 static int device_probed = 0;
 /* Set once modem_init() has run, which leaves an interrupt hook for the teardown. */
@@ -62,9 +67,23 @@ dcnow_detect_device(void) {
     return device_found;
 }
 
+static dcnow_device_t active_device;
+
 dcnow_device_t
 dcnow_device_hint(void) {
-    return device_found;
+    return active_device != DCNOW_DEV_NONE ? active_device : device_found;
+}
+
+const char*
+dcnow_device_short_name(dcnow_device_t dev) {
+    switch (dev) {
+        case DCNOW_DEV_MODEM: return "modem";
+        case DCNOW_DEV_BBA: return "broadband adapter";
+        case DCNOW_DEV_LAN: return "LAN adapter";
+        case DCNOW_DEV_SERIAL: return "DreamPi cable";
+        case DCNOW_DEV_W5500: return "W5500";
+        default: return "nothing";
+    }
 }
 
 const char*
@@ -73,6 +92,8 @@ dcnow_device_name(dcnow_device_t dev) {
         case DCNOW_DEV_MODEM: return "Dial-Up Modem";
         case DCNOW_DEV_BBA: return "Broadband Adapter (HIT-0400)";
         case DCNOW_DEV_LAN: return "LAN Adapter (HIT-0300)";
+        case DCNOW_DEV_SERIAL: return "Serial Cable (DreamPi)";
+        case DCNOW_DEV_W5500: return "W5500 Ethernet";
         default: return "None detected";
     }
 }
@@ -116,12 +137,48 @@ dcnow_read_isp(dcnow_isp_t* out) {
 #define DCNOW_DIAL_TIMEOUT_MS 90000
 #define DCNOW_COOLDOWN_MS     5000
 
+/* What the modem and the serial link dial and log in with: DreamPi's fixed values unless the ISP settings say otherwise. */
+static char dial_number[24] = DCNOW_DIAL_NUMBER;
+static char dial_login[24] = DCNOW_DIAL_LOGIN;
+static char dial_password[24] = DCNOW_DIAL_PASSWORD;
+/* The network settings of an adapter: 0 the console's own (flash ROM), 1 DHCP, 2 the address below. */
+static int isp_mode = 0;
+static dcnow_isp_t isp_fixed;
+/* The Settings value "Connection" (netsel.h) and which ways have answered a probe since the start (bits of netsel_bit). */
+static volatile int iface_setting = NETSEL_AUTO;
+static volatile unsigned seen_mask = 0;
+
+void
+dcnow_net_set_interface(int setting) {
+    iface_setting = setting;
+}
+
+unsigned
+dcnow_net_seen(void) {
+    return seen_mask;
+}
+
+void
+dcnow_net_set_dial(const char* number, const char* login, const char* password) {
+    snprintf(dial_number, sizeof(dial_number), "%s", number && number[0] ? number : DCNOW_DIAL_NUMBER);
+    snprintf(dial_login, sizeof(dial_login), "%s", login && login[0] ? login : DCNOW_DIAL_LOGIN);
+    snprintf(dial_password, sizeof(dial_password), "%s", password && password[0] ? password : DCNOW_DIAL_PASSWORD);
+}
+
+void
+dcnow_net_set_adapter_mode(int mode, const dcnow_isp_t* fixed) {
+    isp_mode = mode;
+    if (fixed) {
+        isp_fixed = *fixed;
+    }
+}
+
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
 static volatile int cancel_requested = 0;
 static kthread_t* worker = NULL;
 static int net_started = 0;
-static dcnow_device_t active_device = DCNOW_DEV_NONE;
+static dcnow_device_t active_device = DCNOW_DEV_NONE; /* the link in use */
 static uint64_t hangup_time = 0; /* guarded by status_mutex */
 
 typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST } worker_job_t;
@@ -362,6 +419,23 @@ modem_hangup(void) {
     modem_shutdown();
 }
 
+/* The dial-up links: both reach DreamPi with PPP and take its cooldown between calls. */
+static int
+dialup_link(void) {
+    return active_device == DCNOW_DEV_MODEM || active_device == DCNOW_DEV_SERIAL;
+}
+
+/* Drops the line under PPP: the modem hangs up, the serial port goes back to KOS (DreamPi's pppd ends on the LCP
+ * terminate or its echo timeout and listens for AT again). */
+static void
+link_close(void) {
+    if (active_device == DCNOW_DEV_MODEM) {
+        modem_hangup();
+    } else {
+        serial_port_close(); /* a no-op when the port is not open */
+    }
+}
+
 /* Ends a dial the user has given up on. Returns 1 when it did. A number that
  * already went out gets the cooldown, since the DreamPi may have answered. */
 static int
@@ -369,7 +443,7 @@ cancel_now(int dialed) {
     if (!cancel_requested) {
         return 0;
     }
-    modem_hangup();
+    link_close();
     status_reset(DCNOW_CONN_CANCELED);
     status_push("Dial canceled.", 0);
     if (dialed) {
@@ -396,14 +470,14 @@ run_modem(void) {
         return;
     }
 
-    snprintf(line, sizeof(line), "Dialing %s...", DCNOW_DIAL_NUMBER);
+    snprintf(line, sizeof(line), "Dialing %s...", dial_number);
     status_push(line, 0);
-    if (!modem_dial(DCNOW_DIAL_NUMBER)) {
+    if (!modem_dial(dial_number)) {
         modem_shutdown();
         fail("Dialing failed (modem -3).", NULL);
         return;
     }
-    snprintf(line, sizeof(line), "Dialing %s... OK", DCNOW_DIAL_NUMBER);
+    snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
     status_replace(status_last_index(), line);
 
     status_push("Modem: Negotiating", 1);
@@ -436,7 +510,7 @@ run_modem(void) {
         return;
     }
     ppp_set_device(&modem_dev);
-    ppp_set_login(DCNOW_DIAL_LOGIN, DCNOW_DIAL_PASSWORD);
+    ppp_set_login(dial_login, dial_password);
     status_push("PPP: Negotiating", 1);
     if (ppp_connect() != 0) {
         ppp_release();
@@ -448,6 +522,278 @@ run_modem(void) {
     status_replace(status_last_index(), "PPP: Connected");
     dcnow_presence_lookup();
     status_set_state(DCNOW_CONN_ONLINE, 0);
+}
+
+/* ---- Serial cable to DreamPi 2.0+ ----
+ * DreamPi watches its USB-serial port for Hayes commands: it answers every AT line with OK and a dial (ATD...) of an
+ * ordinary number with "CONNECT 115200", closes the port and starts pppd on it five seconds later (crtscts, PAP with
+ * any login). This is what Alien Front Online and the browsers' serial option do, and the same number and login as
+ * the modem dial. */
+#define SERIAL_PROBE_TRIES   2
+#define SERIAL_PROBE_MS      600
+#define SERIAL_CONNECT_MS    10000
+#define SERIAL_TX_TIMEOUT_MS 2000
+
+static int
+ppp_serial_shutdown(ppp_device_t* self) {
+    (void)self;
+    return 0; /* the port is closed by link_close(), after the LCP terminate went out */
+}
+
+static int
+ppp_serial_tx(ppp_device_t* self, const uint8_t* data, size_t len, uint32_t flags) {
+    (void)self;
+    (void)flags;
+    return serial_port_write(data, len, SERIAL_TX_TIMEOUT_MS);
+}
+
+static const uint8_t*
+ppp_serial_rx(ppp_device_t* self, ssize_t* out_len) {
+    static uint8_t rb[1024];
+    size_t cnt;
+    (void)self;
+
+    cnt = serial_port_read(rb, sizeof(rb));
+    *out_len = (ssize_t)cnt;
+    return cnt > 0 ? rb : NULL;
+}
+
+static ppp_device_t serial_dev = {"scif", "PPP over Dreamcast Serial Port", 0, 0, NULL, &ppp_dev_noop,
+                                  &ppp_dev_noop, &ppp_serial_shutdown, &ppp_serial_tx, &ppp_serial_rx};
+
+/* A serial link has no carrier line: the PPP automaton leaving the network phase (DreamPi's pppd ended, or LCP
+ * echoes went unanswered) is the lost carrier. A protocol entry with no packets of its own watches the phases. */
+static volatile int serial_lost = 0;
+
+static int
+watch_shutdown(ppp_protocol_t* self) {
+    ppp_del_protocol(self);
+    return 0;
+}
+
+/* Code 0 is no protocol, so nothing arrives here; a frame that claims it is rejected as libppp would. */
+static int
+watch_input(ppp_protocol_t* self, const uint8_t* buf, size_t len) {
+    (void)self;
+    return ppp_lcp_send_proto_reject(0, buf, len);
+}
+
+static void
+watch_phase(ppp_protocol_t* self, int oldp, int newp) {
+    (void)self;
+    if (oldp == PPP_PHASE_NETWORK && newp != PPP_PHASE_NETWORK) {
+        serial_lost = 1;
+    }
+}
+
+static ppp_protocol_t phase_watch = {PPP_PROTO_ENTRY_INIT, "watch", 0, NULL, NULL, &watch_shutdown, &watch_input,
+                                     &watch_phase, NULL};
+
+/* Asks the serial port for DreamPi. Returns 1 when it answered (the port stays open), 0 when not (closed again). */
+static int
+serial_probe(void) {
+    static const char* const ok[] = {"OK"};
+
+    if (serial_port_open(SERIAL_PORT_BAUD) < 0) {
+        return 0;
+    }
+    for (int i = 0; i < SERIAL_PROBE_TRIES; i++) {
+        if (serial_port_command("AT", ok, 1, SERIAL_PROBE_MS, &cancel_requested, NULL, 0) == 0) {
+            return 1;
+        }
+    }
+    serial_port_close();
+    return 0;
+}
+
+/* The port is open and DreamPi answered the probe. */
+static void
+run_serial(void) {
+    static const char* const init_replies[] = {"OK", "ERROR"};
+    static const char* const dial_replies[] = {"CONNECT", "NO CARRIER", "BUSY", "NO DIALTONE", "NO DIAL TONE",
+                                               "NO ANSWER", "ERROR"};
+    char line[DCNOW_STATUS_WIDTH];
+    char reply[32];
+    int rc;
+
+    active_device = DCNOW_DEV_SERIAL;
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    status_push("Serial: DreamPi answered", 0);
+    /* the init string the browsers send before dialing, harmless to DreamPi (which only says OK) */
+    (void)serial_port_command("ATZ", init_replies, 2, 1000, &cancel_requested, NULL, 0);
+    if (cancel_now(0)) {
+        return;
+    }
+
+    snprintf(line, sizeof(line), "Dialing %s over serial...", dial_number);
+    status_push(line, 0);
+    {
+        char dial_cmd[32];
+        snprintf(dial_cmd, sizeof(dial_cmd), "ATDT%s", dial_number);
+        rc = serial_port_command(dial_cmd, dial_replies, 7, SERIAL_CONNECT_MS, &cancel_requested, reply, sizeof(reply));
+    }
+    if (rc == -2) {
+        cancel_now(1);
+        return;
+    }
+    if (rc != 0) {
+        link_close();
+        if (rc < 0) {
+            fail("No answer to the dial (serial -1).", "Update DreamPi to 2.0 or later.");
+        } else {
+            snprintf(line, sizeof(line), "DreamPi: %s (serial -2).", reply);
+            fail(line, "Check the DreamPi log.");
+        }
+        start_cooldown_clock();
+        return;
+    }
+    snprintf(line, sizeof(line), "Serial: %s", reply);
+    status_replace(status_last_index(), line);
+
+    /* From here on the dial cannot be interrupted. */
+    status_set_state(DCNOW_CONN_CONNECTING, 0);
+    ensure_net_started();
+    if (ppp_init() < 0) {
+        link_close();
+        fail("PPP negotiation failed (ppp -1).", NULL);
+        start_cooldown_clock();
+        return;
+    }
+    serial_lost = 0;
+    ppp_add_protocol(&phase_watch);
+    ppp_set_device(&serial_dev);
+    ppp_set_login(dial_login, dial_password);
+    /* DreamPi starts pppd about five seconds after CONNECT; LCP keeps asking until it does */
+    status_push("PPP: Negotiating", 1);
+    if (ppp_connect() != 0) {
+        ppp_release();
+        link_close();
+        fail("PPP negotiation failed (ppp -1).", "Check the cable's RTS and CTS lines.");
+        start_cooldown_clock();
+        return;
+    }
+    serial_lost = 0;
+    status_replace(status_last_index(), "PPP: Connected");
+    dcnow_presence_lookup();
+    status_set_state(DCNOW_CONN_ONLINE, 0);
+}
+
+/* Is this way there? The expansion port's answer (modem, BBA, LAN adapter: one of them) is the boot probe's; the W5500 asks its chip (not while an
+ * SD card sits on those pins); the serial cable asks DreamPi (and stays open when it answers). */
+static int
+probe_way(dcnow_device_t dev) {
+    switch (dev) {
+        case DCNOW_DEV_BBA:
+        case DCNOW_DEV_LAN:
+        case DCNOW_DEV_MODEM: return dcnow_detect_device() == dev;
+        case DCNOW_DEV_W5500: return !sd_savefile_available() && w5500_net_probe();
+        case DCNOW_DEV_SERIAL: return serial_probe();
+        default: return 0;
+    }
+}
+
+static void run_adapter(void);
+static void take_isp(const dcnow_isp_t* isp);
+static int known_isp_valid;
+
+/* The adapter's network settings: the Settings page's own choice (DHCP or a fixed address) or else the console's. */
+static void
+adapter_settings(void) {
+    dcnow_isp_t isp;
+    if (isp_mode == 1) {
+        memset(&isp, 0, sizeof(isp));
+        take_isp(&isp);
+    } else if (isp_mode == 2) {
+        isp = isp_fixed;
+        isp.ethernet_static = 1;
+        take_isp(&isp);
+    } else if (!known_isp_valid) {
+        dcnow_read_isp(&isp);
+        take_isp(&isp);
+    }
+}
+
+/* Asks every way whether it is there (the interface test). Only while no connection is up or coming up: the serial probe takes the port. Worker thread. */
+unsigned
+dcnow_net_probe_all(void) {
+    static const dcnow_device_t ways[] = {DCNOW_DEV_BBA, DCNOW_DEV_LAN, DCNOW_DEV_W5500, DCNOW_DEV_SERIAL, DCNOW_DEV_MODEM};
+    unsigned mask = 0;
+
+    cancel_requested = 0;
+    for (unsigned i = 0; i < sizeof(ways) / sizeof(ways[0]); i++) {
+        if (probe_way(ways[i])) {
+            mask |= netsel_bit(ways[i]);
+            if (ways[i] == DCNOW_DEV_SERIAL) {
+                serial_port_close();
+            } else if (ways[i] == DCNOW_DEV_W5500) {
+                w5500_net_unregister(); /* gives the pins back; nothing was registered */
+            }
+        }
+    }
+    seen_mask |= mask;
+    return mask;
+}
+
+/* Connects by the way the Connection setting names, or by the fastest one that answers (netsel.h order). Each way is probed in turn;
+ * the first that is there is used and a failure after that is its own (the network stack is up by then, so no hop to a slower way). */
+static void
+run_chosen(void) {
+    unsigned tried = 0;
+    int setting = iface_setting;
+    char line[DCNOW_STATUS_WIDTH];
+    dcnow_device_t d;
+
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    while ((d = netsel_next(setting, tried)) != DCNOW_DEV_NONE) {
+        int found;
+        tried |= netsel_bit(d);
+        snprintf(line, sizeof(line), "Looking for %s...", dcnow_device_short_name(d));
+        status_push(line, 0);
+        found = probe_way(d);
+        if (cancel_requested) {
+            if (found && d == DCNOW_DEV_SERIAL) {
+                serial_port_close();
+            }
+            active_device = DCNOW_DEV_NONE;
+            status_reset(DCNOW_CONN_CANCELED);
+            status_push("Dial canceled.", 0);
+            return;
+        }
+        snprintf(line, sizeof(line), "Looking for %s... %s", dcnow_device_short_name(d), found ? "found" : "no");
+        status_replace(status_last_index(), line);
+        if (!found) {
+            continue;
+        }
+        seen_mask |= netsel_bit(d);
+        active_device = d;
+        switch (d) {
+            case DCNOW_DEV_SERIAL: run_serial(); break;
+            case DCNOW_DEV_MODEM:
+                status_reset(DCNOW_CONN_CONNECTING);
+                run_modem();
+                break;
+            case DCNOW_DEV_W5500:
+                if (w5500_net_register() < 0) {
+                    fail("The W5500 stopped answering (w5500 -1).", "Check the adapter's seating.");
+                    return;
+                }
+                adapter_settings();
+                run_adapter();
+                break;
+            default:
+                adapter_settings();
+                run_adapter();
+                break;
+        }
+        return;
+    }
+    active_device = DCNOW_DEV_NONE;
+    if (setting == NETSEL_AUTO) {
+        fail("No network adapter, W5500, DreamPi or modem", "found (a serial cable needs DreamPi 2.0+).");
+    } else {
+        snprintf(line, sizeof(line), "%s not found.", netsel_setting_name(setting));
+        fail(line, "Change Connection to Auto, or check it.");
+    }
 }
 
 /* Fills in the fixed address before the stack starts, so net_init() skips its
@@ -520,7 +866,7 @@ run_hangup(void) {
     status_push("Hanging up...", 0);
     ppp_terminate();
     ppp_release();
-    modem_hangup();
+    link_close();
     net_default_dev = NULL;
     status_replace(status_last_index(), "Hanging up... OK");
     enter_cooldown();
@@ -546,19 +892,14 @@ take_isp(const dcnow_isp_t* isp) {
 
 static void
 run_autostart(void) {
-    dcnow_isp_t isp;
+    dcnow_conn_state_t state;
 
-    active_device = dcnow_detect_device();
-    if (active_device == DCNOW_DEV_NONE) {
-        status_reset(DCNOW_CONN_IDLE);
-        return;
-    }
-    dcnow_read_isp(&isp);
-    take_isp(&isp);
-    if (active_device == DCNOW_DEV_MODEM) {
-        run_modem();
-    } else {
-        run_adapter();
+    run_chosen();
+    mutex_lock(&status_mutex);
+    state = status.state; /* not dcnow_conn_poll(): that is for the main thread */
+    mutex_unlock(&status_mutex);
+    if (state == DCNOW_CONN_FAILED && active_device == DCNOW_DEV_NONE) {
+        status_reset(DCNOW_CONN_IDLE); /* nothing is fitted: no failure to show at start-up */
     }
 }
 
@@ -569,7 +910,7 @@ run_lost(void) {
     online_time_sync_abort();
     dcnow_fetch_clear();
     ppp_release();
-    modem_hangup();
+    link_close();
     net_default_dev = NULL;
     fail("Connection lost.", NULL);
     start_cooldown_clock();
@@ -578,17 +919,12 @@ run_lost(void) {
 static void*
 worker_main(void* param) {
     (void)param;
+    thd_set_prio(thd_get_current(), PRIO_DEFAULT + 4); /* below the menu: a connection or a fetch never takes the frame's time */
     switch (worker_job) {
         case JOB_HANGUP: run_hangup(); break;
         case JOB_AUTOSTART: run_autostart(); break;
         case JOB_LOST: run_lost(); break;
-        default:
-            if (active_device == DCNOW_DEV_MODEM) {
-                run_modem();
-            } else {
-                run_adapter();
-            }
-            break;
+        default: run_chosen(); break;
     }
     return NULL;
 }
@@ -608,9 +944,6 @@ dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp) {
     dcnow_conn_poll(&snap);
     if (snap.state == DCNOW_CONN_CONNECTING || snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_COOLDOWN
         || snap.cooldown_seconds > 0) {
-        return -1;
-    }
-    if (dev == DCNOW_DEV_NONE) {
         return -1;
     }
     finish_worker();
@@ -679,7 +1012,7 @@ dcnow_conn_disconnect(void) {
     /* The poll itself may have started the lost-link job. */
     finish_worker();
     dcnow_conn_poll(&snap);
-    if (active_device == DCNOW_DEV_MODEM && snap.state == DCNOW_CONN_ONLINE) {
+    if (dialup_link() && snap.state == DCNOW_CONN_ONLINE) {
         status_reset(DCNOW_CONN_CONNECTING);
         mark_hanging_up();
         worker_job = JOB_HANGUP;
@@ -725,7 +1058,9 @@ dcnow_conn_poll(dcnow_status_t* out) {
     /* A modem link that lost its carrier is torn down on the worker. The
      * worker wrote active_device before it published ONLINE under the mutex,
      * and the copy above took that mutex, so the read here is ordered. */
-    if (out->state == DCNOW_CONN_ONLINE && active_device == DCNOW_DEV_MODEM && !modem_is_connected()
+    if (out->state == DCNOW_CONN_ONLINE
+        && ((active_device == DCNOW_DEV_MODEM && !modem_is_connected())
+            || (active_device == DCNOW_DEV_SERIAL && serial_lost))
         && worker_job != JOB_LOST) {
         finish_worker();
         worker_job = JOB_LOST;
@@ -992,8 +1327,10 @@ void
 dcnow_net_shutdown(void) {
     dcnow_status_t snap;
 
+    dcnow_fetch_abort(); /* first: it may be waiting for the Pi or the web, and the rest of the shutdown waits for it */
+    dreampi_link_abort();
     dcnow_conn_poll(&snap);
-    if (active_device == DCNOW_DEV_MODEM && (snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_CONNECTING)) {
+    if (dialup_link() && (snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_CONNECTING)) {
         dcnow_vmu_hanging_up();
         if (hangup_hook != NULL) {
             hangup_hook();
@@ -1009,12 +1346,13 @@ dcnow_net_shutdown(void) {
     dcnow_conn_poll(&snap);
     /* The poll itself may have started the lost-link job. */
     finish_worker();
-    if (active_device == DCNOW_DEV_MODEM && snap.state == DCNOW_CONN_ONLINE) {
+    if (dialup_link() && snap.state == DCNOW_CONN_ONLINE) {
         ppp_terminate();
         ppp_release();
-        modem_hangup();
+        link_close();
         net_default_dev = NULL;
     }
+    serial_port_close(); /* the game gets the port as the BIOS leaves it (a no-op when it was never opened) */
     if (net_started) {
         net_shutdown();
         net_started = 0;

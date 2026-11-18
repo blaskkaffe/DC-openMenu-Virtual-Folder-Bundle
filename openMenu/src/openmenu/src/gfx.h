@@ -1,0 +1,118 @@
+/*
+ * gfx: PVR backend for the BIOS-style menu. Uploads ROM textures on demand, draws
+ * the triangles produced by bios_scene, and renders text with the BIOS font into
+ * small textures.
+ */
+#pragma once
+
+#include <stdint.h>
+
+#include <bios_rom.h>
+#include <bios_scene.h>
+
+/* Initialise the PVR. `rom` may be NULL (then only text and flat colours work). */
+int gfx_init(const bios_rom* rom);
+
+/* One frame: gradient first, then everything drawn through gfx_sink()/gfx_text()
+ * goes into the translucent list. */
+void gfx_begin_frame(uint32_t top_argb, uint32_t bottom_argb);
+void gfx_end_frame(void);
+
+/* How the PVR orders translucent polygons from the next gfx_begin_frame() on: 1 = autosort (sorted per pixel by
+ * depth, as the BIOS draws its menus; needed where the parts of a 3D model overlap), 0 = presort (blended in the
+ * order they are sent, cheaper). The default comes from GFX_PRESORT. Returns the mode that will be used: where the
+ * build cannot switch (no KOS source tree found), the default. */
+int gfx_set_autosort(int on);
+int gfx_autosort(void);
+
+const bscene_sink* gfx_sink(void);
+
+/* Replace the "Dreamcast" logo of the header bar by a .PVR file (GBIX optional, 16-bit
+ * twiddled / rectangle / VQ, no mipmaps). The picture is stretched over the logo's area,
+ * which is 4:1: 128x32 is the natural size. Returns 0 if the file was found and used;
+ * otherwise the BIOS logo stays. */
+int gfx_load_logo(const char* path);
+
+/* The header logo follows the online mode (the BIOS logo only: a LOGO.PVR of your own is left as it is): 0 the normal logo, 1 "Now!" added
+ * behind it (connected to Dreamcast Now!), 2 the logo cropped to swirl + D with "CNET" after the D (mode 3 no longer exists). The extra
+ * pictures of modes 1 and 2 are drawn by gfx_logo_badge(), once per frame on the main menu. */
+void gfx_set_logo_mode(int mode);
+/* Dark mode: the header bar is dark grey, so the BIOS logo's wordmark (and CNET / Now!) are drawn light (a LOGO.PVR of your own is left as it is). */
+void gfx_set_dark(int dark);
+/* The letters of modes 1 and 2 ("Now!" orange / blue, "CNET", light and dark bar), made from the masks in logo_letters.inc: nothing is read from the disc. */
+void gfx_load_logo_texts(void);
+/* Which pictures exist: bits 0 "Now!" orange, 1 "Now!" blue, 2 "CNET" (for the debug line). */
+int gfx_logo_texts_loaded(void);
+void gfx_logo_badge(void);
+/* A sink that only loads the textures of what is drawn into it (see bmenu_prewarm). */
+const bscene_sink* gfx_warm_sink(void);
+/* Reads the tables of the art DATs now (before the menu shows) instead of when the game list first opens. */
+void gfx_preload_art_index(void);
+
+/* Triangles submitted since gfx_begin_frame(). */
+unsigned gfx_triangles(void);
+
+/* Text of the label objects (icon names, header...) by script object id. */
+void gfx_set_label(uint16_t obj_id, const char* text);
+
+/* Draw `str` with its top-left corner at (x, y). Strings are cut to 42 characters.
+ * `shadow` is ignored: the BIOS glyphs carry their own shade. */
+void gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow);
+
+/* The same, scaled (the debug pages). */
+void gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale);
+
+/* Flat translucent rectangle, plain or with rounded corners of radius r. */
+void gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb);
+/* The app's standard panel: the row bars' corners (see gfx.c), colour argb (normally BSCENE_PANE_ARGB). */
+void gfx_pane(float x, float y, float w, float h, float z, uint32_t argb);
+void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
+
+#define GFX_CHAR_W 11 /* BTEXT_ADVANCE: pixels per character (a space is 8) */
+
+/* Counters for the debug overlay, collected since the previous call (which zeroes them). */
+typedef struct gfx_stats {
+    unsigned wait_us;      /* time spent waiting for the previous frame to finish rendering */
+    unsigned render_us;    /* the PVR's rendering time of the frames (pvr_stats rnd_last_time) */
+    unsigned ta_us;        /* time spent handing the vertices to the TA (pvr_prim) */
+    unsigned vertices;     /* vertices sent */
+    unsigned art_loads;    /* pictures the loader thread finished */
+    unsigned art_us;       /* ... and the time it needed for them */
+    unsigned text_uploads; /* text pictures made */
+    unsigned headers;      /* texture / state changes sent to the PVR */
+} gfx_stats;
+void gfx_stats_take(gfx_stats* out);
+
+/* Width in pixels of a string as gfx_text() draws it. */
+int gfx_text_width(const char* str);
+#define GFX_LINE_H 32
+
+/* Game art from ICON.DAT / BOX.DAT. Row discs: bind the product of each visible row (slot as in
+ * bios_list) and the renderer puts its icon on the disc label. */
+void gfx_art_bind_row(int slot, const char* product, int pal);
+/* Box art of a game as a textured rectangle (a blank frame while it loads or if there is none). */
+void gfx_art_box(const char* product, float x, float y, float w, float h, float z);
+
+/* The front picture of the built-in models of bios_models.h (the jewel cases): box art of `product`,
+ * or plain white when empty or not found. The back picture is white until something is placed there. */
+void gfx_model_bind_front(const char* product);
+
+/* Start loading a game picture before it is needed (box = 1: box art, 0: disc icon), so it is there when the
+ * row or case shows it. Returns 1 once the picture is in video memory or known to be missing, 0 while it loads. */
+int gfx_art_prefetch(const char* product, int box);
+
+/* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
+ * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
+void gfx_set_row_scroll(int slot, int window_px, int offset_px);
+
+/* 16:9 mode: everything but the background gradient is squeezed to 3/4 of its width around the
+ * centre of the screen, so a wide TV that stretches the picture shows it in proportion. */
+void gfx_set_aspect(int wide);
+
+/* Small pictures made at run time, e.g. the icons of files on a memory card. gfx_dyn_create() copies a
+ * w x h ARGB4444 picture into video memory and returns its id (-1 if there is no room); free them when
+ * the screen that uses them is left. gfx_image() draws one as a rectangle. */
+int gfx_dyn_create(const unsigned short* argb4444, int w, int h);
+void gfx_dyn_free(int id);
+void gfx_dyn_free_all(void);
+void gfx_image(int id, float x, float y, float w, float h, float z);

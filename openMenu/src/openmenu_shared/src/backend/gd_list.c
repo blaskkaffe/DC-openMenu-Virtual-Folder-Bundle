@@ -15,6 +15,13 @@
 #include <string.h>
 #include <strings.h>
 
+/* The folder view's progress lines (on the serial port: about 5 ms a line, each time the list is rebuilt). */
+#ifdef GD_LIST_VERBOSE
+#define LIST_TRACE(...) printf(__VA_ARGS__)
+#else
+#define LIST_TRACE(...) ((void)0)
+#endif
+
 #include <ini.h>
 
 #include "backend/db_item.h"
@@ -167,7 +174,7 @@ list_view_get(list_view* out) {
 }
 
 /* Temporary list for holding all multidisc games in a set */
-#define MULTIDISC_MAX_GAMES_PER_SET (10)
+#define MULTIDISC_MAX_GAMES_PER_SET (99) /* as openMenu 1.7.1 */
 static int num_items_multidisc = -1;
 static gd_item* list_multidisc[MULTIDISC_MAX_GAMES_PER_SET] = {NULL};
 
@@ -237,13 +244,29 @@ filelength(FILE* f) {
 }
 #endif
 
+/* An INI value into a field of gd_item: cut to fit and NUL terminated; a one byte field (vga) holds just the
+ * character, as it always has. */
+static void
+cfg_copy(char* dst, size_t size, const char* value) {
+    if (size == 1) {
+        dst[0] = value[0];
+        return;
+    }
+    snprintf(dst, size, "%s", value);
+}
+
 static int
 read_openmenu_ini(void* user, const char* section, const char* name, const char* value) {
     /* unused */
     (void)user;
 
     if ((strcmp(section, "OPENMENU") == 0) && (strcmp(name, "num_items") == 0)) {
-        num_items_BASE = atoi(value) /* It can occur that GDMenuCardManager under reports by 1 */;
+        int n = atoi(value);
+        if (n < 1 || n > 10000 || gd_slots_BASE) { /* nonsense, or a second num_items: keep what there is */
+            printf("INI:Error num_items %s\n", value);
+            return 1;
+        }
+        num_items_BASE = n /* It can occur that GDMenuCardManager under reports by 1 */;
         num_items_temp = num_items_BASE - 1;
         gd_slots_BASE = malloc((num_items_BASE + 1) * sizeof(struct gd_item));
         if (!gd_slots_BASE) {
@@ -261,12 +284,21 @@ read_openmenu_ini(void* user, const char* section, const char* name, const char*
         memset(list_multidisc, '\0', MULTIDISC_MAX_GAMES_PER_SET * sizeof(struct gd_item*));
     } else {
         /* Parsing games */
-        char slot_string[4] = {0, 0, 0, 0};
+        char slot_string[8] = {0};
         uintptr_t seperator = (uintptr_t)strchr(name, '.');
         if (seperator) {
             size_t temp_len = (size_t)(seperator - (uintptr_t)name);
+            if (temp_len == 0 || temp_len >= sizeof(slot_string)) {
+                printf("INI:Error bad key [%s] %s\n", section, name);
+                return 1;
+            }
             memcpy(slot_string, name, temp_len);
             int slot = atoi(slot_string);
+            /* the slots the num_items allocation holds (it may be under reported by one) */
+            if (!gd_slots_BASE || slot < 1 || slot > num_items_BASE + 1) {
+                printf("INI:Error slot out of range [%s] %s\n", section, name);
+                return 1;
+            }
             num_items_read = slot;
 
             gd_item* item = &gd_slots_BASE[slot - 1];
@@ -281,7 +313,7 @@ read_openmenu_ini(void* user, const char* section, const char* name, const char*
             if (0)
                 ;
 #define CFG(s, n, default)                                                                                             \
-    else if (strcasecmp(section, #s) == 0 && strcasecmp(plain_name, #n) == 0) strcpy(item->n, value);
+    else if (strcasecmp(section, #s) == 0 && strcasecmp(plain_name, #n) == 0) cfg_copy(item->n, sizeof(item->n), value);
 #include "backend/gd_item.def"
             /* Alt folder paths for Folders mode (folder_alt1..folder_alt5) */
             else if (strcasecmp(section, "ITEMS") == 0 && strncasecmp(plain_name, "folder_alt", 10) == 0) {
@@ -548,6 +580,9 @@ list_set_multidisc(const char* product_id) {
             continue;
         }
 
+        if (temp_idx >= MULTIDISC_MAX_GAMES_PER_SET) {
+            break; /* list_multidisc holds MULTIDISC_MAX_GAMES_PER_SET entries */
+        }
         list_multidisc[temp_idx++] = &gd_slots_BASE[base_idx];
     }
     num_items_multidisc = temp_idx;
@@ -569,6 +604,9 @@ list_set_multidisc_filtered(const char* product_id, const char* folder_path) {
             continue;
         }
 
+        if (temp_idx >= MULTIDISC_MAX_GAMES_PER_SET) {
+            break; /* list_multidisc holds MULTIDISC_MAX_GAMES_PER_SET entries */
+        }
         list_multidisc[temp_idx++] = &gd_slots_BASE[base_idx];
     }
     num_items_multidisc = temp_idx;
@@ -622,6 +660,19 @@ list_count_multidisc_in_folder(const char* product_id) {
         }
     }
     return count;
+}
+
+int
+list_all_count(void) {
+    return gd_slots_BASE ? num_items_BASE : 0;
+}
+
+const gd_item*
+list_all_item(int idx) {
+    if (!gd_slots_BASE || idx < 0 || idx >= num_items_BASE) {
+        return NULL;
+    }
+    return &gd_slots_BASE[idx];
 }
 
 int
@@ -939,9 +990,22 @@ folder_cmp(const void* a, const void* b) {
     /* In Folders mode, mapping is inverted for backward compatibility:
      * - SORT_DEFAULT (0) = Alphabetical (old default behavior)
      * - SORT_NAME (1) = SD Card Order
+     * - SORT_DATE (2) = Release year (disc build date)
      * Sort by slot order when Sort = Name, otherwise alphabetically */
     if (sf_sort[0] == SORT_NAME) {
         return (*item_a)->slot_num - (*item_b)->slot_num;
+    }
+
+    /* Release year: the build date of the disc (IP.BIN, YYYYMMDD), oldest first, games without one last, then by name */
+    if (sf_sort[0] == SORT_DATE && !is_dir_a) {
+        int none_a = (*item_a)->date[0] == '\0', none_b = (*item_b)->date[0] == '\0';
+        if (none_a != none_b) {
+            return none_a - none_b;
+        }
+        int by_date = strcmp((*item_a)->date, (*item_b)->date);
+        if (by_date != 0) {
+            return by_date;
+        }
     }
 
     return strcasecmp((*item_a)->name, (*item_b)->name);
@@ -1401,14 +1465,14 @@ list_visible_disc(const gd_item* item) {
 
 void
 list_set_folder_root(void) {
-    printf("list_set_folder_root: Starting\n");
+    LIST_TRACE("list_set_folder_root: Starting\n");
     if (!folder_tree_root) {
         printf("list_set_folder_root: No folder tree, using default sort\n");
         list_set_sort_default();
         return;
     }
 
-    printf("list_set_folder_root: Building folder view, root has %d children and %d games\n",
+    LIST_TRACE("list_set_folder_root: Building folder view, root has %d children and %d games\n",
            folder_tree_root->num_children, folder_tree_root->num_games);
 
 #ifndef STANDALONE_BINARY
@@ -1459,7 +1523,7 @@ list_set_folder_root(void) {
         list_temp[temp_idx++] = game;
     }
 
-    printf("list_set_folder_root: Sorting %d items\n", temp_idx);
+    LIST_TRACE("list_set_folder_root: Sorting %d items\n", temp_idx);
     qsort(list_temp, temp_idx, sizeof(gd_item*), folder_cmp);
 
     list_current = list_temp;
@@ -1470,7 +1534,7 @@ list_set_folder_root(void) {
     folder_state.path[0] = '\0';
     list_view_set(LIST_VIEW_FOLDER, 0, 0);
 
-    printf("list_set_folder_root: Complete, %d items in list\n", temp_idx);
+    LIST_TRACE("list_set_folder_root: Complete, %d items in list\n", temp_idx);
 }
 
 void

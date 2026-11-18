@@ -1,0 +1,449 @@
+# NewOpenMenu
+
+A stripped-down openMenu that will become a 3D GDEMU launcher styled after the
+Dreamcast BIOS menu, using the console's own BIOS ROM assets at runtime (no BIOS
+data is shipped or committed).
+
+## Phase 0 (this state)
+
+Minimal openMenu: boot, read `OPENMENU.INI`, list games (with virtual folders),
+launch the selected one. Nothing else.
+
+- `src/openmenu/src/main.c`: init, placeholder list UI (BIOS font drawn straight
+  into the framebuffer, no PVR), controller input.
+- `src/openmenu/src/launch.c`: mounts the GDEMU image and starts the game or exits
+  through the BIOS for non-game discs.
+- `src/openmenu_shared`, `src/openmenu_settings`: game list and settings storage,
+  unchanged.
+
+Removed versus full openMenu: themes, artwork/DAT textures, grid/scroll/folder
+UIs, DC Now, DreamPi link, online time/games, BGM, VM2/VMU integration, mouse,
+keyboard, credits, launch history, cheats/bloom launch paths.
+
+Controls: D-pad move, left/right page, A open/launch, B back out of a folder.
+
+Build: unchanged, see `BUILD_INSTRUCTIONS.md`.
+
+Not yet verified on a real build: this was written without a KOS toolchain
+available, only syntax-checked against the KOS API signatures.
+
+## Phase 1 (bios_rom)
+
+`src/bios_rom`: portable C module that reads textures (GBIX/PVRT), the script
+bytecode bank, message tables and the sound directory straight from the boot ROM
+(`0xA0000000` on the console). Revision is detected from the ROM header; only
+1.01d is accepted for now. Host test: `test/bios_rom_test.c` builds a synthetic ROM
+(no Sega data), and also checks a real dump when `BIOS_ROM_FILE` is set.
+The app shows the result on the bottom line of the screen.
+
+## Phase 2 (BIOS-style visuals)
+
+- `src/bios_engine/`: portable engine. `nj_model` parses the ROM's Ninja chunk models and
+  motions, `bios_vm` runs the menu's bytecode scripts and tweens, `dcbg` is the animated cloud
+  background, `bios_scene` turns all of it into screen triangles for any backend, `bios_menu`
+  creates the four icons and handles the 2x2 cursor, `tex_decode` is for host tools.
+- `src/openmenu/src/gfx.c`: PVR backend (ROM textures uploaded on demand, BIOS-font text
+  rendered into small textures). `ui_bios.c` is the menu, `ui_list.c` the game list logic.
+- `src/bios_engine/tools/bios_preview.c`: renders the menu on a PC from a ROM dump
+  (`bios_preview dc_boot.bin out.ppm [frames] [selected] [script]`) with a software
+  rasteriser, to check models/scripts/projection without hardware.
+- Unknown or unreadable ROM: falls back to the plain text list (`ui_fallback.c`).
+
+## Phase 3 (sound)
+
+`bios_audio` (portable, host tested) parses the sound bank container and builds the data map and
+command bytes; `sound.c` loads the ARM7 driver and banks from the ROM into the sound chip and
+plays the UI effects (cursor, confirm, back, enter, error). Sound is silently disabled if the
+container does not look as expected. The status line at the bottom shows the result.
+
+## Phase 4 (menu wired to the launcher)
+
+Game opens the game browser (with a detail line), Settings edits boot animation and the exit
+mode and saves them. File and Music show "Not available yet".
+
+Still open: language settings, Music (online).
+
+## Custom header logo
+
+The "Dreamcast" logo in the header bar comes from the console's ROM. To use your own, put a
+`LOGO.PVR` next to `OPENMENU.INI` (root of the openMenu disc image); if it is not there the BIOS
+logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOGO.PVR`
+(any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
+BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
+A fully transparent picture hides the logo.
+Online modes (not with a `LOGO.PVR` of your own): the logo stays plain while connecting (a turning swirl was tried and taken out); once connected it changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+(`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
+(`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are inside the program (`logo_letters.inc`: the coverage of the pixels of "Now!" and "CNET", 64x32 each; the menu builds the orange and blue "Now!" and the grey "CNET" for the light bar, with soft edges baked in the way the BIOS logo's own edge pixels are (an edge pixel is lighter than the bar), and flat copies for the dark bar), so there are no files on the disc. They hold
+nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs
+and draws "CNET" after the D, so height and weight match the original wordmark. Without the files the logo is left alone in the online modes. They are made by
+`openMenu/tools/gen_logo_text.py` (hand-drawn outlines in the style of the Dreamcast logo typeface; capitals y 7.6 to 24.8 of the 128x32 texture, stems 2.87 px as measured on the original D; no font outlines are
+used, the typeface is personal-use only) and are kept in the Card Manager's `tools/openMenu/menu_data`, so a card built with it has them.
+Without a `LOGO.PVR` a European (PAL) console gets the BIOS logo with the swirl recoloured blue (red and blue exchanged in the ROM's
+orange swirl; the BIOS itself shows the plain text logo there); other regions get the orange swirl.
+
+## Tested against real ROMs
+
+The host tests and the preview tool were run against the retail boot ROMs 1.01c, 1.01d, 1.022,
+1.032 (region-free build) and the 1.011 dev ROM: all 62 models, 18 motions, 18 textures, 88 scripts
+and the sound container load, and every script runs for 120 frames without error. Their menu image
+is byte-identical, so `bios_rom_init` accepts a ROM by structure, not version. 1.004 and the early
+dev ROMs (0.976, 1.001) have a different layout and fall back to the plain list.
+
+## Not verified on hardware
+
+Phases 0 and 1 build in CI. Everything from Phase 2 on has only been syntax checked against the
+KOS API and tested on a PC with a synthetic ROM; texture placement, camera constants, the text
+anchor of the icon captions, and the sound driver start-up are the likely places to need tuning.
+
+## Todo (after the essential functions are back)
+
+- Genre filter: the genre list is incomplete and sometimes wrong (the genre data comes from
+  the bundled game database). Review and correct it, then bring the filter back.
+- Browsing by letter or region: decide between the old category rows (A-Z, region, genre) and
+  an L/R jump through the list. Undecided.
+- Most played sort (needs a play counter in the save file).
+
+## Game browser settings (phase 5)
+
+All set in Settings: Game order (A-Z, SD card order), Multi-disc games, Disc sets from,
+Recently played (Off, 5, 10, 15, 20, 25, 50), Remember last game. In the game list, X opens the
+recently played popup. Remember last game restores folder and cursor the first time the
+browser is opened after start-up. Later: genre filter (needs better genre data), most played.
+
+## Settings screen (sketch)
+
+Built from the game list's pieces (`bios_engine/bios_page`): one tall box (the row bar model grown along y, corners keep their
+radius), the width of the original Settings rows (x 40..619), holding `BPAGE_SLOTS` = 5 rows (48-332 px, pitch 54 px). Everything
+in a row is the original's size (icon, 45 px high value pill), measured on the BIOS screen and a photo of the console; only the rows are closer
+together than the original's 78 px, and the value pill starts at x 304 instead of 256 (it ends at 615 as the original) so that a label of up to
+17 characters does not run into it. Text as in the photo: the label is centred between the icon (ends at x 100) and the pill, the value is left aligned 10 px inside the pill (x 314), both centred on the row's height. The big box has the row bar's large rounded left end and small right corners. Under the box, where the original's help box is (x 187..622,
+y 340..434, the original's distance to the BACK marker; its corners are the help box's small ones, `small_left` in `bios_scene`), a second, separate bar holds the information about the selected row and nothing else: the
+help line, as in the original: it starts where the values do (x 314), 9 px below the top of the bar, in the menu font at its own size, written
+by `ui_bios.c` (`draw_settings_info`; a longer text goes on a second line, cut with ".." only if that is too long as well). The original's
+help box (model 34, which is the purple square) is not used.
+When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show at the top and bottom of the box, in the margin to its right (x 631, not over the box); a green scroll bar thumb (`bpage_scroll_thumb_px`, the arrows' colour, as wide as the arrow halfway up its
+height) moves between them with the cursor. The full list of rows and their lengths: `SETTINGS_LIST.md`. Icons (`UIS_ICON_*`, `bios_page.h`): the clock for everything with a time (date and time, clock format, memory card clock, clock extender, VMU time sync, online time sync), the speaker for sound (Sound, VMU beep on save), the VMU (ROM model 62) for memory card and saving settings (Serial VMU, its slots, VM2 game ID), the lips for Language, the GD-ROM disc (ROM model 61) for the game list and starting games rows, the question mark for Auto start and About; the controller icon (model 17) is ready for the mouse and controller settings, none exist yet; the other models are drawn without motion, scaled to about 40 px. Rows without an icon yet show the digit models 0-9. Rows with more than two values open a popup list;
+two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock,
+clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System,
+Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other.
+Rows are defined in `ui_settings.c` (label, group, help, save-file variable, choice names). Text column positions (`PAGE_TEXT_PAD`,
+`PAGE_VALUE_X` in `gfx.c`, `TEXT_X` in `bios_page.c`) and all box constants at the top of `bios_page.c` are guesses to be tuned on
+hardware; seen on the host preview only (the text there is drawn from a label file, see bios_preview.c). Preview: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
+
+## Game browser (sketch)
+
+One tall box (the row bar of the BIOS-settings look, `bios_engine/bios_list`) about 60% of the screen
+width holds 7 text lines (`UIL_VISIBLE` in `ui_list.h`; the engine takes 1 to `BLIST_MAX_SLOTS` = 13).
+The box is a fixed 73.5-350.5 px high (the height of the middle five rows of the old seven-row list), clear
+of the BACK marker and the buttons; the line pitch is the box height minus padding divided by the line
+count (7 lines: 37 px, 9: 29 px, 11: 23 px). The box is grown along y, not scaled
+(`stretch_yc/yd/yx` in `bios_scene`), so its corners keep the radius of a single row and the left edge is
+straight. Only the selected line has a lit pill and a 3D BIOS GD-ROM disc with the game's icon on its
+label; the disc spins like the CD player's. Box art and info (name, product, region, discs, players) are
+shown to the right, lined up with the box. Art comes from `ICON.DAT` / `BOX.DAT` (+ `_EX`) and info from
+`META.DAT` on the menu disc, by product code. The disc labels are the games' own `0GDTEX.PVR`: the console
+only sees the menu image, so GD MENU Card Manager reads each game's label from its image when it builds
+the menu and stores them in `DISC.DAT` (same format as ICON.DAT, 128x128, keyed by serial). A game
+without one (compressed images not yet saved to the card, discs without the file) keeps the
+ICON.DAT picture, then the BIOS disc of its region.
+
+Starting a game: A starts it straight away (there is no launch animation).
+Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list; `BLIST_SLOTS=n` for n lines, default 7 as the console;
+`BLIST_DISC=n` sets the disc number shown). Text is drawn as 32 px outline boxes there, so they overlap at 9+ lines.
+Tune on hardware: box constants (`BOX_*`) and row layout at the top of `bios_list.c`, panel layout in `ui_bios.c`.
+
+Game list details: a multi-disc game (Compact mode) shows its disc number as 3D BIOS digit models (model 21 + digit,
+tinted light gold) at the bottom right of the spinning CD, up to 99 (`BLIST.disc_number`, set by `ui_bios.c` for the
+selected row only; the total is not shown). Left/Right on such a row pick the disc, A starts it (Left/Right page the
+list on other rows). Multi-disc titles use the full title width. The BACK marker sits under the info box.
+
+Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
+sit where they do in the CD player (X or Right from BACK reaches them, B goes on to the main menu). Button 1 is
+Recent (the recently played popup), button 2 Favorites (the starred games in a popup like Recent's: A starts, Y removes, B closes;
+a game is starred with the Favorite row of its X popup, and a starred title starts with "* " in the list; the list is
+`favorites.c`, newest first, up to 100, kept in its own file because OPENMENU.SYS is shared with 1.7.1 and has no
+favorites: `/sd/OPENMENU/EXTENDED.SYS` when an SD card is mounted and the VMS file `EXTENDED.SYS` on a memory card, 3 blocks
+with a gold icon; at start the SD copy wins, else the first card that has the file; games are found again by their
+identity hash, so a different SD order does not matter), button 3 Folders (A goes to the top of the folder
+tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is
+the Settings > Game order value `sf_sort`, saved at once, and the list is rebuilt in the same folder with the cursor on
+the same game), button 5 Group (shows None; A says there are no other groups yet). The text is the long form
+("Sort A-Z") when it fits in 80 px, else the short one (`button_text` in `ui_bios.c`). Release year is the IP.BIN build date of the disc (`folder_cmp` in `gd_list.c`).
+
+Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
+(`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
+everything else the red one - the same pairing the BIOS uses (blue on European consoles).
+
+## Date/time editor, aspect, About, mouse and keyboard (sketch)
+
+- Settings > Date and time opens the BIOS editor (`bios_engine/bios_datetime`): left/right pick a
+  field, up/down change it, the green arrows (model 35) sit above and below the field, Select sets
+  the console clock, Cancel or B leaves. Years 1950-2085, field order by console region (Japan
+  Y/M/D, America M/D/Y, Europe D/M/Y). The window panel is drawn as a rounded rectangle.
+- Settings > Aspect ratio: 16:9 squeezes everything except the background gradient to 3/4 width
+  (`gfx_set_aspect`) so a wide TV shows it in proportion.
+- Settings > About (last row, question mark icon): version, BIOS revision, sound status.
+- Keyboard: arrows, Enter = A, Escape/Backspace = B, Tab = X, Page Up/Down, and typing a letter or
+  digit jumps to the next game starting with it. Mouse: the pointer is model 35 turned 225 degrees
+  so its tip points to the top left; moving over a row selects it, left click = A, right click = B,
+  the wheel scrolls. Both are written against the KOS maple API and untested on hardware.
+
+Window panels: the BIOS draws its windows with model 39 (four corners moved apart to the wanted size,
+dark translucent body, rim in the screen's accent colour: Game orange, Settings magenta). The date
+editor, the About box and the popups use it now (`bscene_draw_panel`). In the editor the green ovals
+are drawn under the names of the buttons, which start over the right half of the oval.
+
+## File screen: the BIOS File screen
+
+Main menu > File is the BIOS's own File screen, ported from the boot ROM (`bios_engine/bios_filescr`,
+`file_screen_update` 0x8C017A60 and what it calls). Same objects, scripts, positions, cursor tables, state
+machines and messages (read from the ROM's message tables) as the original:
+
+- card grid: each card in its own colour with its picture (ICONDATA_VMS, else the root block's icon shape),
+  empty sockets, unformatted cards (orange picture), the VMU busy animation while a card is read,
+  controllers only in the ports that have one, the plate with "A-1", free blocks and the used-space gauge,
+  the selected card animating, BACK; in destination mode the copy arrow from the source card
+- the card flies between the grid and the file window (script 7)
+- file window: 24 tiles a page with the files' animated icons, block counts in the tile digits, copy
+  protected files red, VMU games green, the selected tiles blinking; the card ("ALL") selects every file,
+  X selects all files of the same game (first 9 characters of the name); file information (description,
+  name, VMU description, date, blocks, GAME/DATA, eyecatch) or the total of the selected files
+- popups and messages: Copy / Delete, Copy all / Delete all (memory reset), Start copying / View contents
+  of the destination, overwrite question, "not ready", "full", "one VMU game per card", "card removed"
+- copy box with its progress bar (grid mesh, deformer 5), "Deleting all..." box
+- memory reset: confirm, icon picker (124 BIOS icons, 4x4 a page), colour picker (the BIOS's 32 colours
+  and "Transparent"), "Please confirm your settings", then the card is rebuilt (also never formatted cards)
+- screen fly-in / fly-out fades (object flag 17)
+
+Text is printed into the BIOS's text surfaces (`bios_surface`: message strings with colour codes and
+button symbols, tile digits, the clock font); `gfx.c` uploads only the rows that change. The card data
+and the commands are the caller's (`ui_files.c` with `vmu_files.c`, KOS vmufs): one memory card access a
+frame (a card, a file header, or one file of a copy / delete), so the screen keeps running.
+Preview: `bios_preview dc_boot.bin out.ppm <frames> 0 -14` with `BIOS_PREVIEW_KEYS="40:A,90:R,..."` (keys
+UDLRABXY at frame numbers) on a demo set of cards.
+Untested on hardware: copying and resetting real cards; back up first.
+
+Mouse and keyboard: the pointer puts the cursor on what is under it (`bfs_point`: cards, BACK, the "ALL" ring, file tiles,
+popup choices, the icon and colour pickers, Select / Cancel / Yes / No), a left click is A on it (a click on nothing does
+nothing), a right click is B, the wheel moves the cursor, or turns the pages of the file window and the icon picker.
+Keyboard: arrows, Enter = A, Esc / Backspace = B, Tab = X and Space = Y (all files of the same game), Page Up / Down = a page of
+files or icons. The areas are checked against the real ROM's render: `BIOS_PREVIEW_HITS=1 bios_preview dc_boot.bin out.ppm
+200 0 -14` outlines them (the cursor's in green); `BIOS_PREVIEW_KEYS` also takes P / N (page up / down).
+
+The port letters A to D under the controllers take the colours of the borders of the main menu's four caption pills (read from the ROM: model 5, rim of nodes 1, 3, 2, 4; drawn into model 15 nodes 1..4, unshaded).
+
+Serial VMU mark: the card of the VMU slot that Settings > Serial VMU names carries a small SD card (the back of one, three flat
+colours: card, read / write switch, yellow contacts; `sd_icon.c`) at the lower right, on the card grid and on the card beside the
+file window. `bfs_draw` draws it right after the card object, so it moves with the card (also in the flight to the file window),
+fades with the screen transitions and lies under popups and pickers, which show it through their transparency. It stays below the
+card's own display. `BIOS_PREVIEW_SD=<slot>` shows it on a PC.
+
+Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
+
+Controller labels: a pill that would touch the pill of the port before it moves to the top of its own controller (`pad_label_layout_set`);
+the others stay at the bottom. On the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
+its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
+Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
+Mic, Karaoke. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
+in `bios_engine_test`); a controller whose name is none of the known ones shows its own name. Pico2Maple and BlueRetro are shown by
+what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
+real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.
+
+## Todo: File menu, devices (from the plan, later)
+
+- Serial VMU saves (the per-game images on the SD card): decision needed, see "Serial VMU saves" below. Leaning: keep loading a game's VMU
+  from the games picker as in Derek's fork, so both menus behave the same, and not browse them in the File menu.
+- Serial VMU on/off moves from Settings to the File menu later; back up now / load backup.
+- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and control their own features from the
+  File menu: switch between VMU slots (and know which is connected), enable/disable GameID and show its status (a small slot number and
+  GameID box over the lower right of the VMU graphic), battery level of VM2 and VMU Pro, and more. Depends on each device's firmware.
+
+### Done in the File menu
+
+- X on a VMU of the card grid: a menu in the style of the Play screen's X menu, with "Set as Serial VMU" and "Serial VMU Off" (it writes
+  Settings > Serial VMU, "On (B1)" and so on, and saves). The slot carries the SD card mark.
+- Card popup (A on the card in the file window): Copy all, Delete all (memory reset), Change Color and Logo, Use full size, Cancel.
+  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour, the hidden area where the BIOS keeps them
+  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched or made (an `ICONDATA_VMS` that an earlier build of this menu wrote is removed). Use full size opens a popup with what it means and Cancel / Extend capacity
+  (`BFS_OP_EXTEND`, `vf_extend_capacity`): the block count of the root block goes from 200 to 241 (the blocks 200..240 that the BIOS leaves
+  unused become free space). Untested on hardware: do it on a spare card first. A memory reset keeps the extended size (the root block is
+  kept), a card that already uses it says so.
+
+## Serial VMU saves (decision needed)
+
+Leaning (not decided): loading a game's VMU stays in the games picker, as in Derek's fork (compatible, easy to use); the File menu does not
+browse the per-game images.
+
+How 1.7.1 / Derek's fork keeps them (`serial_vmu.c`, README "Serial VMU Feature"): on the serial SD card, `OPENMENU/SAVES/<serial>/` has one
+folder per game with `SLOT1.VMU` (Multi-Slot: up to `SLOT5.VMU`), `TITLE.TXT` and optional `SLOTn.TXT` labels; each file is a whole 128 KB VMU
+image. The menu only copies a whole image to the VMU of the Serial VMU slot before a game starts and back at the next start. There is no
+browsing of single saves inside the menu: to move a single save one uses the BIOS File screen to copy files between VMUs, or a PC tool
+(VMU Explorer) on the `.VMU` files.
+
+## Internet screen layout (ui_internet.c)
+
+One large panel (as the game list's box) with a heading line, eight list rows and a footer line; the connection status
+("Online via network adapter  X: hang up", the failure reason, ...) is drawn above the panel, right-aligned, not inside it. The
+CD player's five buttons pick the page:
+
+- **Players**: only the players online (name, the game they are in, network). A refreshes the list.
+- **Games**: the games on the card that have online play (META.DAT `network`) or are being played online now, one row per game
+  (not per disc), then the browser discs. Games being played come first, tinted, with the player count in front of the title.
+  A starts the game or browser through the same start as the game list.
+- **Events**: four events to a page, two lines each (title; time and source). A opens one: the whole title wrapped, time, source;
+  B closes it.
+- **News**: four items to a page (heading and the start of its text). A opens one (Up/Down scroll the text). Read by `news_fetch.c`
+  from dc.dreamcastlive.net/news.html and dc.segaonline.net (plain HTTP), cut into items by `news_parse.c`: every h1-h4 heading
+  starts an item, the text after it is its body. The DreamcastLive page (pasted by the owner) is h1 title, then h3 + p per item ending "- Posted by NAME on DATE", which becomes the date line; the Sega Online page has not been seen (the cloud
+  session has no network), so it may need tuning.
+- **Settings**: Connection, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test (the ones not built
+  yet are dim and say coming soon), and the Internet settings of `ui_settings.c`.
+
+X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is doing or why it failed.
+
+## Todo: Online menu item (blue, takes the place of Music)
+
+- Online players: from DreamcastLive (as openMenu 1.7 does) and from dc99.net. Favourite players.
+- Games being played online, matched with the games on the SD card, so a game somebody is playing
+  now can be launched from the list. Favourite online games.
+- Games and applications (browsers) on the card with known, currently working online support, with
+  which network to use for each (lists from DreamcastLive and the Flycast DCNet list). Show each
+  game's own settings, such as DNS, where there are any.
+- The online event schedule of dc99.net.
+- Switch between DCNET and DCNow! (the default) through the DreamPi companion script.
+- Show which networks a game is patched for (serial PPP, WIZnet), and group several patched
+  versions of a game so that, for example, the regular and the WIZnet one sit together.
+- Change the console's ISP network settings without starting a browser, if that is possible, with 2-3
+  presets to switch between (with a clear warning, as this writes to the flash memory).
+- In-menu notifications when a favourite player or game comes online.
+
+## Extra models in the BIOS style (sketch2)
+
+`src/bios_engine/src/bios_models.c` builds four models in code (no ROM data), ids from `BMODEL_BASE` (0x100):
+`BMODEL_PHONE` (classic telephone in the music note colour, plain white dial disc), `BMODEL_GLOBE` (low poly
+earth, green land raised over blue sea, small stand), `BMODEL_CASE_WHITE` and `BMODEL_CASE_PAL` (CD jewel
+cases, white spine / blue PAL style). Use the id as `bvm_obj.model` and also as its `texlist`; the scene
+draws them like ROM models.
+
+The jewel cases have two texture slots: slot 0 (`BMODEL_TEX_FRONT`) is the front picture (box art, UV 0..1,
+top-left origin), slot 1 (`BMODEL_TEX_BACK`) the back. In the app `gfx_model_bind_front(product)` puts the box
+art of a game on the front; the back is plain white until something is placed there.
+Triangle counts (budget about 330, the ROM icons have 208 to 486): phone 228, globe 320 (icosphere, 1280 with -DGLOBE_SUBDIV=3), cases 88 and 80.
+`models/*.obj` are the same models exported with `tools/bmodel_obj` (materials `front_art`, `back_art`).
+Preview: `BIOS_PREVIEW_ROT="22,-25,0" bios_preview dc_boot.bin out.ppm 5 <0..3> -10`.
+
+## CD case in the game browser (sketch2)
+
+The flat box art of the right panel is replaced by the 3D jewel case of the selected game (blue PAL case for
+PAL serials, white-spine case otherwise; the box art is the front picture). `bios_case.c`: when the selection
+moves down the new case flies in from the top while the old one leaves at the bottom (up: the other way round);
+motion is an ease-out of 26% of the remaining way per frame (about 15 frames), the case leans into the motion.
+At rest it tilts slowly about all axes (periods roughly 9, 12 and 15 s), each game with its own phase and
+direction. Folders show no case. Preview: `bios_preview dc_boot.bin out.ppm 5 <frames> -11`.
+
+## Lighting of the models
+
+Taken from the reference in `menu3d.zip` (traced through the ROM, checked against a Flycast capture of the real BIOS):
+one directional light (0, 0, -1) in view space, intensities spc 1.4, dif 0.3, amb 0, global ambient 0.5; `njControl3D(0x20)` (offset
+material): diffuse += the object's constant colour (script colour op) and the ambient colour := that diffuse, so the files'
+ambient chunks are never used. Per vertex: `M = diffuse + const`, `d = max(0, nz)` of the transformed, unnormalised normal,
+`rgb = clamp(0.5 M + 0.3 d M)` (no 0.5 term with strip flag 0x04), `alpha = clamp(M.a)`; flag 0x01 = unlit, material as is.
+Specular `1.4 * spec.rgb * (d*d)^P[n]` (n = specular alpha byte, P = 0, .5, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128) only
+reaches textured strips, as the PVR offset colour (`bscene_vtx.oargb`, `cxt.gen.specular`); untextured strips never show it. Nodes with
+eval flag 0x08 are hidden. Code: `bios_lit()`, `bios_offset()` in `bios_scene.c`. Main screen: every icon is drawn twice (0x200.. and 0x300..,
+alpha -90/256 each), pills alpha -50/256, header rgb -30/256.
+Colours picked by scripts that are not a constant material (panel accent, BACK overrides) are shown unlit.
+
+Sorting: the BIOS lets the PVR sort translucent polygons per pixel (autosort). Where an icon's parts and its two
+copies overlap (d-pad on the body, the copy 0.04 behind), any per-triangle CPU order leaves artefacts, so the main
+screen switches the PVR to autosort for its frames (`gfx_set_autosort`, CMake `GFX_MAIN_AUTOSORT`, default 1) and
+sends the objects unsorted (`bmenu.hw_autosort`). The switch rewrites the presort bit of the tile control words of the
+buffer the TA fills next (`set_tile_presort` in `gfx.c`, the fix later KOS versions have); KOS 2.1.1's own
+`pvr_set_presort_mode()` must not be called per frame: it moves the tile matrix 0x48 bytes on each call, which broke
+the lower right of the picture into stripes and hung the PVR on the first frame. It needs KOS's `pvr_internal.h`,
+which CMake takes from `$KOS_BASE`; without it the build keeps one mode and the CPU sorter. Other screens keep the build default (`GFX_PRESORT`). The PC
+preview composites the main menu per pixel the same way (`BIOS_PREVIEW_PRESORT=1` for submission order). Checked:
+`BIOS_PREVIEW_FLAT=1 bios_preview dc_boot.bin out.ppm 120 -1` matches the reference render of `menu3d_ref.py`
+within one level on every icon and pill pixel.
+BACK marker: selectable on the game list, Settings (BIOS cursor table 0x8C037D70) and the File card grid (0x8C03884C).
+
+## Changes after the first hardware test of the rendering clean-up (reversible)
+
+- Main menu, caption pills behind the icons: the pills (object 0x204, model 5) lie only 0.6 to 4 units behind the icons, and on a
+  console the controller, VMU and clock were seen behind their pills. The pills' 1/w is multiplied by `BMENU_PILL_DEPTH` (0.95,
+  `bios_menu.c`, through the object's `depth_mul`): lower in depth only, same place and size on the screen. To go back to the
+  BIOS's own depth set `BMENU_PILL_DEPTH` to 1.0f. The PC preview (per-pixel sorting) cannot show the difference well; judge it on
+  the console. The globe (Music while Online) is still 40 units back on purpose (`ui_bios.c`, `bmenu_set_icon_model`).
+- Game list, the orange pill of the selected row: it was squeezed along y (non-uniform scale), so its chamfered corners (0.4 units)
+  were flatter than on the Settings page. It now keeps the Settings page's pill at full scale and only its middle band is made lower
+  (`stretch_yc/yd/yx` for the pill in `blist_draw`, constants `PILL_HALF_H`, `PILL_STRAIGHT_Y`, `PILL_LEFT_X` in `bios_list.c`), the same
+  method as the big box. Same height as before. To go back: restore the old `set_scale(pill, ...)` line in `blist_sync` and remove the
+  `stretch_y*` lines of the pill branch in `blist_draw`.
+
+## Leaving Settings, opening Play (hitches reported on the console)
+
+- Leaving the Settings page rewrote the whole save file (memory card or SD, plus the VMU icon and beep) every time, even when nothing
+  was changed. Each VMU block write waits for a vblank, so the menu stood still for a good part of a second and the fps counter
+  showed 30-40 for a while. `uis_snapshot()` (when Settings opens) and `savefile_content_hash()` now let `uis_commit()` skip the
+  write when no setting was changed. A changed setting is saved as before. The list is still rebuilt on leaving (back to the root
+  folder, as before); if that is also slow on the console it is the next thing to look at.
+- Pressing A on Play for the first time loaded the list's models and textures in that frame. `bmenu_prewarm_screens` does it at start-up
+  (BOOT_TIMELINE.md, 13b). To undo: remove the call in `ui_bios.c` (the `warm2` mark).
+
+## Frame time
+
+Measured as SH-4 instructions per frame of the engine (scene building only, `qemu-sh4` with one instruction per
+block; the console runs about 3.3 million cycles per 60 Hz frame):
+
+| Screen | 4be3853 (60 fps) | before this change | now |
+|---|---|---|---|
+| Main menu, an icon animating | 1.29 M | 3.34 M | 1.04 M |
+| Settings | 0.85 M | 1.18 M | 0.45 M |
+| Game list | | 3.41 M | 0.71 M |
+| File card grid | | 3.83 M | 0.39 M |
+
+What changed: the lit colour of a vertex is worked out once per strip instead of once per triangle corner; the
+sphere-map u, v only for meshes that use it; the round disc faces use a sin/cos table; and objects whose drawing
+state (model, motion frame, position, rotation, scale, constant material, scene settings) is the same as in an
+earlier frame send their kept triangles again instead of being transformed, lit and projected
+(`bscene_cache_*`, checked against uncached drawing frame by frame in `bios_engine_test`). Doubling the icons and
+the per-vertex lighting had tripled the main menu's cost; that is what dropped it to 20 fps.
+
+Game list: the box art of the games next to the cursor is read ahead, and a new case waits up to 10 frames for
+its picture before flying in, so the front no longer pops in.
+
+Why the main menu stayed under 60 fps (hardware numbers, `Y` isolation modes): the scene build takes about 6 ms, but sending
+the vertices to the TA with the store queues took about 9 ms of CPU (about 4000 vertices, 2 us each: the CPU waits for the TA).
+The BIOS builds each list in RAM and sends it by DMA (`km_ta_list_init`, 0x8C0DA614: DMA channel 2 to 0x10000000), so the CPU is
+free meanwhile. The build now uses KOS's vertex DMA mode (`GFX_VERTEX_DMA`, `pvr_set_vertbuf`, 1 MB for the translucent list, 128 KB
+for the opaque one; a full buffer drops the rest of the frame instead of overrunning it). The CPU sorter costs 15 ms more (30 fps).
+
+## Music: the BIOS CD player
+
+`bios_engine/bios_cdplayer`: the Music screen as `music_screen_update` (0x8C018BC8) builds it: BACK (0x1110 at
+-19.53, -14.84), the five buttons 0x1301..0x1305 (scripts 0x17..0x1B), the disc 0x1200 (script 0x1C, shown and
+spinning as after the drive's "disc ready" event), the repeat indicator 0x1340 (script 0x47) and the readout
+0x1310..0x1319 (scripts 0x2A..0x33: TRACK, two digits, TIME, colon, (h)mm:ss as digit models 21..30, the hundreds
+of minutes hidden at 0). Cursor: the BIOS table 0x8C038610 (left / right wrap, start on Play / Pause); the selected
+button gets var0 = 1 (its script lights it and plays its motion), BACK var0 = 1 while selected. A on a button makes
+it jump (var1 = 1) with the confirm sound, as the BIOS buttons do; nothing is played. B or A on BACK leaves.
+Preview: `bios_preview dc_boot.bin out.ppm 120 <cursor> -13` (`BIOS_PREVIEW_NODISC=1`: empty drive).
+
+## Performance test
+
+Settings > Other > Performance test runs a fixed script (`bench.c`) through every screen twice: the same keys at the same
+frames each time, so runs on different builds compare. Each step settles for 45 frames (not measured; the serial lines of
+the previous step are written then) and then measures every frame: frame time (fps, dropped frames = longer than 1.5
+refreshes, worst, 50/95/99th percentile), CPU busy share (frame time minus the wait for the PVR and the display), logic,
+build, wait, GPU and TA time, vertices, triangles, headers, picture loads and text uploads, and heap / video RAM before
+and after. `OM bench begin` is written before each step so a crash dump or a hang can be placed. START stops it. The
+debug overlay is switched off for the test. `tools/serial_capture.py --bench <log>` makes a markdown report from a
+capture or a DreamPi log (leak check across the two runs, slow frames, crash location). Host test: `test/bench_test.c`.
+
+## Debug log page
+
+X on the main menu switches the debug overlay on (it stays on in the other menus). While it is on, every second's numbers
+(fps, triangles, sync/build/wait, gpu/ta time, vertices, headers, sort mode, phase times) are stored per screen and per Y
+mode (`dbglog.c`); the first second after a change is dropped, the following ones replace each other and the lowest fps is
+kept. B on the main menu (overlay on) opens the log page: a table to photograph, then (B again) a QR code (`qr.c`, byte
+mode, level L) with the same numbers as text, then B closes. A on the table clears the log.

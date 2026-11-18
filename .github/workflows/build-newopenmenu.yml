@@ -1,0 +1,113 @@
+name: Build NewOpenMenu
+
+on:
+  push:
+    branches: [NewOpenMenu]
+    paths:
+      - 'openMenu/**'
+      - '.github/workflows/build-newopenmenu.yml'
+  workflow_dispatch:
+  # Also run as the first job of "Build Card Manager", which packs this 1ST_READ.BIN into the Card Manager
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bios_rom host test
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -IopenMenu/src/bios_rom/include \
+            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_rom/test/bios_rom_test.c -o bios_rom_test
+          ./bios_rom_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -IopenMenu/src/bios_rom/include -IopenMenu/src/bios_engine/include \
+            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_engine/src/*.c \
+            openMenu/src/bios_engine/test/bios_engine_test.c -lm -o bios_engine_test
+          ./bios_engine_test
+          gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/serial_region_test.c openMenu/src/openmenu/src/serial_region.c -o serial_region_test
+          ./serial_region_test
+          gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/external/uthash/include -IopenMenu/src/openmenu_shared/include/texture \
+            openMenu/src/openmenu/test/serial_sanitize_test.c openMenu/src/openmenu_shared/src/texture/serial_sanitize.c -o serial_sanitize_test
+          ./serial_sanitize_test
+          gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/clock_test.c openMenu/src/openmenu/src/clock_math.c -o clock_test
+          ./clock_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/bench_test.c openMenu/src/openmenu/src/bench.c -o bench_test
+          ./bench_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src/backend \
+            openMenu/src/openmenu/test/netsel_test.c openMenu/src/openmenu/src/backend/netsel.c -o netsel_test
+          ./netsel_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src/backend \
+            openMenu/src/openmenu/test/w5500_test.c openMenu/src/openmenu/src/backend/w5500.c -o w5500_test
+          ./w5500_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/netprefs_test.c openMenu/src/openmenu/src/netprefs.c -o netprefs_test
+          ./netprefs_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/event_phase_test.c openMenu/src/openmenu/src/event_phase.c -o event_phase_test
+          ./event_phase_test
+
+      # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
+      - name: gfx host test
+        working-directory: openMenu/src
+        run: |
+          gcc -O1 -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+            -DBIOS_FONT_ROM=host_font -DGFX_REGION_BYTE=host_region -include openmenu/test/gfx_host/host_font.h \
+            openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c bios_engine/src/*.c bios_rom/src/*.c \
+            -Iopenmenu/test/gfx_host/kos -I../external/uthash/include -Ibios_engine/include -Ibios_rom/include \
+            -Iopenmenu_shared/include -Iopenmenu/src -lm -o gfx_host_test
+          ./gfx_host_test > /dev/null
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The KOS toolchain build takes the better part of an hour, so cache it.
+      - name: Build dev image (KOS toolchain)
+        uses: docker/build-push-action@v6
+        with:
+          context: openMenu/docker
+          platforms: linux/amd64
+          load: true
+          tags: openmenu-build:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build openMenu
+        shell: bash
+        run: |
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -e GITHUB_SHA \
+            -v "$PWD/openMenu:/workspaces/openmenu" -w /workspaces/openmenu \
+            openmenu-build:ci bash -c '
+              source /opt/toolchains/dc/kos/environ.sh &&
+              cmake --preset dc-release &&
+              cmake --build --preset dc-release' 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          # compiler errors and warnings as annotations, so they can be read without the full log
+          grep -E "(error|warning):" build.log | sed -E 's|^/workspaces/openmenu/|openMenu/|' | head -40 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); ln=$(echo "$line" | cut -d: -f2)
+            case "$line" in *error:*) kind=error ;; *) kind=warning ;; esac
+            echo "::$kind file=$file,line=$ln::$line"
+          done
+          if [ "$status" != 0 ]; then
+            # the end of the log too (configure errors, link errors), one annotation per line
+            grep -vE "(error|warning):" build.log | tail -25 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: openMenu/cmake-build-dc-release/bin/1ST_READ.BIN
+          if-no-files-found: error
+
+      # The ELF of the same build: symbols for crash dumps from the serial port, and runnable with dc-tool-ser -x
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmenu.elf
+          path: openMenu/cmake-build-dc-release/bin/*.elf
+          if-no-files-found: warn

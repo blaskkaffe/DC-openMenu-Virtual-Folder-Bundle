@@ -28,17 +28,17 @@ namespace GDMENUCardManager
                 reasonText.Text = $"A new version of GD MENU Card Manager ({latestVersion}) is available. Auto-update is not supported on this platform.";
             else
                 reasonText.Text = $"A new version of GD MENU Card Manager ({latestVersion}) is available, but this release cannot be auto-updated.";
-
-            this.KeyDown += (s, e) =>
-            {
-                if (e.Key == Key.Escape)
-                    Close();
-            };
         }
 
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
+        }
+
+        protected override void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+            this.FindControl<Button>("OkButton")?.Focus(NavigationMethod.Tab);
         }
 
         private void OkButton_Click(object sender, RoutedEventArgs e)
@@ -54,7 +54,7 @@ namespace GDMENUCardManager
 
         private void ReleasesLink_Click(object sender, RoutedEventArgs e)
         {
-            var url = "https://github.com/DerekPascarella/openMenu-Virtual-Folder-Bundle/releases";
+            var url = "https://github.com/blaskkaffe/DC-openMenu-Virtual-Folder-Bundle/releases";
             try
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

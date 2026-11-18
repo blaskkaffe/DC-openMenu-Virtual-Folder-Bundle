@@ -1,0 +1,1094 @@
+/*
+ * bios_preview: render the BIOS-style menu to a PPM image on the PC, using the
+ * same engine code as the console build and a software rasteriser instead of
+ * the PVR. For checking models, scripts and projection without hardware.
+ *
+ *   bios_preview dc_boot.bin out.ppm [frames=120] [selected=0] [script=-1]
+ *
+ * selected -1 on the main menu leaves every icon unselected (no icon animates).
+ * BIOS_PREVIEW_REGION=0|1|2 is the console region (2, Europe, shows the logo without the swirl).
+ * The main menu is composited like the PVR's autosort (translucent layers sorted per pixel); set
+ * BIOS_PREVIEW_PRESORT=1 to blend in submission order instead (what a presort build shows).
+ *
+ * Set BIOS_PREVIEW_LOGO=LOGO.PVR to see a replacement header logo.
+ *
+ * With script >= 0 only that single script is run as an object (useful to look
+ * at one model); otherwise the full main menu is shown.
+ * Text surfaces are shown as outlines: the console draws them with the BIOS font.
+ */
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "bios_menu.h"
+#include "bios_page.h"
+#include "bios_list.h"
+#include "bios_datetime.h"
+#include "bios_files.h"
+#include "pad_kind.h"
+#include "sd_icon.h"
+#include "tex_decode.h"
+#include "bios_models.h"
+#include "bios_case.h"
+#include "bios_cdplayer.h"
+#include "bios_surface.h"
+#include "bios_filescr.h"
+#include "bios_text.h"
+#include "bg_palette.h"
+
+#define W 640
+#define H 480
+
+static float fb[H][W][3];
+
+/* PVR autosort emulation: translucent fragments are kept per pixel and blended far to near at the end, as the
+ * hardware does when the menu runs in autosort mode (the BIOS does; BIOS_PREVIEW_PRESORT=1 blends in the
+ * order the triangles arrive instead, like a presort build). Ties keep their arrival order. */
+static int g_autosort;
+#define MAX_FRAGS (4 * 1024 * 1024)
+typedef struct {
+    float iw, col[4];
+    int next, seq;
+} frag;
+static frag* frags;
+static int frag_n, frag_head[H][W];
+static int last_frags; /* translucent fragments of the last frame resolved (BIOS_PREVIEW_STATS=1 prints it per pixel of the screen) */
+
+static void
+frag_add(int x, int y, float iw, const float col[4]) {
+    if (frag_n >= MAX_FRAGS) {
+        for (int c = 0; c < 3; c++) {
+            fb[y][x][c] = fb[y][x][c] * (1.0f - col[0]) + col[c + 1] * col[0];
+        }
+        return;
+    }
+    frag* f = &frags[frag_n];
+    f->iw = iw;
+    memcpy(f->col, col, sizeof(f->col));
+    f->seq = frag_n;
+    f->next = frag_head[y][x];
+    frag_head[y][x] = frag_n++;
+}
+
+static int
+frag_cmp(const void* a, const void* b) {
+    const frag* fa = *(const frag* const*)a;
+    const frag* fb_ = *(const frag* const*)b;
+    if (fa->iw != fb_->iw) {
+        return fa->iw < fb_->iw ? -1 : 1; /* small 1/w = far: first */
+    }
+    return fa->seq - fb_->seq;
+}
+
+static void
+frag_resolve(void) {
+    static const frag* list[4096];
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            int n = 0;
+            for (int i = frag_head[y][x]; i >= 0 && n < 4096; i = frags[i].next) {
+                list[n++] = &frags[i];
+            }
+            if (!n) {
+                continue;
+            }
+            qsort(list, (size_t)n, sizeof(list[0]), frag_cmp);
+            for (int k = 0; k < n; k++) {
+                const float* col = list[k]->col;
+                for (int c = 0; c < 3; c++) {
+                    fb[y][x][c] = fb[y][x][c] * (1.0f - col[0]) + col[c + 1] * col[0];
+                }
+            }
+            frag_head[y][x] = -1;
+        }
+    }
+    if (frag_n > last_frags) {
+        last_frags = frag_n;
+    }
+    frag_n = 0;
+}
+
+typedef struct {
+    uint32_t* px;
+    int w, h;
+} bitmap;
+
+typedef struct {
+    bscene_texref ref;
+    bitmap bmp;
+    int valid;
+} cached_tex;
+
+static cached_tex cache[256];
+static int cache_n;
+static const bios_rom* g_rom;
+
+static bitmap logo_bmp; /* optional replacement of the header logo, see biologo.py */
+
+/* BIOS_PREVIEW_ART_<n> (disc label of row n) and BIOS_PREVIEW_ART_CASE (front of the case): P6 PPM files */
+static int
+load_ppm(const char* path, bitmap* b) {
+    FILE* f = fopen(path, "rb");
+    int w, h, mx;
+    if (!f || fscanf(f, "P6 %d %d %d", &w, &h, &mx) != 3) {
+        if (f) fclose(f);
+        return 0;
+    }
+    fgetc(f);
+    b->px = malloc(sizeof(uint32_t) * (size_t)w * (size_t)h);
+    for (int i = 0; i < w * h; i++) {
+        int r = fgetc(f), g = fgetc(f), bl = fgetc(f);
+        b->px[i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+    }
+    fclose(f);
+    b->w = w;
+    b->h = h;
+    return 1;
+}
+
+/* a texel coordinate past the texture: repeated, mirrored every other time, or held at the edge (PVR uv modes) */
+static int
+texel_index(int i, int n, int flip, int clamp) {
+    if (clamp) {
+        return i < 0 ? 0 : (i >= n ? n - 1 : i);
+    }
+    if (flip) {
+        int p = ((i % (2 * n)) + 2 * n) % (2 * n);
+        return p < n ? p : 2 * n - 1 - p;
+    }
+    return ((i % n) + n) % n;
+}
+
+static void tri(void* user, const bscene_vtx v[3], bscene_texref ref);
+/* ui_bios near_sink: 1/w times 4 */
+static void
+near_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    const bscene_sink* out = (const bscene_sink*)user;
+    bscene_vtx n[3] = {v[0], v[1], v[2]};
+    for (int i = 0; i < 3; i++) n[i].invw *= 4.0f;
+    out->triangle(out->user, n, ref);
+}
+
+static const bitmap*
+lookup(bscene_texref ref) {
+    if (logo_bmp.px && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        return &logo_bmp;
+    }
+    for (int i = 0; i < cache_n; i++) {
+        if (cache[i].ref.kind == ref.kind && cache[i].ref.a == ref.a && cache[i].ref.b == ref.b) {
+            return cache[i].valid ? &cache[i].bmp : NULL;
+        }
+    }
+    if (cache_n >= 256) {
+        return NULL;
+    }
+    cached_tex* c = &cache[cache_n++];
+    c->ref = ref;
+    {
+        char name[40] = "";
+        if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= 0x1000 && ref.b == 0) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_%d", ref.a - 0x1000);
+        } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_FRONT) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE");
+        }
+        const char* val = name[0] ? getenv(name) : NULL;
+        if (val && (!strcmp(val, "pal") || !strcmp(val, "ntsc"))) {
+            /* the BIOS disc of the region: the first 256x256 gbix 0 picture in the ROM is blue (PAL), the second red */
+            int want = !strcmp(val, "pal") ? 0 : 1, found = 0;
+            for (int n = 0; n < bios_texture_count(g_rom); n++) {
+                bios_texture t;
+                if (bios_texture_get(g_rom, n, &t) == 0 && t.gbix == 0 && t.width == 256 && t.height == 256) {
+                    if (found++ == want) {
+                        c->bmp.w = t.width;
+                        c->bmp.h = t.height;
+                        c->bmp.px = malloc(sizeof(uint32_t) * t.width * t.height);
+                        c->valid = c->bmp.px && bios_texture_decode(&t, c->bmp.px) == 0;
+                        return c->valid ? &c->bmp : NULL;
+                    }
+                }
+            }
+        } else if (val && load_ppm(val, &c->bmp)) {
+            c->valid = 1;
+            return &c->bmp;
+        }
+    }
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
+        /* built-in models: a test chart for the front picture, plain white for the back */
+        c->bmp.w = c->bmp.h = 64;
+        c->bmp.px = malloc(sizeof(uint32_t) * 64 * 64);
+        for (int i = 0; i < 64 * 64; i++) {
+            int x = i % 64, y = i / 64;
+            uint32_t col = 0xFFFFFFFFu;
+            if (ref.b == BMODEL_TEX_FRONT) {
+                col = ((x / 8 + y / 8) & 1) ? 0xFFF0A020u : 0xFF20A0F0u;
+                if (x < 3 || y < 3 || x > 60 || y > 60) col = 0xFF202020u;
+                if (y < 12 && x < 24) col = 0xFFFF2020u; /* top-left marker shows the orientation */
+            }
+            c->bmp.px[i] = col;
+        }
+        c->valid = c->bmp.px != NULL;
+        return c->valid ? &c->bmp : NULL;
+    }
+    bios_texture t;
+    int ok;
+    if (ref.kind == BSCENE_TEX_GBIX) {
+        ok = bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0;
+    } else if (ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        /* BIOS_PREVIEW_REGION: console region (0 Japan, 1 America, 2 Europe: the swirl in blue) */
+        ok = bios_header_logo(g_rom, getenv("BIOS_PREVIEW_REGION") ? atoi(getenv("BIOS_PREVIEW_REGION")) : 1, &t) == 0;
+    } else {
+        ok = bios_texlist_texture(g_rom, ref.a >= 0x1000 ? 61 : ref.a, ref.b, &t) == 0;
+    }
+    if (ok) {
+        c->bmp.w = t.width;
+        c->bmp.h = t.height;
+        c->bmp.px = malloc(sizeof(uint32_t) * t.width * t.height);
+        c->valid = c->bmp.px && bios_texture_decode(&t, c->bmp.px) == 0;
+    }
+    return c->valid ? &c->bmp : NULL;
+}
+
+static void
+tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    (void)user;
+    const bitmap* tex = ref.kind != BSCENE_TEX_NONE ? lookup(ref) : NULL;
+    float minx = fminf(v[0].x, fminf(v[1].x, v[2].x)), maxx = fmaxf(v[0].x, fmaxf(v[1].x, v[2].x));
+    float miny = fminf(v[0].y, fminf(v[1].y, v[2].y)), maxy = fmaxf(v[0].y, fmaxf(v[1].y, v[2].y));
+    int x0 = (int)fmaxf(minx, 0), x1 = (int)fminf(maxx + 1, W - 1), y0 = (int)fmaxf(miny, 0), y1 = (int)fminf(maxy + 1, H - 1);
+    float den = (v[1].y - v[2].y) * (v[0].x - v[2].x) + (v[2].x - v[1].x) * (v[0].y - v[2].y);
+    if (fabsf(den) < 1e-9f) {
+        return;
+    }
+    for (int y = y0; y <= y1; y++) {
+        for (int x = x0; x <= x1; x++) {
+            float px = x + 0.5f, py = y + 0.5f;
+            float w0 = ((v[1].y - v[2].y) * (px - v[2].x) + (v[2].x - v[1].x) * (py - v[2].y)) / den;
+            float w1 = ((v[2].y - v[0].y) * (px - v[2].x) + (v[0].x - v[2].x) * (py - v[2].y)) / den;
+            float w2 = 1.0f - w0 - w1;
+            if (w0 < 0 || w1 < 0 || w2 < 0) {
+                continue;
+            }
+            float iw = w0 * v[0].invw + w1 * v[1].invw + w2 * v[2].invw;
+            float col[4];
+            for (int c = 0; c < 4; c++) {
+                int sh = 24 - 8 * c;
+                col[c] = (w0 * (float)((v[0].argb >> sh) & 255) * v[0].invw + w1 * (float)((v[1].argb >> sh) & 255) * v[1].invw
+                          + w2 * (float)((v[2].argb >> sh) & 255) * v[2].invw) / iw / 255.0f;
+            }
+            if (tex) {
+                float u = (w0 * v[0].u * v[0].invw + w1 * v[1].u * v[1].invw + w2 * v[2].u * v[2].invw) / iw;
+                float t = (w0 * v[0].v * v[0].invw + w1 * v[1].v * v[1].invw + w2 * v[2].v * v[2].invw) / iw;
+                /* bilinear, wrapping, as the console's PVR_FILTER_BILINEAR */
+                float fx = u * tex->w - 0.5f, fy = t * tex->h - 0.5f;
+                int ix = (int)floorf(fx), iy = (int)floorf(fy);
+                float ax = fx - ix, ay = fy - iy;
+                float texel[4] = {0, 0, 0, 0};
+                for (int q = 0; q < 4; q++) {
+                    int qx = texel_index(ix + (q & 1), tex->w, ref.uv & NJ_TEX_FLIP_U, ref.uv & NJ_TEX_CLAMP_U);
+                    int qy = texel_index(iy + (q >> 1), tex->h, ref.uv & NJ_TEX_FLIP_V, ref.uv & NJ_TEX_CLAMP_V);
+                    uint32_t p = tex->px[qy * tex->w + qx];
+                    float wgt = ((q & 1) ? ax : 1.0f - ax) * ((q >> 1) ? ay : 1.0f - ay);
+                    texel[0] += wgt * (float)(p >> 24);
+                    texel[1] += wgt * (float)((p >> 16) & 255);
+                    texel[2] += wgt * (float)((p >> 8) & 255);
+                    texel[3] += wgt * (float)(p & 255);
+                }
+                for (int c = 0; c < 4; c++) {
+                    col[c] *= texel[c] / 255.0f;
+                }
+                if (v[0].oargb | v[1].oargb | v[2].oargb) { /* the offset colour is added after the texture */
+                    for (int c = 0; c < 3; c++) {
+                        int sh = 16 - 8 * c;
+                        float o = (w0 * (float)((v[0].oargb >> sh) & 255) * v[0].invw + w1 * (float)((v[1].oargb >> sh) & 255) * v[1].invw
+                                   + w2 * (float)((v[2].oargb >> sh) & 255) * v[2].invw) / iw / 255.0f;
+                        col[c + 1] = col[c + 1] + o > 1.0f ? 1.0f : col[c + 1] + o;
+                    }
+                }
+            }
+            if (g_autosort) {
+                frag_add(x, y, iw, col);
+                continue;
+            }
+            for (int c = 0; c < 3; c++) {
+                fb[y][x][c] = fb[y][x][c] * (1.0f - col[0]) + col[c + 1] * col[0];
+            }
+        }
+    }
+}
+
+
+/* ---- Labels of the screens, for pictures (BIOS_PREVIEW_LABEL_FILE): the console sets the texts of the icon captions, the Settings rows, the
+ * game list rows and the help box through gfx_set_label(); here a file does. One line each: `0x200|Play` (an icon caption), `0x1407|Language|English`
+ * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (no longer used: the information under the Settings box is written by the app), `0x17C0|Some Game` (a game
+ * list row), and `@x,y,rrggbb|text` for any text at a place of the picture (x < 0: centred on -x). The font is the BIOS's own, at its own size. */
+typedef struct {
+    unsigned id;
+    char a[64], b[64];
+} plabel;
+static plabel plabels[96];
+static int nplabels;
+typedef struct {
+    int x, y;
+    unsigned rgb;
+    char text[64];
+} ptext;
+static ptext ptexts[64];
+static int nptexts;
+
+static void
+load_labels(const char* path) {
+    FILE* f = fopen(path, "r");
+    char line[256];
+    while (f && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '@' && nptexts < 64) {
+            ptext* t = &ptexts[nptexts];
+            char* bar = strchr(line, '|');
+            unsigned rgb = 0xFFFFFF;
+            if (bar && sscanf(line + 1, "%d,%d,%x", &t->x, &t->y, &rgb) >= 2) {
+                t->rgb = rgb;
+                snprintf(t->text, sizeof(t->text), "%s", bar + 1);
+                nptexts++;
+            }
+        } else if (line[0] && line[0] != '#' && nplabels < 96) {
+            plabel* l = &plabels[nplabels];
+            char* b1 = strchr(line, '|');
+            if (!b1) continue;
+            *b1++ = '\0';
+            l->id = (unsigned)strtoul(line, NULL, 0);
+            char* b2 = strchr(b1, '|');
+            if (b2) *b2++ = '\0';
+            snprintf(l->a, sizeof(l->a), "%s", b1);
+            snprintf(l->b, sizeof(l->b), "%s", b2 ? b2 : "");
+            nplabels++;
+        }
+    }
+    if (f) fclose(f);
+}
+
+static const plabel*
+find_label(unsigned id) {
+    for (int i = 0; i < nplabels; i++) {
+        if (plabels[i].id == id) return &plabels[i];
+    }
+    return NULL;
+}
+
+/* the BIOS font at its own size, with its top left corner at (lx, ly) */
+static void
+blit_text(const char* str, int lx, int ly, unsigned rgb) {
+    static uint16_t canvas[32 * 640];
+    if (!g_rom || !str[0]) return;
+    memset(canvas, 0, sizeof(canvas));
+    btext_draw(canvas, 640, 32, 0, 0, g_rom->data + BTEXT_FONT_OFFSET, str, 0xFFFF);
+    float tint[3] = {(float)((rgb >> 16) & 255) / 255.0f, (float)((rgb >> 8) & 255) / 255.0f, (float)(rgb & 255) / 255.0f};
+    for (int j = 0; j < 28; j++)
+        for (int i = 0; i < 640; i++) {
+            uint16_t c = canvas[j * 640 + i];
+            int px = lx + i, py = ly + j;
+            if (!(c >> 12) || px < 0 || px >= W || py < 0 || py >= H) continue;
+            float a = (float)(c >> 12) / 15.0f;
+            float lum = (float)((c >> 4) & 15) / 15.0f; /* the glyphs carry their own shade: white text, tinted */
+            for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + (lum * tint[k] + (1.0f - lum) * 0.0f) * a;
+        }
+}
+
+static int
+draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
+    const plabel* l = find_label(o->id);
+    if (!l) return 0;
+    if (o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) { /* centred on the anchor */
+        blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
+    } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
+        blit_text(l->a, (int)(BPAGE_LABEL_CX_PX - (float)btext_width(l->a) / 2.0f), y0, 0xFFFFFF); /* as gfx.c */
+        blit_text(l->b, (int)BPAGE_VALUE_X_PX, y0, 0xFFFFFF);
+    } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
+        blit_text(l->a, x0, y0, 0xFFFFFF);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+static void
+text(void* user, const bvm_obj* o, float x, float y, float invw) {
+    (void)user; (void)invw;
+    if (g_autosort) {
+        frag_resolve(); /* outlines are a debugging aid: keep them on top */
+    }
+    if (getenv("BIOS_PREVIEW_TEXTLOG")) {
+        fprintf(stderr, "text %#x at %.1f %.1f\n", o->id, x, y);
+    }
+    int x0 = (int)(x - o->text_w / 2.0f), y0 = (int)(y - o->text_h / 2.0f), x1 = x0 + o->text_w, y1 = y0 + o->text_h; /* anchor = centre */
+    const bsurf* sf = bsurf_find(o->id);
+    if (sf) { /* a text surface the screen printed into: blend it pixel for pixel */
+        if (sf->hidden) {
+            return;
+        }
+        float fade = bscene_text_alpha(o);
+        int sx0 = (int)(x - sf->w / 2.0f), sy0 = (int)(y - sf->h / 2.0f);
+        for (int j = 0; j < sf->h; j++) {
+            for (int i = 0; i < sf->w; i++) {
+                int px = sx0 + i, py = sy0 + j;
+                if (px < 0 || px >= W || py < 0 || py >= H) continue;
+                uint16_t c = sf->px[j * sf->w + i];
+                float a = (float)(c >> 12) / 15.0f * fade;
+                float rgb[3] = {(float)((c >> 8) & 15) / 15.0f, (float)((c >> 4) & 15) / 15.0f, (float)(c & 15) / 15.0f};
+                for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
+            }
+        }
+        return;
+    }
+    if (nplabels && draw_label_text(o, x, y, x0, y0)) {
+        return;
+    }
+    if (getenv("BIOS_PREVIEW_LABELS") && g_rom) { /* sample labels placed as the console's gfx.c places them */
+        int list = o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS);
+        int page = o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS);
+        if (list || page) {
+            static uint16_t canvas[32 * 512];
+            memset(canvas, 0, sizeof(canvas));
+            const uint8_t* font = g_rom->data + BTEXT_FONT_OFFSET;
+            btext_draw(canvas, 512, 32, 0, 0, font, list ? "Shenmue Disc 1" : "Music", 0xFFFF);
+            if (page) btext_draw(canvas, 512, 32, 240, 0, font, "On", 0xFFFF);
+            int lx = x0 + (page ? 10 : 0);
+            for (int j = 0; j < 26; j++)
+                for (int i = 0; i < 512; i++) {
+                    uint16_t c = canvas[j * 512 + i];
+                    int px = lx + i, py = y0 + j;
+                    if (!(c >> 12) || px < 0 || px >= W || py < 0 || py >= H) continue;
+                    float a = (float)(c >> 12) / 15.0f;
+                    float rgb[3] = {(float)((c >> 8) & 15) / 15.0f, (float)((c >> 4) & 15) / 15.0f, (float)(c & 15) / 15.0f};
+                    for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
+                }
+            return;
+        }
+    }
+    if (getenv("BIOS_PREVIEW_NOBOX")) { /* print the text areas instead of outlining them (id x y w h) */
+        fprintf(stderr, "TEXT %x %d %d %d %d\n", o->id, x0, y0, o->text_w, o->text_h);
+        return;
+    }
+    for (int i = x0; i < x1; i++) {
+        for (int k = 0; k < 2; k++) {
+            int yy = k ? y1 - 1 : y0;
+            if (i >= 0 && i < W && yy >= 0 && yy < H) fb[yy][i][0] = fb[yy][i][1] = fb[yy][i][2] = 1.0f;
+        }
+    }
+    for (int j = y0; j < y1; j++) {
+        for (int k = 0; k < 2; k++) {
+            int xx = k ? x1 - 1 : x0;
+            if (j >= 0 && j < H && xx >= 0 && xx < W) fb[j][xx][0] = fb[j][xx][1] = fb[j][xx][2] = 1.0f;
+        }
+    }
+}
+
+
+/* File screen demo (-14): A1 a blue card with files, B1 a plain card, B2 unformatted, controllers A and B */
+static bfs_card demo_cards[BFS_SLOTS];
+static bfs_file demo_files[2][BFS_MAX_FILES];
+static uint8_t demo_bits[BFS_MAX_FILES][512];
+static bfs demo_fs;
+
+static void
+demo_fill(const bios_rom* rom) {
+    static const char* names[] = {"SONICADV_INT", "SONICADV_SYS", "SOUL_CAL.SYS", "PSO_GUILD", "CRAZYTAXI", "SHENMUE_SYS",
+                                  "JETGRIND_001", "ICONDATA_VMS", "MSR_DATA", "RES_EVIL_CV1", "SKIESARC_01", "POWERSTONE"};
+    for (int c = 0; c < 2; c++) {
+        bfs_card* k = &demo_cards[c == 0 ? 0 : 2];
+        k->status = BFS_CARD_READY;
+        k->colour = c == 0 ? 0xFF3050E0u : 0xFFFFFFFFu;
+        const uint8_t* font = bios_rom_ptr(rom, 0x8C000000u + BTEXT_FONT_OFFSET, 0x80000u);
+        bfs_mono_icon(font + BTEXT_VMU_ICONS + (uint32_t)(c ? 40 : 12) * 128u, 0xF225, k->icon);
+        k->files = demo_files[c];
+        k->nfiles = c == 0 ? 12 : 3;
+        k->total_blocks = 200;
+        k->free_blocks = c == 0 ? 37 : 180;
+        for (int i = 0; i < k->nfiles; i++) {
+            bfs_file* f = &k->files[i];
+            snprintf(f->name, sizeof(f->name), "%s", names[(i + c * 5) % 12]);
+            snprintf(f->vmdesc, sizeof(f->vmdesc), "Game file %d", i);
+            snprintf(f->desc, sizeof(f->desc), "Demo save of %s", names[(i + c * 5) % 12]);
+            snprintf(f->app, sizeof(f->app), "APP%d", i % 4);
+            f->blocks = 3 + i * 7 % 40;
+            uint8_t t[8] = {0x20, 0x01, 0x03, 0x14, 0x12, 0x34, 0x00, 0x02};
+            memcpy(f->time, t, 8);
+            f->protect = i == 4 ? 0xFF : 0;
+            f->game = i == 6;
+            f->header = 2;
+            f->icons = 1;
+            f->speed = 10;
+            for (int p = 0; p < 16; p++) {
+                f->palette[p] = (uint16_t)(0xF000 | ((p * 3 + i) & 15) << 8 | ((p * 7) & 15) << 4 | ((15 - p + i) & 15));
+            }
+            f->palette[0] = 0x0000;
+            for (int b = 0; b < 512; b++) {
+                int x = (b * 2) % 32, y = (b * 2) / 32;
+                int dx = x - 16, dy = y - 16, d = (dx * dx + dy * dy) / (10 + i * 3);
+                demo_bits[i + c * 100][b] = (uint8_t)((d < 15 ? d + 1 : 0) << 4 | (d < 15 ? d + 1 : 0));
+            }
+            f->bitmaps = demo_bits[i + c * 100];
+        }
+    }
+    demo_cards[3].status = BFS_CARD_UNFORMATTED;
+    demo_cards[3].colour = 0xFFFFFFFFu;
+    const uint8_t* font = bios_rom_ptr(rom, 0x8C000000u + BTEXT_FONT_OFFSET, 0x80000u);
+    bfs_mono_icon(font + BTEXT_VMU_ICONS, 0xFD00, demo_cards[3].icon);
+}
+
+static void
+demo_row(void* user, int index, bpage_row* out) {
+    (void)user;
+    static int env_icons[16], env_n = -1; /* BIOS_PREVIEW_ICONS="1,2,20,...": the icon of each row */
+    if (env_n < 0) {
+        env_n = 0;
+        for (const char* e = getenv("BIOS_PREVIEW_ICONS"); e && *e && env_n < 16;) {
+            env_icons[env_n++] = atoi(e);
+            e = strchr(e, ',') ? strchr(e, ',') + 1 : NULL;
+        }
+    }
+    out->icon = index < env_n ? env_icons[index] : index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+}
+
+static double bench_area, bench_tris, bench_tex_area, bench_vtx_count;
+static bscene_vtx bs_l1, bs_l2;
+static int bs_pending, bs_tex_kind = -1, bs_tex_a, bs_tex_b;
+static double bench_strips, bench_sent;
+
+static int
+bs_same(const bscene_vtx* a, const bscene_vtx* b) {
+    return a->x == b->x && a->y == b->y && a->argb == b->argb && a->u == b->u && a->v == b->v && a->invw == b->invw && a->oargb == b->oargb;
+}
+
+static void
+bench_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    (void)user;
+    /* area clipped to the screen by bounding box ratio: good enough to see the overdraw */
+    float a = fabsf((v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y)) * 0.5f;
+    float minx = fminf(v[0].x, fminf(v[1].x, v[2].x)), maxx = fmaxf(v[0].x, fmaxf(v[1].x, v[2].x));
+    float miny = fminf(v[0].y, fminf(v[1].y, v[2].y)), maxy = fmaxf(v[0].y, fmaxf(v[1].y, v[2].y));
+    float bw = maxx - minx, bh = maxy - miny;
+    float cw = fminf(maxx, 640.0f) - fmaxf(minx, 0.0f), ch = fminf(maxy, 480.0f) - fmaxf(miny, 0.0f);
+    if (cw > 0 && ch > 0 && bw > 0 && bh > 0) {
+        a *= (cw * ch) / (bw * bh);
+        bench_area += a;
+        if (ref.kind != BSCENE_TEX_NONE) {
+            bench_tex_area += a;
+        }
+    }
+    bench_tris += 1;
+    bench_vtx_count += 3;
+    /* the strip merge of gfx.c's sink_triangle: how many vertices the TA really gets */
+    int same_tex = bs_pending && bs_tex_kind == ref.kind && bs_tex_a == ref.a && bs_tex_b == ref.b;
+    if (same_tex) {
+        int a = -1, b = -1;
+        for (int i = 0; i < 3; i++) {
+            if (a < 0 && bs_same(&v[i], &bs_l1)) {
+                a = i;
+            } else if (b < 0 && bs_same(&v[i], &bs_l2)) {
+                b = i;
+            }
+        }
+        if (a >= 0 && b >= 0) {
+            bench_sent += 1;
+            bs_l1 = bs_l2;
+            bs_l2 = v[3 - a - b];
+            return;
+        }
+    }
+    bench_sent += 3;
+    bench_strips += 1;
+    bs_l1 = v[1];
+    bs_l2 = v[2];
+    bs_pending = 1;
+    bs_tex_kind = ref.kind;
+    bs_tex_a = ref.a;
+    bs_tex_b = ref.b;
+}
+
+static void
+bench_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
+    (void)user; (void)obj; (void)x; (void)y; (void)invw;
+}
+
+int
+main(int argc, char** argv) {
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s dc_boot.bin out.ppm [frames] [selected] [script]\n", argv[0]);
+        return 2;
+    }
+    int frames = argc > 3 ? atoi(argv[3]) : 120, selected = argc > 4 ? atoi(argv[4]) : 0, script = argc > 5 ? atoi(argv[5]) : -1;
+
+    FILE* f = fopen(argv[1], "rb");
+    if (!f) {
+        perror(argv[1]);
+        return 1;
+    }
+    static uint8_t rom_data[BIOS_ROM_SIZE];
+    size_t got = fread(rom_data, 1, sizeof(rom_data), f);
+    fclose(f);
+    static bios_rom rom;
+    int err = bios_rom_init(&rom, rom_data, got);
+    if (err != BIOS_ROM_OK) {
+        fprintf(stderr, "not a supported boot ROM (error %d)\n", err);
+        return 1;
+    }
+    g_rom = &rom;
+    if (getenv("BIOS_PREVIEW_LABEL_FILE")) {
+        load_labels(getenv("BIOS_PREVIEW_LABEL_FILE"));
+    }
+
+    const char* logo_path = getenv("BIOS_PREVIEW_LOGO");
+    if (logo_path && *logo_path) {
+        FILE* lf = fopen(logo_path, "rb");
+        static uint8_t logo_file[256 * 1024];
+        size_t n = lf ? fread(logo_file, 1, sizeof(logo_file), lf) : 0;
+        if (lf) {
+            fclose(lf);
+        }
+        bios_texture lt;
+        if (bios_texture_parse(logo_file, n, &lt) == 0) {
+            logo_bmp.w = lt.width;
+            logo_bmp.h = lt.height;
+            logo_bmp.px = malloc(sizeof(uint32_t) * lt.width * lt.height);
+            if (!logo_bmp.px || bios_texture_decode(&lt, logo_bmp.px) != 0) {
+                logo_bmp.px = NULL;
+            }
+        }
+        if (!logo_bmp.px) {
+            fprintf(stderr, "could not use %s as logo\n", logo_path);
+        }
+    }
+
+    static bmenu menu;
+    static bpage page;
+    static blist list;
+    static bdt dt;
+    bmenu_init(&menu, &rom, NULL);
+    bsurf_init(&rom);
+    /* BIOS_PREVIEW_BG=<palette index> and BIOS_PREVIEW_DARK=1 as the Settings rows (needs bg_palette.c in the build) */
+    int pv_bg = getenv("BIOS_PREVIEW_BG") ? atoi(getenv("BIOS_PREVIEW_BG")) : 0, pv_dark = getenv("BIOS_PREVIEW_DARK") != NULL;
+    if (getenv("BIOS_PREVIEW_GLOBE")) {
+        bmenu_set_icon_model(&menu, 2, BMODEL_GLOBE, (float)atof(getenv("BIOS_PREVIEW_GLOBE")), getenv("GX") ? (float)atof(getenv("GX")) : 0.0f, getenv("GY") ? (float)atof(getenv("GY")) : 0.0f, getenv("GZ") ? (float)atof(getenv("GZ")) : 0.0f); /* the Music icon as the globe: the value is its scale */
+    }
+    bscene_set_background_tint(bg_palette_wave_tint(pv_bg, pv_dark));
+    if (pv_dark) {
+        menu.scene.header_bar_argb = bg_palette_bar_dark();
+        bsurf_clock_light(1);
+    }
+    { /* the header clock as ui_bios prints it (fx_debug_hex_text) */
+        bsurf* hs = bsurf_get(BMENU_ID_HEADER, 256, 32);
+        bsurf_clock_text(hs, 40, 16, "10/10/2026 10:27");
+    }
+    frags = malloc(sizeof(frag) * MAX_FRAGS);
+    memset(frag_head, 0xFF, sizeof(frag_head));
+    /* the main menu runs with the PVR's per-pixel autosort, as the BIOS (and the console build) does */
+    g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && (script == -1 || getenv("BIOS_PREVIEW_AUTOSORT"));
+    menu.hw_autosort = g_autosort;
+
+    static bcdplayer cdp;
+    if (script == -13) { /* the CD player: `selected` = cursor (0 BACK .. 5 repeat), BIOS_PREVIEW_NODISC=1 for no disc */
+        bcd_open(&cdp, &menu, !getenv("BIOS_PREVIEW_NODISC"), 12, 3725);
+        bcd_set_cursor(&cdp, selected);
+    } else if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
+        bpage_open(&page, &menu, 10);
+        for (int i = 0; i < selected; i++) {
+            bpage_move(&page, 1);
+        }
+    } else if (script == -3 || script == -4) { /* game list demo: 7 rows as the console (BLIST_SLOTS=n) */
+        blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
+        blist_goto(&list, selected);
+        list.back_selected = getenv("BLIST_BACK") != NULL;
+        list.pal_console = getenv("BLIST_PAL") != NULL;
+    } else if (script == -6) { /* date and time editor, `selected` = field */
+        bdt_open(&dt, &menu, BDT_ORDER_MDY, 2026, 10, 9, 14, 30);
+        dt.cursor = selected;
+    } else if (script == -7) { /* model 35 (the green triangle) as the mouse pointer, `selected` = rotation in degrees */
+        bvm_obj* o = bvm_create(&menu.vm, 0x3d, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)BVM_F_ATTACHED;
+        o->pos_tw[0].cur = -8.0f;
+        o->pos_tw[1].cur = 6.0f;
+        o->pos_tw[2].cur = -353.5f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 1.0f;
+        o->rot_tw[2].cur = (int32_t)((float)selected * 65536.0f / 360.0f);
+        o->rot_tw[2].step = 0;
+        bmenu_update(&menu);
+    } else if (script == -10) { /* built-in models: `selected` = model index from BMODEL_BASE, BIOS_PREVIEW_ROT="x,y,z" degrees */
+        bvm_obj* o = bvm_create(&menu.vm, 0x3d, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)(BVM_F_ATTACHED | BVM_F_MOTION);
+        o->model = BMODEL_BASE + selected;
+        o->texlist = o->model;
+        o->pos_tw[0].cur = 0.0f;
+        o->pos_tw[1].cur = -3.0f;
+        o->pos_tw[2].cur = getenv("BIOS_PREVIEW_Z") ? -(float)atof(getenv("BIOS_PREVIEW_Z")) : -140.0f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 1.0f;
+        float rot[3] = {0, 0, 0};
+        if (getenv("BIOS_PREVIEW_ROT")) {
+            sscanf(getenv("BIOS_PREVIEW_ROT"), "%f,%f,%f", &rot[0], &rot[1], &rot[2]);
+        }
+        for (int k = 0; k < 3; k++) {
+            o->rot_tw[k].cur = (int32_t)(rot[k] * 65536.0f / 360.0f);
+            o->rot_tw[k].step = 0;
+        }
+        bmenu_update(&menu);
+    } else if (script == -11) { /* case flying in: `selected` = frames since the selection moved down */
+        bmenu_update(&menu);
+    } else if (script == -14) { /* the File screen: BIOS_PREVIEW_KEYS="frame:key,..." with keys UDLRABXY */
+        demo_fill(&rom);
+        bfs_init(&demo_fs, &menu, NULL, demo_cards);
+        demo_fs.ports = getenv("BIOS_PREVIEW_PORTS") ? atoi(getenv("BIOS_PREVIEW_PORTS")) : 3;
+        bfs_open(&demo_fs);
+        const char* keys = getenv("BIOS_PREVIEW_KEYS");
+        for (int i = 0; i < frames; i++) {
+            if (keys) {
+                for (const char* p = keys; *p;) {
+                    int f = atoi(p);
+                    const char* c = strchr(p, ':');
+                    if (!c) break;
+                    if (f == i) {
+                        const char* map = "UDLRABXYPN"; /* P, N: page up / down */
+                        const char* k = strchr(map, c[1]);
+                        if (k) bfs_key(&demo_fs, (int)(k - map) + 1);
+                    }
+                    p = strchr(c, ',');
+                    if (!p) break;
+                    p++;
+                }
+            }
+            bmenu_update(&menu);
+            bfs_update(&demo_fs);
+            bfs_op* op = bfs_pending(&demo_fs);
+            if (op) { op->progress += 12; if (op->progress >= 1000) { op->progress = 1000; op->done = 1; } }
+        }
+        fprintf(stderr, "file screen state %#x grid %d browser %d cursor %d/%d\n", demo_fs.state, demo_fs.g_state, demo_fs.b_state,
+                demo_fs.g_cursor, demo_fs.b_cursor);
+    } else if (script == -9) { /* memory card grid of the File screen: `selected` = cursor; cards in A1, B1, B2 */
+        static bfiles bf;
+        bfiles_open(&bf, &menu, selected);
+        bf.present[0] = bf.present[2] = bf.present[3] = 1;
+        for (int i = 0; i < 60; i++) {
+            bmenu_update(&menu);
+            bfiles_sync(&bf);
+        }
+        menu.vm.error = 0;
+    } else if (script == -8) { /* window panel with the accent of screen `selected` (0 orange 1 green 2 blue 3 magenta 4 grey) */
+    } else if (script == -5) { /* the GD-ROM disc model seen from behind, large */
+        bvm_obj* o = bvm_create(&menu.vm, 0x4e, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)(BVM_F_ATTACHED | BVM_F_MOTION);
+        o->model = 61;
+        o->texlist = 61;
+        o->pos_tw[0].cur = o->pos_tw[1].cur = 0;
+        o->pos_tw[2].cur = -378.0f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 0.8f;
+        o->rot_tw[1].cur = selected; /* angle units, 0x8000 = 180 degrees */
+        bmenu_update(&menu);
+    } else if (script >= 0) {
+        bvm_obj* o = bvm_create(&menu.vm, script, 0x400, 0x2000);
+        if (!o) {
+            fprintf(stderr, "script %d is unused\n", script);
+            return 1;
+        }
+        o->pos_tw[2].cur = -340.0f; /* scripts that do not place themselves */
+    } else {
+        bmenu_show_main(&menu, selected);
+        if (selected < 0) { /* nothing selected: every icon rests in its model's own pose */
+            for (int i = 0; i < BMENU_ICONS; i++) {
+                bvm_obj* o = bvm_find(&menu.vm, BMENU_ID_ICON(i));
+                bvm_obj* c = bvm_find(&menu.vm, BMENU_ID_CAPTION(i));
+                if (o) o->var[0] = 0;
+                if (c) c->var[0] = 0;
+            }
+        }
+    }
+    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -11 || script == -8 || script == -9 || script == -14 ? 0 : frames); i++) {
+        bmenu_update(&menu);
+        if (script == -2) {
+            bpage_sync(&page, demo_row, NULL);
+        }
+        if (script == -6) {
+            bdt_sync(&dt);
+        }
+        if (script == -13) {
+            bcd_sync(&cdp);
+        }
+        if (script == -3 || script == -4) {
+            list.disc_number = getenv("BLIST_DISC") ? atoi(getenv("BLIST_DISC")) : 2; /* demo: the selected game is a multi-disc set */
+            blist_sync(&list);
+        }
+    }
+    if (menu.vm.error) {
+        fprintf(stderr, "script error %d at %#x\n", menu.vm.error, menu.vm.error_pc);
+    }
+
+    if (getenv("BIOS_PREVIEW_BENCH")) { /* time the scene building of the main menu: no pixels, for gprof */
+        int n = atoi(getenv("BIOS_PREVIEW_BENCH"));
+        bscene_sink null_sink = {NULL, bench_tri, bench_text, NULL};
+        int move = getenv("BIOS_PREVIEW_BENCH_MOVE") ? atoi(getenv("BIOS_PREVIEW_BENCH_MOVE")) : 0; /* frames per icon */
+        double seg_area = 0, seg_tris = 0, seg_tex = 0;
+        int seg_n = 0;
+        for (int i = 0; i < n; i++) {
+            if (move && i % move == 0) {
+                if (seg_n) {
+                    printf("icon %d: %.0f tris, overdraw %.2fx (textured %.2fx) over %d frames\n", (i / move + 3) % 4, seg_tris / seg_n,
+                           seg_area / seg_n / (640.0 * 480.0), seg_tex / seg_n / (640.0 * 480.0), seg_n);
+                }
+                seg_area = seg_tris = seg_tex = 0;
+                seg_n = 0;
+                bmenu_select(&menu, (i / move) % 4);
+            }
+            bmenu_update(&menu);
+            double a0 = bench_area, t0 = bench_tris, x0 = bench_tex_area;
+            bscene_draw_background(&menu.bg, &null_sink);
+            bmenu_draw_objects(&menu, &null_sink);
+            seg_area += bench_area - a0;
+            seg_tris += bench_tris - t0;
+            seg_tex += bench_tex_area - x0;
+            seg_n++;
+        }
+        printf("TA vertices/frame %.0f in %.0f strips (%.2f per triangle)\n", bench_sent / n, bench_strips / n, bench_sent / bench_tris);
+        printf("all: %.0f tris/frame, overdraw %.2fx (textured %.2fx)\n", bench_tris / n, bench_area / n / (640.0 * 480.0),
+               bench_tex_area / n / (640.0 * 480.0));
+        return 0;
+    }
+    uint32_t top, bottom;
+    dcbg_gradient(&menu.bg, &top, &bottom);
+    bg_palette_apply(pv_bg, pv_dark, &top, &bottom);
+    if (getenv("BIOS_PREVIEW_FLAT")) { /* flat grey, no cloud layers: for comparing the models with a reference render */
+        top = bottom = 0xFF808080u;
+        menu.bg.swirl.cols = menu.bg.water.cols = 0;
+    }
+    for (int y = 0; y < H; y++) {
+        float t = (float)y / (H - 1);
+        for (int c = 0; c < 3; c++) {
+            int sh = 16 - 8 * c;
+            float a = (float)((top >> sh) & 255), b = (float)((bottom >> sh) & 255);
+            for (int x = 0; x < W; x++) {
+                fb[y][x][c] = (a + (b - a) * t) / 255.0f;
+            }
+        }
+    }
+    bscene_sink sink = {NULL, tri, text, NULL};
+    if (script == -14) {
+        bscene_draw_background(&menu.bg, &sink);
+        bfs_set_serial_slot(&demo_fs, getenv("BIOS_PREVIEW_SD") ? atoi(getenv("BIOS_PREVIEW_SD")) : -1); /* the SD card mark */
+        bfs_draw(&demo_fs, &sink);
+        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills of ports A, B, ... as ui_files.c lays them out (an empty name: no label) */
+            uint32_t body[4], border[4];
+            for (int i = 0; i < 4; i++) bmenu_pill_colours(&menu, i, &body[i], &border[i]);
+            char list[256];
+            char* names[4] = {NULL, NULL, NULL, NULL};
+            snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
+            char* cur = list;
+            for (int port = 0; port < 4 && cur; port++) {
+                char* comma = strchr(cur, ',');
+                if (comma) *comma = '\0';
+                names[port] = cur[0] ? cur : NULL;
+                cur = comma ? comma + 1 : NULL;
+            }
+            float px[4] = {0}, py[4] = {0}, tw[4] = {0};
+            pad_label_rect rr[4];
+            for (int port = 0; port < 4; port++) {
+                if (names[port] && bfs_pad_px(&demo_fs, port, &px[port], &py[port])) {
+                    tw[port] = (float)(btext_width(names[port]) + 3);
+                }
+            }
+            pad_label_layout_set(4, px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, rr);
+            for (int port = 0; port < 4; port++) {
+                pad_label_rect r = rr[port];
+                if (tw[port] <= 0.0f) continue;
+                const char* t = names[port];
+                for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
+                    for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
+                        float rad = r.h / 2.0f;
+                        float cx = (float)x + 0.5f, cy = (float)y + 0.5f;
+                        float lx = r.x + rad, rx = r.x + r.w - rad, my = r.y + rad;
+                        float ex = cx < lx ? lx - cx : (cx > rx ? cx - rx : 0.0f), ey = cy - my;
+                        float d = sqrtf(ex * ex + ey * ey);
+                        if (d > rad) continue;
+                        uint32_t c32 = d > rad - PILL_BORDER ? border[port] : body[port];
+                        float a = (float)(c32 >> 24) / 255.0f;
+                        for (int c = 0; c < 3; c++) {
+                            float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
+                            fb[y][x][c] = fb[y][x][c] * (1.0f - a) + v * a;
+                        }
+                    }
+                }
+                blit_text(t, (int)(r.x + (r.w - tw[port]) / 2.0f), (int)(r.y + (r.h - 26.0f) / 2.0f), 0xFFFFFF); /* the BIOS font, at its own size */
+            }
+        }
+        if (getenv("BIOS_PREVIEW_HITS")) { /* BIOS_PREVIEW_HITS=1: the areas the mouse pointer answers to, in red; the cursor's in green */
+            float r[40][5];
+            int n = bfs_hit_rects(&demo_fs, r, 40);
+            for (int i = 0; i < n; i++) {
+                int cur = (int)r[i][4] == demo_fs.cur[demo_fs.layer].pos;
+                for (int x = (int)(r[i][0] - r[i][2]); x <= (int)(r[i][0] + r[i][2]); x++) {
+                    for (int k = 0; k < 2; k++) {
+                        int y = (int)(r[i][1] + (k ? r[i][3] : -r[i][3]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+                for (int y = (int)(r[i][1] - r[i][3]); y <= (int)(r[i][1] + r[i][3]); y++) {
+                    for (int k = 0; k < 2; k++) {
+                        int x = (int)(r[i][0] + (k ? r[i][2] : -r[i][2]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+            for (int p = 0; p < 4; p++) {
+                float px, py;
+                if (bfs_pad_px(&demo_fs, p, &px, &py)) {
+                    for (int d = -6; d <= 6; d++) {
+                        int x = (int)px + d, y = (int)py;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                        x = (int)px; y = (int)py + d;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+        }
+    } else if (script == -9) {
+        bscene_draw_background(&menu.bg, &sink);
+        bmenu_draw_objects(&menu, &sink);
+    } else if (script == -8) {
+        static const uint32_t acc[5] = {0xFFE07000u, 0xFF00E070u, 0xFF0070E0u, 0xFFE00070u, 0xFFE0E0E0u};
+        bscene_draw_background(&menu.bg, &sink);
+        float pr[4] = {82.0f, 97.0f, 476.0f, 286.0f}; /* BIOS_PREVIEW_PANEL="x,y,w,h" */
+        if (getenv("BIOS_PREVIEW_PANEL")) {
+            sscanf(getenv("BIOS_PREVIEW_PANEL"), "%f,%f,%f,%f", &pr[0], &pr[1], &pr[2], &pr[3]);
+        }
+        bscene_draw_panel(&menu.scene, pr[0], pr[1], pr[2], pr[3], acc[selected % 5], &sink);
+    } else if (script == -6) {
+        bscene_draw_background(&menu.bg, &sink);
+        bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 0xFFE00070u, &sink);
+        bdt_draw(&dt, &sink);
+    } else if (script == -11) {
+        static bcase bc;
+        bscene_draw_background(&menu.bg, &sink);
+        bcase_init(&bc);
+        bcase_show(&bc, BMODEL_CASE_PAL, "A", 1);
+        for (int i = 0; i < 200; i++) {
+            bcase_step(&bc);
+        }
+        bcase_show(&bc, BMODEL_CASE_WHITE, "B", 1);
+        for (int i = 0; i < selected; i++) {
+            bcase_step(&bc);
+        }
+        bscene_draw_panel(&menu.scene, 432.0f, 58.0f, 194.0f, 326.0f, 0xFFE07000u, &sink);
+        bcase_draw(&bc, &menu.scene, 529.0f, 136.0f, 150.0f, NULL, NULL, &sink);
+    } else if (script == -7 || script == -10) {
+        bscene_draw_background(&menu.bg, &sink);
+        bmenu_draw_objects(&menu, &sink);
+    } else if ((script == -3 || script == -4) && getenv("BIOS_PREVIEW_VIEWER")) { /* "rx,ry,zoom": ui_bios draw_viewer */
+        float rx = 0, ry = 0, zoom = 1;
+        sscanf(getenv("BIOS_PREVIEW_VIEWER"), "%f,%f,%f", &rx, &ry, &zoom);
+        bscene_draw_background(&menu.bg, &sink);
+        static bcase bc;
+        bcase_init(&bc);
+        bcase_show(&bc, BMODEL_CASE_PAL, "A", 1);
+        for (int i = 0; i < 200; i++) bcase_step(&bc);
+        float pt, pb;
+        blist_rows_extent_px(&list, &pt, &pb);
+        for (int y = (int)pt; y < (int)pb; y++) /* the pane, square corners are close enough here */
+            for (int x = 40; x < 230; x++)
+                for (int k = 0; k < 3; k++) {
+                    static const float c[3] = {0x44 / 255.0f, 0x44 / 255.0f, 0x79 / 255.0f};
+                    fb[y][x][k] = fb[y][x][k] * 0.3f + c[k] * 0.7f;
+                }
+        float rot[3] = {rx, ry, 0};
+        bscene_sink nears = {&sink, near_tri, NULL, NULL};
+        bcase_draw_posed(&bc, &menu.scene, 440.0f, (pt + pb) / 2.0f, 300.0f * zoom, rot, NULL, NULL, &nears);
+        bmenu_back_style(&menu, 1, 0, 0);
+        menu.scene.parts = BSCENE_PART_ALL;
+        bscene_draw_object(&menu.scene, bvm_find(&menu.vm, 0x1110), &sink);
+        menu.scene.ovr_n = 0;
+    } else if (script == -3 || script == -4) {
+        bscene_draw_background(&menu.bg, &sink);
+        blist_draw(&list, &sink);
+        if (getenv("BIOS_PREVIEW_CASE")) { /* the right panel of the game browser with the CD case at rest */
+            static bcase bc;
+            bcase_init(&bc);
+            bcase_show(&bc, atoi(getenv("BIOS_PREVIEW_CASE")) ? BMODEL_CASE_PAL : BMODEL_CASE_WHITE, "A", 1);
+            for (int i = 0; i < 200; i++) {
+                bcase_step(&bc);
+            }
+            { /* flat rounded panel in the colour of the row bars (as the app's gfx_rrect) */
+                float pt, pb;
+                blist_rows_extent_px(&list, &pt, &pb);
+                float x = 432.0f, y = pt, w = 194.0f, h = pb - pt, r = 9.0f;
+                float cxs[4] = {x + w - r, x + r, x + r, x + w - r}, cys[4] = {y + r, y + r, y + h - r, y + h - r};
+                float dxs[4] = {1, -1, -1, 1}, dys[4] = {-1, -1, 1, 1};
+                float rect[3][4] = {{x + r, y, w - 2 * r, r}, {x, y + r, w, h - 2 * r}, {x + r, y + h - r, w - 2 * r, r}};
+                for (int i = 0; i < 3; i++) {
+                    bscene_vtx q[4];
+                    float xs[4] = {rect[i][0], rect[i][0] + rect[i][2], rect[i][0], rect[i][0] + rect[i][2]};
+                    float ys[4] = {rect[i][1], rect[i][1], rect[i][1] + rect[i][3], rect[i][1] + rect[i][3]};
+                    for (int k = 0; k < 4; k++) {
+                        q[k] = (bscene_vtx){xs[k], ys[k], 0.0028f, 0, 0, 0xB2444479u};
+                    }
+                    bscene_vtx a[3] = {q[0], q[1], q[2]}, b2[3] = {q[1], q[3], q[2]};
+                    sink.triangle(sink.user, a, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                    sink.triangle(sink.user, b2, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                }
+                for (int c = 0; c < 4; c++) {
+                    for (int i = 0; i < 6; i++) {
+                        float a0 = 1.5707963f * i / 6, a1 = 1.5707963f * (i + 1) / 6;
+                        bscene_vtx v[3] = {{cxs[c], cys[c], 0.0028f, 0, 0, 0xB2444479u},
+                                           {cxs[c] + dxs[c] * r * cosf(a0), cys[c] + dys[c] * r * sinf(a0), 0.0028f, 0, 0, 0xB2444479u},
+                                           {cxs[c] + dxs[c] * r * cosf(a1), cys[c] + dys[c] * r * sinf(a1), 0.0028f, 0, 0, 0xB2444479u}};
+                        sink.triangle(sink.user, v, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                    }
+                }
+            }
+            bscene_sink nears = {&sink, near_tri, NULL, NULL}; /* as ui_bios: the case is brought in front of the pane */
+            bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &nears);
+        }
+    } else if (script == -2) {
+        bscene_draw_background(&menu.bg, &sink);
+        bpage_draw(&page, &sink);
+        {   /* the scroll bar's thumb, as ui_bios draws it */
+            float tx, ty, tw, th;
+            if (g_autosort) frag_resolve();
+            if (bpage_scroll_thumb_px(&page, &tx, &ty, &tw, &th)) {
+                for (int yy = (int)ty; yy < (int)(ty + th); yy++)
+                    for (int xx = (int)tx; xx < (int)(tx + tw); xx++) {
+                        fb[yy][xx][0] = 0x62 / 255.0f; fb[yy][xx][1] = 0x9B / 255.0f; fb[yy][xx][2] = 0x6E / 255.0f;
+                    }
+            }
+        }
+    } else if (script == -13) {
+        bscene_draw_background(&menu.bg, &sink);
+        bcd_draw(&cdp, &sink);
+    } else {
+        bmenu_draw(&menu, &sink);
+    }
+
+    if (g_autosort) {
+        frag_resolve();
+    }
+    for (int i = 0; i < nptexts; i++) {
+        blit_text(ptexts[i].text, ptexts[i].x < 0 ? -ptexts[i].x - btext_width(ptexts[i].text) / 2 : ptexts[i].x, ptexts[i].y, ptexts[i].rgb); /* x < 0: centred on -x */
+    }
+    FILE* out = fopen(argv[2], "wb");
+    if (!out) {
+        perror(argv[2]);
+        return 1;
+    }
+    fprintf(out, "P6\n%d %d\n255\n", W, H);
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            for (int c = 0; c < 3; c++) {
+                float v = fb[y][x][c];
+                fputc((int)(v < 0 ? 0 : v > 1 ? 255 : v * 255 + 0.5f), out);
+            }
+        }
+    }
+    fclose(out);
+    printf("wrote %s (%d frames)\n", argv[2], frames);
+    if (getenv("BIOS_PREVIEW_STATS")) {
+        printf("translucent fragments: %d = %.2f layers per screen pixel\n", last_frags, (double)last_frags / (double)(W * H));
+    }
+    return 0;
+}

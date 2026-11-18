@@ -1,0 +1,63 @@
+# CLAUDE.md
+
+Notes for working on this repo (openMenu virtual-folder bundle, "NewOpenMenu" BIOS-style menu). Work happens on
+the `dev` branch; `main` is the release line. Commit and push to `dev` when a change is finished.
+
+## Layout
+- `openMenu/src/bios_engine/` portable engine (Ninja models, script VM, scene, game list `bios_list.c`, pages, CD player).
+- `openMenu/src/bios_rom/` reads the BIOS ROM dump. `openMenu/src/openmenu/src/` the app (`ui_bios.c` screens, `gfx.c` PVR backend).
+- Vision: `openMenu/PROJECT_BRIEF.md` (the owner's consolidated brief: ideas and roadmap, not a statement of what exists). `ROADMAP.md` checks it against the code.
+- Docs: `openMenu/NEWMENU.md` (design, per screen), `ROADMAP.md` (project brief vs code), `TEST_CHECKLIST.md` (hardware results, the user's notes: do not overwrite their measurements).
+
+## Preview without hardware
+`bios_preview` is not in CMake; build by hand (needs `dc_boot.bin`, MD5 e10c53c2f8b90bab96ead2d368858623, from the user):
+```
+cd openMenu/src
+gcc -O2 -o <out>/bios_preview bios_engine/tools/bios_preview.c bios_engine/src/*.c bios_rom/src/*.c -Ibios_engine/include -Ibios_rom/include -lm
+<out>/bios_preview dc_boot.bin list.ppm 60 <selected row> -3     # game list; BLIST_SLOTS=n, BLIST_DISC=n
+```
+Engine test: same gcc line with `bios_engine/test/bios_engine_test.c`, run `./t dc_boot.bin`. Changes that must not alter the
+output (clean-ups, speed): `bios_engine/tools/scene_dump.c` prints every triangle the scene code sends and
+`openmenu/test/gfx_host/gfx_host_test.c` everything `gfx.c` would send to the PVR (stand-in KOS headers in `gfx_host/kos`; this
+also compiles `gfx.c` on the host). Both need no ROM: run before and after, `cmp` the two outputs (build lines in the files). The preview draws text as outline boxes and
+has no right panel; real text/art only on the PVR path (hardware).
+
+## Game list (current state, see NEWMENU.md "Game browser")
+- One box, fixed height 73.5-350.5 px, 7 lines (`UIL_VISIBLE`, engine max 13). Corners keep the single-row radius (y-growth in `bios_scene`).
+- Disc and lit pill only on the selected row. Multi-disc number = 3D digit models at the CD's bottom right (`disc_number`).
+- Favorites: `favorites.c/.h` (1.7.1 has none; own file, not OPENMENU.SYS: SD `EXTENDED.SYS` + memory card `EXTENDED.SYS`). Host-tested logic (pack/unpack, VMS wrap, crc); the card/SD I/O and UI are not compiled or run.
+- Bottom row: Recent, Favorites (popup), Folders (top of tree), Sort (cycles A-Z / Year / SD order, `sf_sort`), Group (placeholder). Code in `ui_bios.c` (`button_text`, `cycle_sort`), order in `gd_list.c` `folder_cmp`. The app side cannot be compiled in the cloud session (no KOS; gnu.org is blocked); the owner compiles and tests on their side. Code for it is checked only with stub harnesses, so expect compile fixes after changes there.
+- Serial VMU: `serial_vmu.c/.h` (restore before launch, backup at start; ported from main's `ui_menu_credits.c`, same SD layout; five slots when Serial VMU Slots is on: one question lists them, the backup at start goes to the slot the game came from). State machine host-tested with a fake VMU and SD folder (build with `-DSVMU_HOST_TEST -DSVMU_SD=... -DSVMU_EMPTY_VMU=...` and stub headers); the popup in `ui_bios.c` (`start_game`, `svmu_tick`) is not compiled.
+- Online ("never connects", modem/serial/W5500 all tried): not diagnosed. Compared with main (`git diff origin/main HEAD -- openMenu/src/openmenu/src/backend/dcnow_net.c`): the engine is main's plus a serial-cable path that probes the serial port before the modem dial. Changes so far (untested): Auto-Connect starts after gfx/sound init, adapters connect on opening Internet, failure reason/advice shown. W5500 is in no engine. Needs the failure text from the owner.
+- Internet screen (`ui_internet.c`): four pages (Online, Play, Events, Settings) on the CD buttons; A acts, Y stars, START switches the page's list (Play: the game's network), X connects. Settings > ISP settings (editor in the screen), Network test (`backend/net_test.c`). Saved Internet settings and stars: `netprefs.c` (tail of the EXTENDED.SYS payload, host-tested `test/netprefs_test.c`; favorites file is 4 card blocks now). Events: `event_phase.c`. Way to the network: `backend/netsel.c` (Auto = BBA, LAN, W5500, serial cable, modem; `dcnow_net.c` `run_chosen` probes in that order), W5500: `backend/w5500.c` (host test against a chip model) and `w5500_net.c` (KOS netif on the `scif_spi_*` pins). The ISP editor does not write the flash. News from `news_fetch.c`/`news_parse.c` (parser host-tested, page markup never seen). `ui_internet.c` is syntax-checked on the host (`gcc -fsyntax-only` with a stub `arch/timer.h`, include paths of openmenu_shared/settings/bios_engine/bios_rom and external/crayon_savefile), the rest of the app side is not compiled here; a KOS clone for header reading is possible (`git clone --depth 1 https://github.com/KallistiOS/KallistiOS`) but its headers do not compile against the host's libc.
+- Main menu top bar: `update_clock` in `ui_bios.c` draws the clock (`clock_header_text` in `clock_math.c`, host-tested with `test/clock_test.c`) and, in the row above it in the same font, a connection lamp and "DCNow! n DCNet n" (`online_header_get`, `online.c`). Letters/AM/PM glyphs are generated by `tools/gen_clock_letters.py` into `bios_engine/src/bios_clock_letters.inc` (the ROM font has digits only). Clock format = `sf_clock` 0..4 (12 h shows a 2-digit year, 12 h + beat "A"/"P": the header surface shows only ~17 characters; 3 and 4 are this branch's .beat modes); .beat uses the Online time sync zone. Rendered on the host with the real engine code; the app side is not compiled.
+- Header logo follows the online mode: `gfx_set_logo_mode` / `gfx_logo_badge` in `gfx.c` (not with a custom LOGO.PVR), "CNET" (grey, drawn after the BIOS logo's own D) and "Now!" (orange / blue, chosen by the swirl's hue) are inside the program, no files on the disc: `logo_letters.inc` holds the coverage masks, `gfx_load_logo_texts` builds the pictures (soft edges baked in for the light bar, flat for the dark bar, drawn untinted); the masks are made by `openMenu/tools/gen_logo_text.py` (hand-drawn outlines in the style of the Dreamcast typeface, no font data; that typeface is personal-use only and must not be copied, it was only a visual guide). DCNET mode crops the ROM logo to swirl + D (texture columns < 46) at run time (nothing of it is stored in the repo). PVR textures must have power-of-two sizes (64x32 and 128x32 here), mode chosen every frame by `update_logo_mode` from `online_header_get` (0 normal and while connecting, 1 Now!, 2 DCNET; the turning swirl was removed) (`network` from `dreampi_link_network()`). Composition checked on the host with the real ROM logo; the gfx code is not compiled. Header logo screen rectangle (measured on the preview): x 27..165, y 28..61.
+- Dark mode (Settings > Display): the background palette dims (`bg_palette.c`), the header bar turns dark grey (`bscene.header_bar_argb`: the untextured polygons of header model 7), the clock text is white (`bsurf_clock_light`), the waves of the background take the hue of the chosen background colour and the dimming (`bscene_set_background_tint`, `bg_palette_wave_tint`: the ROM's clouds picture 7 is blue), and the BIOS logo's wordmark is drawn light (`gfx_set_dark`, built at run time). Host-rendered with `bios_preview` (`BIOS_PREVIEW_BG=n`, `BIOS_PREVIEW_DARK=1`, build with `openmenu/src/bg_palette.c -Iopenmenu/src`); the gfx and app side are not compiled.
+- Worker threads (connection, fetches, time sync, DreamPi link) run at `PRIO_DEFAULT + 4`, below the menu, so Auto-Connect does not take frame time at start-up.
+- Settings page icons (`bios_page.c`): only the selected row's icon animates (`icon_age`; BIOS icons by their motion from frame 0.5 with step 0.5, the others shrink to 70% and back in 60 frames by `icon_shrink`, like the BIOS ones); the VMU icon is ROM model 1 (the main menu's VMU, with LCD, motion 1) moved down by `icon_dy`. Host-rendered with `BIOS_PREVIEW_ICONS=20,21,22,23,24 bios_preview ... <row> -2`.
+- Main menu icon models: `bmenu_set_icon_model` (the Music icon is the BIOS-style globe while Online is on; `bvm_obj.model_scale`, offset dx/dy and dz (40 back: behind the caption's pill), turns while selected, the caption text is anchored without the turn; preview with `BIOS_PREVIEW_GLOBE=<scale> GX= GY= GZ=`).
+- Start-up order: `openMenu/BOOT_TIMELINE.md` (the first ten seconds, against the BIOS and KOS). Before the first frame: `bmenu_prewarm` (models/motions/textures via `gfx_warm_sink`), `gfx_preload_art_index`, the Clock extender write; Auto-Connect starts after the fade; the Serial VMU copy runs on a thread (VMU block I/O blocks for a vblank each in KOS); worker threads must sleep or yield, never spin (a woken menu thread only gets the CPU at the next tick or yield).
+- `BVM_MAX_OBJECTS` is 128 (13 rows need it).
+
+## Card Manager
+- `GD MENU Card Manager/` is Derek's C# app (WPF + Avalonia, shared Core). Scraper: `Core/Scraper/` (ScreenScraper,
+  libretro thumbnails, `TitleMatcher`, `ScrapeText`, `ArtScraper`), `InfoDatManager.cs`, `ScrapeWindow` in both UIs;
+  doc `GD MENU Card Manager/SCRAPER.md`. Writes BOX/ICON, BACK.DAT, DISCART.DAT (fills DISC.DAT), META.DAT, INFO.DAT.
+- No NuGet in the cloud session: build and test through `.github/workflows/build-card-manager.yml` (Windows: offline
+  tests in `src/GDMENUCardManager.ScraperTests`, Avalonia build, WPF publish artifact). NuGet-free files (everything in
+  Scraper/ but ArtScraper, plus InfoDat/MetaDat) compile locally with `apt install dotnet-sdk-8.0` and a project whose
+  nuget.config clears the sources.
+- ScreenScraper developer credentials are never committed (secrets SS_DEVID / SS_DEVPASSWORD, or the user's own).
+- The Card Manager ships this repo's openMenu: `build-card-manager.yml` first runs `build-newopenmenu.yml`
+  (`workflow_call`) and puts its 1ST_READ.BIN into `Core/tools/openMenu/menu_data` before packaging (the committed file
+  there is Derek's 1.7.1; `build.bat` on a PC packs that one). The updater (`UpdateManager.DefaultRepo`) looks at
+  this repo's releases, not Derek's.
+- The Card Manager is Derek's 1.7.1 with this repo's changes on top (merged by three-way patch, not git merge: his
+  openMenu sources must not come over). BOX.DAT/ICON.DAT in its menu_data are Git LFS files and still 1.7.0's: the
+  cloud session cannot fetch or push LFS objects.
+
+## Open items
+- Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.
+- Disc total ("2:4") is no longer shown anywhere; ask the user if it should come back.
+- Brief says: favourite star and genre on the list rows, separate sort/group controls, X popup (cheats, disc, version, per-game network), Y screen text. Follow its button mappings and B hierarchy; mark hardware-dependent features as not working until firmware exists.
+- See ROADMAP.md for the rest (favourites, genre, X popup, Y screen text, 60 fps).

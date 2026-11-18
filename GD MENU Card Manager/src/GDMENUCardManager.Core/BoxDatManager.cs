@@ -298,7 +298,7 @@ namespace GDMENUCardManager.Core
                 if (File.Exists(boxDatPath))
                 {
                     string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-                    string backupFileName = $"BOX_{timestamp}.DAT";
+                    string backupFileName = $"{Path.GetFileNameWithoutExtension(boxDatPath).ToUpperInvariant()}_{timestamp}.DAT"; // BOX_ or BACK_
                     string backupPath = Path.Combine(backupFolder, backupFileName);
                     File.Copy(boxDatPath, backupPath);
                 }

@@ -1,0 +1,185 @@
+/*
+ * bios_scene: turns the state of the BIOS menu engine (script objects, background)
+ * into screen-space triangles. It does no drawing itself: a backend (the PVR on the
+ * console, a software rasteriser in the PC preview tool) receives the triangles
+ * through a sink. Portable C.
+ *
+ * Projection is the one the BIOS uses: the camera looks down -Z with a screen
+ * distance of 4000 on a 640x480 screen.
+ */
+#ifndef BIOS_SCENE_H
+#define BIOS_SCENE_H
+
+#include <stdint.h>
+
+#include "bios_rom.h"
+#include "bios_vm.h"
+#include "dcbg.h"
+#include "bios_models.h"
+#include "nj_model.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define BSCENE_SCREEN_W 640.0f
+#define BSCENE_SCREEN_H 480.0f
+#define BSCENE_FOCAL 4000.0f
+
+typedef struct bscene_vtx {
+    float x, y;  /* screen pixels */
+    float invw;  /* 1/w, what the PVR wants as Z */
+    float u, v;
+    uint32_t argb;
+    uint32_t oargb; /* PVR offset colour (the specular term of textured strips), 0 = none */
+} bscene_vtx;
+
+typedef enum bscene_tex_kind {
+    BSCENE_TEX_NONE = 0,
+    BSCENE_TEX_GBIX = 1,    /* a = global index (the background clouds use 7) */
+    BSCENE_TEX_TEXLIST = 2  /* a = texlist, b = slot within it */
+} bscene_tex_kind;
+
+typedef struct bscene_texref {
+    int kind;
+    int a, b;
+    int uv; /* how u and v go on past 0..1: NJ_TEX_FLIP_U/V, NJ_TEX_CLAMP_U/V, 0 = repeat */
+} bscene_texref;
+
+typedef struct bscene_sink {
+    void* user;
+    /* One alpha blended triangle. */
+    void (*triangle)(void* user, const bscene_vtx v[3], bscene_texref tex);
+    /* A text surface of object `obj` (text_w x text_h pixels) centred on (x, y). */
+    void (*text)(void* user, const bvm_obj* obj, float x, float y, float invw);
+    /* Optional: a triangle strip of n >= 3 vertices (triangle k is v[k], v[k+1], v[k+2]; culling is already done, the
+     * winding does not matter). The BIOS' strip handlers hand the TA strips like this. A sink without it gets the
+     * same triangles one by one through `triangle`. */
+    void (*strip)(void* user, const bscene_vtx* v, int n, bscene_texref tex);
+} bscene_sink;
+
+/* What bscene_draw_object() draws of an object. Text goes in a pass of its own after all the
+ * models, so no sprite ends up under a model that is submitted later. */
+#define BSCENE_PART_MODEL 1u
+#define BSCENE_PART_TEXT 2u
+#define BSCENE_PART_ALL (BSCENE_PART_MODEL | BSCENE_PART_TEXT)
+
+#define BSCENE_MODEL_CACHE BIOS_MODEL_COUNT
+#define BSCENE_MOTION_CACHE 64 /* (model, motion) pairs; dropped and refilled when full */
+
+#define BSCENE_OVR_MAX 16
+
+typedef struct bscene {
+    const bios_rom* rom;
+    nj_object models[BSCENE_MODEL_CACHE];
+    uint8_t model_state[BSCENE_MODEL_CACHE]; /* 0 not loaded, 1 loaded, 2 failed */
+    nj_object custom[BMODEL_COUNT];          /* the built-in models of bios_models.h (ids from BMODEL_BASE) */
+    uint8_t custom_state[BMODEL_COUNT];
+    struct {
+        int model, motion;
+        int state;
+        nj_motion data;
+    } motions[BSCENE_MOTION_CACHE];
+    int motion_count;
+    nj_mat4 pose[256]; /* scratch: world matrices of the object being drawn */
+    /* Shorten a model along x without squeezing its ends: model x in [a, b] is compressed by f,
+     * what lies beyond b moves along (the rounded ends of a row bar keep their shape). */
+    int stretch_on;
+    float stretch_a, stretch_b, stretch_f;
+    /* Make a model taller without squeezing its corners: model y in [-yc, yc] is scaled up so that
+     * the model grows by 2*yd; what lies beyond moves along by yd (the corner radii stay the same).
+     * Points in the band that lie within 0.2 of the leftmost x yx are put on x = yx: a straight edge
+     * (the row bar's rounded end has its apex a hair further out than the points next to it). */
+    float stretch_yc, stretch_yd, stretch_yx;
+    /* Give the row bar (model 41) small corners on its left end too, the radius of its right end (the BIOS help box has
+     * them on all four): the rounded cap's 13 outline points move onto a flat edge with two corner arcs. */
+    int small_left;
+    float invw_mul; /* set while a model is drawn: the object's depth_mul (bvm_obj), applied to the 1/w of its vertices */
+    int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
+    /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
+    int panel_on;
+    float panel_fx, panel_fy;
+    uint32_t panel_accent;
+    /* material colours replaced while an object of `model` is drawn (the BIOS script effects that recolour a model:
+     * the BACK marker's arrow and frame). node and poly index into the model. */
+    struct {
+        int model, node, poly;
+        uint32_t argb;
+        int lit; /* 0: shown as it is; 1: replaces the material diffuse and is lit like it (the BIOS effects that
+                  * write into a model's material: the card colours, the file window's ALL button) */
+    } ovr[BSCENE_OVR_MAX];
+    int ovr_n;
+    /* The header bar's grey (the polygons without a picture of the header model, 7): 0 leaves the BIOS's own, else a colour shown as it is
+     * (dark mode). */
+    uint32_t header_bar_argb;
+    /* screen_fly_in / screen_fly_out: objects with BVM_F_FLAG17 (and their text) fade by this much alpha (0..1) */
+    float fade;
+    /* rim colour of the window panels that objects create (script op panel_create, BVM_F_PANEL) */
+    uint32_t object_panel_accent;
+    int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
+    unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
+} bscene;
+
+void bscene_init(bscene* s, const bios_rom* rom);
+void bscene_free(bscene* s);
+
+/* Draw all objects of `vm` in priority order. */
+void bscene_draw_objects(bscene* s, const bvm* vm, const bscene_sink* sink);
+void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
+
+/* The animated cloud layers behind the menu. */
+/* The BIOS window panel: model 39 with its four corners moved apart to cover the pixel rectangle
+ * x, y, w, h (as it looks at `z`, usually BSCENE_PANEL_Z). The rim takes the accent colour
+ * (0xAARRGGBB; the screens use orange 0xFFE07000, green 0xFF00E070, blue 0xFF0070E0, magenta
+ * 0xFFE00070 and light grey 0xFFE0E0E0), the body is dark and translucent. Drawn like any object:
+ * what is submitted afterwards goes on top. */
+#define BSCENE_PANEL_Z (-335.9375f)
+/* The standard colour of the app's own flat panels: exactly what the row bars of the Settings and game list screens
+ * show (model 33 lit by the menu light, measured), 70 % opaque. */
+#define BSCENE_PANE_ARGB 0xB2444479u
+#define BSCENE_PANEL_MODEL 39
+void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
+
+/* Draw model `model` (a ROM index or a BMODEL_* id, whose texlist is the same number) centred on the
+ * pixel (cx, cy) as it looks at BSCENE_PANEL_Z; `scale` multiplies the model's own units, `rot_deg` is
+ * the rotation about x, y, z in degrees. Submitted immediately, like bscene_draw_panel(). */
+void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink);
+
+/* A node of a loaded model, for the effects that change a model in place (the free-space gauge of the memory
+ * card plate scales one). NULL if the model cannot be loaded. Call bscene_cache_clear() after changing it. */
+nj_node* bscene_node(bscene* s, int model, int node);
+
+/* Alpha (0..1) the text surface of `o` is drawn with during a screen transition (see bscene.fade). */
+float bscene_text_alpha(const bvm_obj* o);
+
+void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
+/* The colour the background's waves (the swirl and the water meshes) are multiplied with: 0 (or 0xFFFFFF) leaves them as they are. The
+ * clouds picture is blue; this moves it to the hue of the background colour in use (and dims it in dark mode). */
+void bscene_set_background_tint(uint32_t rgb);
+
+/* Objects whose drawing state did not change since an earlier frame are not transformed, lit and projected again:
+ * their triangles are kept and sent as they were. The key covers the object (model, motion frame, position,
+ * rotation, scale, constant material, flags) and the scene settings that change how it is drawn. Textures are
+ * looked up by the sink at send time, so pictures that arrive later still show. Call bscene_cache_clear() after
+ * changing anything else a model's look depends on; bscene_cache_enable(0) turns the cache off. */
+void bscene_cache_clear(void);
+void bscene_cache_enable(int on);
+
+/* Translucent sorting. The BIOS lets the PVR sort its translucent polygons (auto-sort), so where the parts of a
+ * model, or the two copies of a main-menu icon, overlap, the farther one is always blended first. The console build
+ * runs the PVR in presort mode (cheaper: polygons are blended in the order they are sent), so the main menu sends its
+ * models through this sorter instead: triangles are collected and passed on far to near (by 1/w, ties keep their
+ * order). bscene_sort_begin() returns the sink to draw into; bscene_sort_end() sends everything to `out`. If more than
+ * BSCENE_SORT_MAX triangles arrive, the ones that do not fit go straight through unsorted. Not reentrant. */
+#define BSCENE_SORT_MAX 3072
+const bscene_sink* bscene_sort_begin(const bscene_sink* out);
+void bscene_sort_end(void);
+
+/* Screen position of a world point under the BIOS camera. Returns 0 if it is behind the camera. */
+int bscene_project(nj_vec3 p, float* sx, float* sy, float* invw);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* BIOS_SCENE_H */

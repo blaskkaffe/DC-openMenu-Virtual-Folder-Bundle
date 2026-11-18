@@ -303,7 +303,7 @@ namespace GDMENUCardManager.Core
                 if (File.Exists(iconDatPath))
                 {
                     string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-                    string backupFileName = $"ICON_{timestamp}.DAT";
+                    string backupFileName = $"{Path.GetFileNameWithoutExtension(iconDatPath).ToUpperInvariant()}_{timestamp}.DAT"; // ICON_ or DISCART_
                     string backupPath = Path.Combine(backupFolder, backupFileName);
                     File.Copy(iconDatPath, backupPath);
                 }

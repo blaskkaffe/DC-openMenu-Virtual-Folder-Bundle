@@ -49,7 +49,8 @@ namespace GDMENUCardManager.Core
     public static class UpdateManager
     {
         private static readonly HttpClient _client;
-        private const string DefaultRepo = "DerekPascarella/openMenu-Virtual-Folder-Bundle";
+        // This fork's releases: an update from Derek's would replace this Card Manager and its BIOS-style openMenu
+        private const string DefaultRepo = "blaskkaffe/DC-openMenu-Virtual-Folder-Bundle";
         private const string StagingDirName = "GDMENUCardManager_update";
         private const string AutoUpdateKillSwitch = "This release cannot be auto-updated.";
         private const string WindowsScriptName = "_gdmenu_updater.bat";

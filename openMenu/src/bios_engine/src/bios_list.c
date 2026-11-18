@@ -1,0 +1,460 @@
+/* bios_list: see bios_list.h. */
+#include "bios_list.h"
+
+#include <math.h>
+
+#define PRIO 0x1000
+#define PX_PER_UNIT 11.32f /* 4000 / 353.5: pixels per world unit at the rows' depth */
+#define ROW_Z (-353.515625f)
+
+/* Layout in world units (screen centre = 0,0). */
+#define ROW_SY 1.0f         /* same height as the rows of the settings screen (about 53 px) */
+#define ANCHOR_X 1.95f      /* row bar origin, as in the Settings screen */
+/* The row bar (model 41) is 59 units wide: a round left end (to x=-28), a straight middle and a
+ * small right end (from 27.5). The middle is shortened so the bar is about 60% of the screen
+ * wide while both ends keep their shape. */
+#define BAR_CAP_L (-28.0f)
+#define BAR_CAP_R 27.5f
+#define BAR_MIDDLE_F 0.638f
+#define ICON_X (-22.6f)
+#define ICON_Z (ROW_Z + 2.5f) /* clear of the bar: the spinning disc (radius ~1.8) must not cut through it */
+#define ICON_SCALE 0.125f /* the disc is as big as the Settings icons (about 40 px) */
+#define TEXT_X (-4.8f)      /* centre of the 300 px text surface */
+/* The lit part of the row (model 33, 36.9 units wide with 0.4 chamfered ends) runs from just left of
+ * the text to the right end of the bar; its middle is shortened so the ends keep their shape. */
+#define PILL_X (-5.45f)
+#define PILL_CAP_L (-17.1f)
+#define PILL_CAP_R 19.0f
+#define PILL_F 0.9200f
+#define PILL_HALF_H 2.25f     /* the pill model: half its height, */
+#define PILL_STRAIGHT_Y 1.85f /* where its straight sides end (the corners are chamfers of 0.4), */
+#define PILL_LEFT_X (-17.5f)  /* and its leftmost x */
+#define PILL_SCALE 0.859375f
+/* disc number of a multi-disc game: the BIOS 3D digit models (model 21 + digit, about 5.2 x 6.9 units, no
+ * motion) at the bottom right of the spinning CD; sizes relative to the disc's scale */
+#define DIGIT_MODEL 21
+#define DIGIT_SCALE_REL 1.8f /* digit scale per unit of disc scale: a digit is a bit under half the disc high */
+#define DIGIT_DX_REL 9.6f    /* offset from the disc centre, per unit of disc scale: bottom right of the rim */
+#define DIGIT_DY_REL (-9.6f)
+#define DIGIT_ADV 4.9f       /* advance between digits in model units */
+#define DIGIT_Z_OVER 2.0f    /* in front of the disc, whose edge swings out +-1.75 when it spins */
+/* the BACK marker and the five buttons along the bottom are where the CD player has them */
+#define BACK_X (-19.53125f)
+#define BACK_Y (-14.84375f)
+#define BACK_Z (-351.5625f)
+#define BACK_SCALE 1.0f
+#define BUTTON_Y (-14.84375f)
+#define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
+/* The box: one bar for all rows, fixed in size so that any number of rows fits the space five rows
+ * had (above the BACK marker and the buttons). */
+#define BOX_TOP_PX 73.5f
+#define BOX_BOTTOM_PX 350.5f
+#define BOX_PAD_PX 8.0f
+#define BOX_STRAIGHT_Y 0.72f /* model units around the middle of the bar that are straight (no corner), scaled when the box grows */
+#define BAR_H_PX 53.0f /* height of the row bar model at ROW_SY */
+
+/* the selected disc spins as the CD player's (script 0x1c), per frame in the original's angle units */
+#define SPIN_Y 140 /* 0.77 degrees: 0x10000 = 360 degrees */
+#define SPIN_Z 500 /* 2.75 degrees */
+
+
+static const struct {
+    int anchor_script, pill_script, icon_script, text_script;
+} proto = {0x49, 0x1d, 0x4d, 0x23};
+
+#define ID_ANCHOR(s) ((uint16_t)(0x1700 + (s)))
+#define ID_PILL(s) ((uint16_t)(0x1720 + (s)))
+#define ID_ICON(s) ((uint16_t)(0x1740 + (s)))
+#define ID_DIGIT(i) ((uint16_t)(0x1790 + (i))) /* tens, ones */
+
+void
+blist_open(blist* l, bmenu* m, int slots, int count) {
+    l->m = m;
+    l->slots = slots < 1 ? 1 : (slots > BLIST_MAX_SLOTS ? BLIST_MAX_SLOTS : slots);
+    l->cursor = 0;
+    l->top = 0;
+    l->back_selected = 0;
+    l->button = -1;
+    l->anim = 0;
+    bvm_kill_all(&m->vm);
+    bvm_create(&m->vm, proto.anchor_script, ID_ANCHOR(0), PRIO); /* the one box bar */
+    for (int s = 0; s < l->slots; s++) {
+        bvm_create(&m->vm, proto.pill_script, ID_PILL(s), PRIO);
+    }
+    for (int s = 0; s < l->slots; s++) {
+        bvm_create(&m->vm, proto.icon_script, ID_ICON(s), PRIO);
+    }
+    for (int i = 0; i < 2; i++) {
+        bvm_create(&m->vm, proto.icon_script, ID_DIGIT(i), PRIO);
+    }
+    for (int s = 0; s < l->slots; s++) {
+        bvm_create(&m->vm, proto.text_script, (uint16_t)BLIST_TEXT_ID(s), PRIO);
+    }
+    bvm_create(&m->vm, 6, 0x1110, PRIO); /* BACK marker */
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* scripts 0x17,0x19,0x18,0x1a,0x1b: left to right */
+    }
+    l->disc_number = 0;
+    blist_set_count(l, count);
+}
+
+void
+blist_set_count(blist* l, int count) {
+    l->count = count < 0 ? 0 : count;
+    if (l->cursor > l->count - 1) {
+        l->cursor = l->count > 0 ? l->count - 1 : 0;
+    }
+    if (l->top > l->cursor) {
+        l->top = l->cursor;
+    }
+    if (l->count <= l->slots) {
+        l->top = 0;
+    }
+}
+
+static void
+fix_top(blist* l) {
+    if (l->cursor < l->top) {
+        l->top = l->cursor;
+    }
+    if (l->cursor >= l->top + l->slots) {
+        l->top = l->cursor - l->slots + 1;
+    }
+    if (l->top < 0) {
+        l->top = 0;
+    }
+}
+
+int
+blist_move(blist* l, int delta) {
+    if (l->back_selected) {
+        if (delta < 0) {
+            l->back_selected = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (delta == 1 && l->count > 0 && l->cursor == l->count - 1) {
+        l->back_selected = 1; /* one step down from the last row: the BACK marker */
+        return 1;
+    }
+    int next = l->cursor + delta;
+    if (next > l->count - 1) {
+        next = l->count - 1;
+    }
+    if (next < 0) {
+        next = 0;
+    }
+    if (l->count <= 0 || next == l->cursor) {
+        return 0;
+    }
+    l->cursor = next;
+    fix_top(l);
+    return 1;
+}
+
+void
+blist_goto(blist* l, int cursor) {
+    l->back_selected = 0;
+    l->cursor = cursor;
+    l->top = cursor > l->slots / 2 ? cursor - l->slots / 2 : 0;
+    blist_set_count(l, l->count);
+    fix_top(l);
+}
+
+void
+blist_set_cursor(blist* l, int cursor) {
+    int before = l->cursor;
+    l->cursor = cursor < 0 ? 0 : (cursor > l->count - 1 ? (l->count > 0 ? l->count - 1 : 0) : cursor);
+    fix_top(l);
+    if (l->count <= l->slots) {
+        l->top = 0;
+    }
+    if (l->cursor != before) {
+        l->back_selected = 0;
+    }
+}
+
+int
+blist_row_in_slot(const blist* l, int slot) {
+    int row = l->top + slot;
+    return slot >= 0 && slot < l->slots && row < l->count ? row : -1;
+}
+
+void
+blist_button_center_px(int i, float* x, float* y) {
+    /* x of the buttons in the CD player's scripts 0x17, 0x19, 0x18, 0x1a, 0x1b */
+    static const float bx[BLIST_BUTTONS] = {-11.953125f, -4.0234375f, 3.90625f, 11.8359375f, 19.765625f};
+    *x = 320.0f + bx[i < 0 ? 0 : (i >= BLIST_BUTTONS ? BLIST_BUTTONS - 1 : i)] * PX_PER_UNIT;
+    *y = 240.0f - BUTTON_Y * PX_PER_UNIT;
+}
+
+static float row_y(const blist* l, int s);
+static float pitch_px(int slots);
+
+int
+blist_back_at_px(float x, float y) {
+    float cx = 320.0f + BACK_X * PX_PER_UNIT, cy = 240.0f - BACK_Y * PX_PER_UNIT;
+    return x >= cx - 34.0f && x <= cx + 34.0f && y >= cy - 34.0f && y <= cy + 34.0f;
+}
+
+int
+blist_slot_at_px(const blist* l, float x, float y) {
+    if (x < 40.0f || x > blist_row_right_px()) {
+        return -1;
+    }
+    for (int s = 0; s < l->slots; s++) {
+        float cy = 240.0f - row_y(l, s) * PX_PER_UNIT;
+        float half = pitch_px(l->slots) * 0.5f;
+        if (y >= cy - half && y <= cy + half && blist_row_in_slot(l, s) >= 0) {
+            return s;
+        }
+    }
+    return -1;
+}
+
+void
+blist_rows_extent_px(const blist* l, float* top, float* bottom) {
+    (void)l;
+    *top = BOX_TOP_PX;
+    *bottom = BOX_BOTTOM_PX;
+}
+
+float
+blist_row_right_px(void) {
+    return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
+}
+
+/* Distance between rows in pixels: the box has a fixed height, the rows share what is left after
+ * the padding. 5 rows: 52 px, 7: 37 px, 9: 29 px, 11: 23 px. */
+static float
+pitch_px(int slots) {
+    return (BOX_BOTTOM_PX - BOX_TOP_PX - 2.0f * BOX_PAD_PX) / (float)(slots < 1 ? 1 : slots);
+}
+
+static float
+row_y(const blist* l, int s) {
+    float centre_px = (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f;
+    float pitch = pitch_px(l->slots);
+    return (240.0f - centre_px) / PX_PER_UNIT + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch / PX_PER_UNIT;
+}
+
+static void
+set_pos(bvm_obj* o, float x, float y, float z) {
+    o->flags &= ~(uint32_t)BVM_F_ATTACHED; /* absolute: the scripts attached these to the original's anchors */
+    o->pos_tw[0].cur = x;
+    o->pos_tw[1].cur = y;
+    o->pos_tw[2].cur = z;
+    o->pos_tw[0].step = o->pos_tw[1].step = o->pos_tw[2].step = 0;
+    o->pos_tw[0].frames = o->pos_tw[1].frames = o->pos_tw[2].frames = 0;
+    o->pos[0] = x;
+    o->pos[1] = y;
+    o->pos[2] = z;
+}
+
+static void
+set_scale(bvm_obj* o, float sx, float sy, float sz) {
+    o->scale_tw[0].cur = sx;
+    o->scale_tw[1].cur = sy;
+    o->scale_tw[2].cur = sz;
+}
+
+static void
+set_hidden(bvm_obj* o, int hide) {
+    o->flags = hide ? (o->flags | BVM_F_HIDE) : (o->flags & ~(uint32_t)BVM_F_HIDE);
+}
+
+/* The disc number as 3D digits at the bottom right of the disc at (cx, cy) with scale `is`, ones digit at the corner. */
+static void
+sync_digits(blist* l, float cx, float cy, float is) {
+    int n = l->disc_number;
+    if (n < 1) {
+        return;
+    }
+    n = n > 99 ? 99 : n;
+    float ds = is * DIGIT_SCALE_REL;
+    float x = cx + DIGIT_DX_REL * is, y = cy + DIGIT_DY_REL * is;
+    int digits[2] = {n / 10, n % 10}; /* tens, ones */
+    for (int i = 0; i < 2; i++) {
+        bvm_obj* d = bvm_find(&l->m->vm, ID_DIGIT(i));
+        if (!d || (i == 0 && n < 10)) {
+            continue;
+        }
+        d->model = (uint16_t)(DIGIT_MODEL + digits[i]);
+        d->texlist = d->model;
+        d->flags &= ~(uint32_t)BVM_F_MOTION;
+        d->flags |= BVM_F_COLOUR; /* the digit models are a dull grey-blue: lift them to a light gold */
+        d->color[0] = 0.0f;
+        d->color[1] = 0.55f;
+        d->color[2] = 0.45f;
+        d->color[3] = 0.0f;
+        set_scale(d, ds, ds, ds);
+        d->rot_tw[0].cur = d->rot_tw[1].cur = d->rot_tw[2].cur = 0;
+        d->rot_tw[0].step = d->rot_tw[1].step = d->rot_tw[2].step = 0;
+        set_pos(d, x - (i == 0 ? DIGIT_ADV * ds : 0.0f), y, ICON_Z + DIGIT_Z_OVER - 2.15f * ds);
+        set_hidden(d, 0);
+    }
+}
+
+void
+blist_sync(blist* l) {
+    bvm* vm = &l->m->vm;
+    l->anim++;
+    for (int i = 0; i < 2; i++) { /* hidden unless the selected row's disc is drawn with a number */
+        bvm_obj* d = bvm_find(vm, ID_DIGIT(i));
+        if (d) {
+            set_hidden(d, 1);
+        }
+    }
+
+    for (int s = 0; s < l->slots; s++) {
+        int row = blist_row_in_slot(l, s);
+        int on = row >= 0;
+        int sel = on && row == l->cursor && !l->back_selected;
+        bvm_obj* anchor = bvm_find(vm, ID_ANCHOR(s));
+        bvm_obj* pill = bvm_find(vm, ID_PILL(s));
+        bvm_obj* icon = bvm_find(vm, ID_ICON(s));
+        bvm_obj* text = bvm_find(vm, (uint16_t)BLIST_TEXT_ID(s));
+        float y = row_y(l, s);
+        float pitch = pitch_px(l->slots);
+        float box_h = BOX_BOTTOM_PX - BOX_TOP_PX;
+
+        /* the row bar and its parts: x of each part in the resting layout */
+        struct {
+            bvm_obj* o;
+            float x, z;
+            int show;
+        } parts[2] = {
+            {anchor, ANCHOR_X, ROW_Z, s == 0}, /* one bar for the whole box, from slot 0 */
+            {pill, PILL_X, ROW_Z + 0.78f, sel}, /* only the selected row has a pill (lit) */
+        };
+        for (int i = 0; i < 2; i++) {
+            if (!parts[i].o) {
+                continue;
+            }
+            set_pos(parts[i].o, parts[i].x, i == 0 ? (240.0f - (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f) / PX_PER_UNIT : y, parts[i].z);
+            parts[i].o->rot_tw[2].cur = 0;
+            set_hidden(parts[i].o, !parts[i].show);
+        }
+        if (anchor) {
+            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f); /* made taller in blist_draw, not scaled: the corners keep their radius */
+            (void)box_h;
+        }
+        if (pill) {
+            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE, PILL_SCALE); /* made lower in blist_draw, not squeezed: the corners keep their shape */
+            pill->var[1] = sel; /* the selected row is lit */
+        }
+        if (icon) {
+            icon->model = BLIST_DISC_MODEL;
+            icon->texlist = (uint16_t)(BLIST_TEXLIST_BASE + s);
+            icon->flags &= ~(uint32_t)BVM_F_MOTION;
+            icon->var[0] = sel;
+            set_pos(icon, ICON_X, y, ICON_Z);
+            {
+                float is = 0.9f * pitch / 320.0f; /* the disc is 320 px per unit of scale; shrink it to the row */
+                is = is < ICON_SCALE ? is : ICON_SCALE;
+                set_scale(icon, is, is, is);
+                if (sel) {
+                    sync_digits(l, ICON_X, y, is);
+                }
+            }
+            /* the selected disc spins as in the CD player; the others rest */
+            if (sel) {
+                icon->rot_tw[1].step = SPIN_Y;
+                icon->rot_tw[2].step = SPIN_Z;
+            } else {
+                icon->rot_tw[0].cur = icon->rot_tw[1].cur = icon->rot_tw[2].cur = 0;
+                icon->rot_tw[0].step = icon->rot_tw[1].step = icon->rot_tw[2].step = 0;
+            }
+            set_hidden(icon, !sel); /* only the selected row shows its disc */
+        }
+        if (text) {
+            text->text_w = BLIST_TEXT_W;
+            text->text_h = BLIST_TEXT_H;
+            set_pos(text, TEXT_X, y, ROW_Z + 1.5f);
+            int show = on;
+            text->flags = show ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
+        }
+    }
+
+    /* the five buttons and the BACK marker, where their scripts put them */
+    for (int i = 0; i <= BLIST_BUTTONS; i++) {
+        bvm_obj* o = i < BLIST_BUTTONS ? bvm_find(vm, ID_BUTTON(i)) : bvm_find(vm, 0x1110);
+        if (!o) {
+            continue;
+        }
+        if (i == BLIST_BUTTONS) {
+            set_pos(o, BACK_X, BACK_Y, BACK_Z);
+            set_scale(o, BACK_SCALE, BACK_SCALE, BACK_SCALE);
+        } else {
+            o->var[0] = i == l->button; /* cdplayer_cursor_cb: the selected button is lit */
+        }
+        set_hidden(o, 0);
+    }
+}
+
+void
+blist_press_button(blist* l, int i) {
+    bvm_obj* o = i >= 0 && i < BLIST_BUTTONS ? bvm_find(&l->m->vm, ID_BUTTON(i)) : NULL;
+    if (o) {
+        o->var[1] = 1; /* the button's own script makes it jump (as bcd_press) */
+    }
+}
+
+int
+blist_button_at_px(float x, float y) {
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        float cx, cy;
+        blist_button_center_px(i, &cx, &cy);
+        if (x >= cx - 42.0f && x <= cx + 42.0f && y >= cy - 22.0f && y <= cy + 22.0f) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void
+blist_draw(blist* l, const bscene_sink* sink) {
+    static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
+    bmenu* m = l->m;
+    /* the BACK marker as the BIOS script effect colours it (fx 0x8C021CD0): arrow and frame only light up when selected,
+     * and the frame blinks yellow for 16 frames, dark for 16 */
+    bmenu_back_style(m, l->back_selected, l->anim, l->pal_console);
+    for (int pass = 0; pass < 2; pass++) {
+        m->scene.parts = passes[pass];
+        for (int i = 0; i < m->vm.count; i++) {
+            const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
+            m->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(BLIST_BUTTONS);
+            /* shorten bars and pills along x without squeezing their ends */
+            m->scene.stretch_on = 1;
+            m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
+            if (o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS)) {
+                m->scene.stretch_a = BAR_CAP_L;
+                m->scene.stretch_b = BAR_CAP_R;
+                m->scene.stretch_f = BAR_MIDDLE_F;
+                m->scene.stretch_yc = BOX_STRAIGHT_Y;
+                m->scene.stretch_yx = -30.75003f; /* leftmost x of the row bar model */
+                m->scene.stretch_yd = (BOX_BOTTOM_PX - BOX_TOP_PX - BAR_H_PX) * 0.5f / (PX_PER_UNIT * 0.8671875f * ROW_SY);
+            } else if (o->id >= ID_PILL(0) && o->id < ID_PILL(BLIST_MAX_SLOTS)) {
+                m->scene.stretch_a = PILL_CAP_L;
+                m->scene.stretch_b = PILL_CAP_R;
+                m->scene.stretch_f = PILL_F;
+                /* a row is lower than the settings page's: only the middle band of the pill gets lower, its chamfered corners
+                 * (0.4 units) stay as on the settings page */
+                const float pitch = pitch_px(l->slots);
+                m->scene.stretch_yc = PILL_STRAIGHT_Y;
+                m->scene.stretch_yx = PILL_LEFT_X;
+                m->scene.stretch_yd = PILL_HALF_H * ((pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX - 1.0f);
+            } else {
+                m->scene.stretch_on = 0;
+            }
+            bscene_draw_object(&m->scene, o, sink);
+        }
+    }
+    m->scene.fullbright = 0;
+    m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
+    m->scene.stretch_on = 0;
+    m->scene.no_decals = 0;
+    m->scene.ovr_n = 0;
+    m->scene.parts = BSCENE_PART_ALL;
+}

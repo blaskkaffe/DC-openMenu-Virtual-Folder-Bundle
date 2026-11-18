@@ -8,13 +8,34 @@
 
 #include <stdint.h>
 
-typedef enum dcnow_device { DCNOW_DEV_NONE = 0, DCNOW_DEV_MODEM, DCNOW_DEV_BBA, DCNOW_DEV_LAN } dcnow_device_t;
+/* DCNOW_DEV_SERIAL is a USB-serial cable from the rear serial port to DreamPi 2.0+ (Hayes AT dial, then PPP at
+ * 115200 with RTS/CTS). It is never found by the expansion port probe: a connect without an adapter asks the serial
+ * port first and dials the modem only when DreamPi does not answer there. */
+/* DCNOW_DEV_W5500 is a W5500 Ethernet chip on the serial port's SPI pins (the SD adapter's wiring): it is a network adapter to KOS
+ * (w5500_net.c) with the same DHCP / static bring-up as the expansion port ones. See netsel.h for which one is chosen. */
+struct dcnow_isp;
+typedef enum dcnow_device { DCNOW_DEV_NONE = 0, DCNOW_DEV_MODEM, DCNOW_DEV_BBA, DCNOW_DEV_LAN, DCNOW_DEV_SERIAL, DCNOW_DEV_W5500 } dcnow_device_t;
 
 /* Probes the expansion slot once per boot and remembers the answer. */
 dcnow_device_t dcnow_detect_device(void);
 
 /* Display name for the window, such as "Broadband Adapter (HIT-0400)". */
 const char* dcnow_device_name(dcnow_device_t dev);
+
+/* Short lower-case name for status lines ("broadband adapter", "W5500", "DreamPi cable"). */
+const char* dcnow_device_short_name(dcnow_device_t dev);
+
+/* The Settings "Connection" value (netsel.h: 0 Auto, else one way), applied at the next connect. */
+void dcnow_net_set_interface(int setting);
+/* Which ways have answered a probe since the start: bits of netsel_bit(). */
+unsigned dcnow_net_seen(void);
+/* Asks every way whether it is there, for the interface test; the connection must be idle. Returns a mask of netsel_bit(). Takes a second or two
+ * (the DreamPi cable is asked on the serial port): worker threads only. */
+unsigned dcnow_net_probe_all(void);
+/* What the modem and the serial link dial and log in with; empty strings keep DreamPi's fixed values. */
+void dcnow_net_set_dial(const char* number, const char* login, const char* password);
+/* The network settings of an adapter (BBA, LAN, W5500): 0 the console's own from the flash ROM, 1 DHCP, 2 the fixed address given. */
+void dcnow_net_set_adapter_mode(int mode, const struct dcnow_isp* fixed);
 
 /* The console's network settings from the flash ROM. Only an adapter uses
  * them. The modem dials DreamPi with the fixed values below. */
@@ -27,7 +48,7 @@ typedef struct dcnow_isp {
     uint8_t dns[4];
 } dcnow_isp_t;
 
-/* What the modem dials. DreamPi answers any number and accepts any login. */
+/* What the modem (and the serial link) dials. DreamPi answers any number and accepts any login. */
 #define DCNOW_DIAL_NUMBER   "1111111"
 #define DCNOW_DIAL_LOGIN    "openMenu"
 #define DCNOW_DIAL_PASSWORD "openMenu"
@@ -61,15 +82,16 @@ typedef struct dcnow_status {
     int hanging_up; /* a Disconnect or a lost carrier is being torn down */
 } dcnow_status_t;
 
-/* Starts the modem dial or the adapter bring-up on the worker thread.
- * Returns 0 when started, -1 when busy, already online, or nothing is fitted. */
+/* Starts the modem or serial dial, or the adapter bring-up, on the worker thread. With DCNOW_DEV_MODEM or
+ * DCNOW_DEV_NONE the serial port is tried first. Returns 0 when started, -1 when busy or already online. */
 int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp);
 
 /* Probes the device and reads the ISP settings on the worker, then connects.
  * For the boot-time Auto-Connect, where no frame may stall. */
 void dcnow_conn_autostart(void);
 
-/* The probed device without probing: DCNOW_DEV_NONE until the probe has run. */
+/* The device of the link in use (or being set up), else the probed device without probing: DCNOW_DEV_NONE until the
+ * probe has run. */
 dcnow_device_t dcnow_device_hint(void);
 
 /* The ISP settings the engine last connected with. Returns 0 before the first connection. */

@@ -30,6 +30,10 @@ bool savefile_lcd_owned(void);
 
 int8_t savefile_save();
 
+/* A checksum of every saved setting (the savefile's variables as they are in memory now): two equal values mean nothing was
+ * changed in between, so a save would write the same bytes again. */
+uint32_t savefile_content_hash(void);
+
 /* Save/Load window helper functions */
 int8_t savefile_get_device_status(int8_t device_id);
 uint32_t savefile_get_device_version(int8_t device_id);
@@ -57,6 +61,12 @@ void vmu_time_sync_warning_dismiss(void);
 
 /* Sets the console clock to a local time and the flash ROM SYSCFG date with it. */
 int8_t set_rtc_and_syscfg(time_t local_time);
+
+/* Writes the BIOS settings (language, sound, auto start from the BIOS RAM copy) to the flash, keeping the date. */
+int8_t save_syscfg_settings(void);
+
+/* openMenu 1.7.1's Clock extender: call once per frame; writes the clock's date to the flash once per run when on. */
+void clock_extender_tick(void);
 
 /* COMPACTION_TEST_START */
 /* Compaction test functions - DEBUG ONLY, remove before release */
