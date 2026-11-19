@@ -1,5 +1,6 @@
 /* ui_files: see ui_files.h. The screen itself is the BIOS's (bios_filescr); this file feeds it the memory cards
  * and carries out what it asks for, one memory card access a frame so the screen keeps running. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -299,6 +300,7 @@ static volatile int pad_probe_req;   /* bit n: ask port n */
 static volatile int pad_probe_busy;  /* the thread is running */
 static int pad_probed;               /* bit n: asked (the main thread's) */
 static int pad_tries[4];
+static char pad_adapter[4][12]; /* what the adapter of port n called itself (written by the thread before the bit in pad_ok_mask) */
 
 static void*
 pad_probe_main(void* arg) {
@@ -306,7 +308,9 @@ pad_probe_main(void* arg) {
     for (int p = 0; p < 4; p++) {
         if (pad_probe_req & (1 << p)) {
             pad_probe_req &= ~(1 << p);
-            if (uic_port_configurable(p)) {
+            char nm[12] = "";
+            if (uic_port_configurable(p, nm)) {
+                memcpy(pad_adapter[p], nm, sizeof(nm));
                 pad_ok_mask |= 1 << p;
             } else {
                 pad_ok_mask &= ~(1 << p);
@@ -325,6 +329,7 @@ poll_pads(int ports) {
             pad_probed &= ~bit;
             pad_ok_mask &= ~bit;
             pad_tries[p] = 0;
+            pad_adapter[p][0] = '\0';
         } else if (pad_probed & bit) {
             if (!pad_probe_busy && !(pad_probe_req & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 3) {
                 pad_probed &= ~bit; /* answered "no": ask again, a few times */
@@ -535,8 +540,13 @@ draw_pad_labels(void) {
         product[sizeof(dev->info.product_name)] = '\0';
         /* the plate of the selected controller (the card grid's info panel) says what it is; a standard controller has no pill */
         if (!pad_kind_name(dev->info.functions, product, kind[p])) {
-            bfs_set_pad_name(&fs, p, "Controller");
-            continue;
+            /* a standard controller has no pill, unless an adapter that can be configured is behind it (iBlueControlMod looks like an
+             * official pad to the console): then the adapter's name is the text */
+            if (!((pad_ok_mask >> p) & 1) || !pad_adapter[p][0]) {
+                bfs_set_pad_name(&fs, p, "Controller");
+                continue;
+            }
+            snprintf(kind[p], PAD_KIND_MAX, "%s", pad_adapter[p]);
         }
         bfs_set_pad_name(&fs, p, kind[p]);
         if (!bfs_pad_px(&fs, p, &px[p], &py[p])) {

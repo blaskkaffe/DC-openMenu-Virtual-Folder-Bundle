@@ -66,13 +66,19 @@ send_text(void* user, const char* req, char* ans, size_t cap) {
 /* the unit of the port that speaks the DC API: the controller unit first (the adapter answers there in any pad mode, with or without a memory
  * card accessory), then the memory card units that said so in their extended device info */
 static maple_device_t*
-find_adapter(int port) {
+find_adapter(int port, char* name /* NULL or 12 bytes: what it calls itself, short */) {
     maple_device_t* pad = maple_enum_dev(port, 0);
 
+    if (name) {
+        name[0] = '\0';
+    }
     if (pad && pad->valid) {
         dcapi_hello_t h;
 
         if (dcapi_get_hello(pad, &h) == 0 && h.name[0]) {
+            if (name) {
+                snprintf(name, 12, "%s", strstr(h.name, "iBlue") ? "iBlue" : h.name);
+            }
             return pad;
         }
     }
@@ -81,6 +87,9 @@ find_adapter(int port) {
         uint32_t caps;
 
         if (d && d->valid && check_vm2_present(d) && get_last_allinfo_dcapi_caps(&caps) && dcapi_has(caps, DCAPI_CAP_API)) {
+            if (name) {
+                snprintf(name, 12, "%s", get_last_allinfo_type_name());
+            }
             return d;
         }
     }
@@ -156,10 +165,17 @@ port_has_plain_adapter(int port, const char** kind) {
 }
 
 int
-uic_port_configurable(int port) {
+uic_port_configurable(int port, char name[12]) {
     const char* kind;
 
-    return find_adapter(port) != NULL || port_has_plain_adapter(port, &kind);
+    if (find_adapter(port, name) != NULL) {
+        return 1;
+    }
+    if (port_has_plain_adapter(port, &kind)) {
+        snprintf(name, 12, "%s", kind);
+        return 1;
+    }
+    return 0;
 }
 
 const char*
@@ -180,7 +196,7 @@ int
 uic_open(bmenu* m, int port, int pal) {
     const char* kind = NULL;
 
-    dev = find_adapter(port);
+    dev = find_adapter(port, NULL);
     if (dev) {
         ced_init(&ed, send_text, NULL, port);
         if (ced_refresh(&ed) != 1) {
