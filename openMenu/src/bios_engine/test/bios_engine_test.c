@@ -921,7 +921,19 @@ test_filescr_real(const bios_rom* rom) {
         fs_steps(&mp, &fp, 2, BFS_KEY_UP);
         fs_steps(&mp, &fp, 2, BFS_KEY_A);
         CHECK(bfs_pad_event(&fp) == 1);
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fp.warp = 2 + 9; /* the mouse on controller B (not selectable): nothing */
+        fs_steps(&mp, &fp, 3, 0);
+        CHECK(fp.g_cursor == 9);
+        fp.warp = 3 + 9; /* ... on C (selectable): the cursor goes there */
+        fs_steps(&mp, &fp, 3, 0);
+        CHECK(fp.g_cursor == 11);
         fp.pads_ok = 0; /* none selectable: up from BACK stays */
+        fs_steps(&mp, &fp, 2, BFS_KEY_A);
+        CHECK(bfs_pad_event(&fp) == 0); /* A on a controller that stopped being selectable does nothing */
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fs_steps(&mp, &fp, 2, BFS_KEY_DOWN);
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
         fs_steps(&mp, &fp, 2, BFS_KEY_DOWN);
         fs_steps(&mp, &fp, 2, BFS_KEY_UP);
         CHECK(fp.g_cursor == 8);

@@ -290,42 +290,22 @@ controllers(void) {
     return mask;
 }
 
-/* Which controllers can be selected (opened in the controller screen): only a port whose adapter answers the DC API, or a Pico2Maple.
- * An official controller, or any that cannot be configured, is never selectable. Asking costs maple transactions that wait up to 200 ms each
- * when nothing answers, so it is done once per plugged controller on its own thread, below the menu; until the answer is in, the controller
- * cannot be selected. A controller that was unplugged is asked again when it comes back, and a "no" is asked up to three times in case the
- * port's frame was busy with something else. */
-static volatile int pad_ok_mask;     /* bit n: port n answered */
-static volatile int pad_probe_req;   /* bit n: ask port n */
-static volatile int pad_probe_busy;  /* the thread is running */
-static int pad_probed;               /* bit n: asked (the main thread's) */
+/* Which controllers can be selected (opened in the controller screen): only a port whose adapter says in its memory card unit's extended device
+ * info that it speaks the DC API, or is a Pico2Maple. An official controller, or any that cannot be configured, is never selectable.
+ * Asked on the MAIN thread, one port at a time (an ALLINFO to a memory card unit takes milliseconds), as vm2_rescan does: a thread asking
+ * shared the maple frames and the ALLINFO answer buffer with the rest of the menu, and on the console the input stopped. Nothing is ever
+ * sent to the controller unit itself (a Pico2Maple stopped answering the pads after the DC API's hello there). Until the answer is in a
+ * controller cannot be selected; a "no" is asked again every two seconds, up to 8 times, in case the unit was busy. */
+static int pad_ok_mask;      /* bit n: port n answered */
+static int pad_probed;       /* bit n: asked */
 static int pad_tries[4];
-static int pad_wait[4]; /* polls since the last no */
-static char pad_adapter[4][12]; /* what the adapter of port n called itself (written by the thread before the bit in pad_ok_mask) */
-
-static void*
-pad_probe_main(void* arg) {
-    (void)arg;
-    for (int p = 0; p < 4; p++) {
-        if (pad_probe_req & (1 << p)) {
-            pad_probe_req &= ~(1 << p);
-            char nm[12] = "";
-            int ok = uic_port_configurable(p, nm);
-            printf("OM pads: port %c %s %s\n", 'A' + p, ok ? "configurable:" : "not configurable", ok ? nm : "");
-            if (ok) {
-                memcpy(pad_adapter[p], nm, sizeof(nm));
-                pad_ok_mask |= 1 << p;
-            } else {
-                pad_ok_mask &= ~(1 << p);
-            }
-        }
-    }
-    pad_probe_busy = 0;
-    return NULL;
-}
+static int pad_wait[4];      /* polls since the last no */
+static char pad_adapter[4][12]; /* what the adapter of port n called itself */
 
 static void
 poll_pads(int ports) {
+    int asked = 0;
+
     for (int p = 0; p < 4; p++) {
         int bit = 1 << p;
         if (!(ports & bit)) {
@@ -333,22 +313,23 @@ poll_pads(int ports) {
             pad_ok_mask &= ~bit;
             pad_tries[p] = pad_wait[p] = 0;
             pad_adapter[p][0] = '\0';
-        } else if (pad_probed & bit) {
-            if (!pad_probe_busy && !(pad_probe_req & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 8 && ++pad_wait[p] >= 4) {
-                pad_probed &= ~bit; /* answered no: ask again every two seconds, a few times (the port's frame may have been busy) */
-                pad_wait[p] = 0;
-            }
-        } else if (!pad_probe_busy) {
+            continue;
+        }
+        if ((pad_probed & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 8 && ++pad_wait[p] >= 4) {
+            pad_probed &= ~bit;
+            pad_wait[p] = 0;
+        }
+        if (!(pad_probed & bit) && !asked) {
+            char nm[12] = "";
+            int ok = uic_port_configurable(p, nm);
+            asked = 1; /* one port per poll */
             pad_probed |= bit;
             pad_tries[p]++;
-            pad_probe_req |= bit;
-            pad_probe_busy = 1;
-            kthread_t* t = thd_create(1, pad_probe_main, NULL);
-            if (t) {
-                thd_set_prio(t, PRIO_DEFAULT + 4);
-            } else {
-                pad_probe_main(NULL); /* no thread: here, once */
+            if (ok) {
+                memcpy(pad_adapter[p], nm, sizeof(nm));
+                pad_ok_mask |= bit;
             }
+            printf("OM pads: port %c %s %s\n", 'A' + p, ok ? "configurable:" : "not configurable", ok ? nm : "");
         }
     }
     fs.pads_ok = pad_ok_mask & ports;

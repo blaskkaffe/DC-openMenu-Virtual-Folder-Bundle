@@ -604,7 +604,15 @@ pad_nav(bfs* fs, int dir, int* pos) {
 static void
 grid_cb(bfs* fs, int code, int* pos) {
     int dir = -1;
+    if (code == BFS_WARP && *pos >= GRID_PAD0 && !pad_there(fs, *pos - GRID_PAD0)) {
+        *pos = fs->g_cursor; /* the mouse on a controller that cannot be selected: the cursor stays where it is */
+        return;
+    }
     if (code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT && pad_nav(fs, code - 1, pos)) {
+        return;
+    }
+    if (code == BFS_KEY_A && fs->g_cursor >= GRID_PAD0 && !pad_there(fs, fs->g_cursor - GRID_PAD0)) {
+        *pos = fs->g_cursor; /* (the pad was unplugged or stopped being selectable under the cursor) */
         return;
     }
     if (code == BFS_KEY_A && fs->g_cursor >= GRID_PAD0) {
