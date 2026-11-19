@@ -1,5 +1,6 @@
 /* ui_ctrl: see ui_ctrl.h. The Internet screen's way: a panel, rows drawn by hand, BACK and the CD buttons' objects. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <dc/maple.h>
@@ -7,6 +8,9 @@
 #include <bios_audio.h>
 #include <bios_scene.h>
 #include <bios_vm.h>
+
+#include <backend/gd_item.h>
+#include <backend/gd_list.h>
 
 #include "ctrl_editor.h"
 #include "gfx.h"
@@ -83,6 +87,74 @@ find_adapter(int port) {
     return NULL;
 }
 
+/* ---- Load game id: the games of the card that have an id (not homebrew / tools), and how an id reaches the port's adapter */
+static int* game_index; /* list_all_item() indexes */
+static int game_n;
+static int id_port;
+
+static void
+build_games(void) {
+    int all = list_all_count();
+
+    free(game_index);
+    game_index = all > 0 ? (int*)malloc(sizeof(int) * (size_t)all) : NULL;
+    game_n = 0;
+    for (int i = 0; game_index && i < all; i++) {
+        const gd_item* g = list_all_item(i);
+        if (g && g->product[0] && strcmp(g->type, "other") != 0) {
+            game_index[game_n++] = i;
+        }
+    }
+}
+
+static int
+games_count(void* user) {
+    (void)user;
+    return game_n;
+}
+
+static const char*
+games_name(void* user, int i) {
+    (void)user;
+    const gd_item* g = i >= 0 && i < game_n ? list_all_item(game_index[i]) : NULL;
+    return g ? g->name : "";
+}
+
+static const char*
+games_id(void* user, int i) {
+    (void)user;
+    const gd_item* g = i >= 0 && i < game_n ? list_all_item(game_index[i]) : NULL;
+    return g ? g->product : "";
+}
+
+/* the game id goes to the port's memory card unit, as at a game's start (Maple 0x21, vm2_set_id) */
+static int
+games_send(void* user, const char* id, const char* name) {
+    (void)user;
+    for (int unit = 1; unit <= 2; unit++) {
+        maple_device_t* d = maple_enum_dev(id_port, unit);
+        if (d && d->valid && check_vm2_present(d)) {
+            return vm2_set_id(d, id, name) == 0 ? 0 : -1;
+        }
+    }
+    return -1;
+}
+
+static const ced_games games = {games_count, games_name, games_id, games_send, NULL};
+
+/* a Pico2Maple on the port: it takes the game id but has no DC API (its other settings are buttons on the controller) */
+static int
+port_has_plain_adapter(int port, const char** kind) {
+    for (int unit = 1; unit <= 2; unit++) {
+        maple_device_t* d = maple_enum_dev(port, unit);
+        if (d && d->valid && check_vm2_present(d) && !strcmp(get_last_allinfo_type_name(), "Pico2Maple")) {
+            *kind = "Pico2Maple";
+            return 1;
+        }
+    }
+    return 0;
+}
+
 const char*
 uic_why(void) {
     return why;
@@ -99,18 +171,26 @@ place(bvm_obj* o, float x, float y, float z) {
 
 int
 uic_open(bmenu* m, int port, int pal) {
+    const char* kind = NULL;
+
     dev = find_adapter(port);
-    if (!dev) {
+    if (dev) {
+        ced_init(&ed, send_text, NULL, port);
+        if (ced_refresh(&ed) != 1) {
+            why = "The adapter did not answer";
+            return 0;
+        }
+    } else if (port_has_plain_adapter(port, &kind)) {
+        ced_init_plain(&ed, kind, port); /* placeholder until it speaks the DC API: its button combos and Load game id */
+    } else {
         why = "No adapter on this port speaks the DC API";
         return 0;
     }
+    id_port = port;
+    build_games();
+    ced_set_games(&ed, &games);
     menu = m;
     console_pal = pal;
-    ced_init(&ed, send_text, NULL, port);
-    if (ced_refresh(&ed) != 1) {
-        why = "The adapter did not answer";
-        return 0;
-    }
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 6, ID_BACK, PRIO);
     anim = 0;

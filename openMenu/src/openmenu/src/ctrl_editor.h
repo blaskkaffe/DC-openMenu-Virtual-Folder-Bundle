@@ -6,7 +6,10 @@
  * and a device that has them. Logic only, no KallistiOS: the app front end (ui_ctrl.c) draws the rows as a bpage and the calibration man
  * (pose_man.h) on the motion page, and gives the transport (dcapi_request() on the adapter's Maple device).
  *
- *   Port page      Type, Accessory, Layout, Buttons >, [Joy-Con motion >], Save, Undo
+ *   Port page      Type, Memory card, [Memory card slot], [Game id], Load game id >, Rumble, Layout, Buttons >, [Joy-Con motion >],
+ *                  Save, Undo (the rows in brackets only for a device that has the keys: port.<X>.vmu.slot(s), game.mode)
+ *   Game page      the games of the card; A sends the game id (Maple 0x21: the adapter loads that game's memory card or settings)
+ *   No DC API      (Pico2Maple today) a page that says which buttons on the controller change what, and Load game id >
  *   Buttons page   one row per Dreamcast output with what drives it; A picks another input for it (Pick page)
  *   Motion page    ui_motion.c: mode, status, poses; the man's arms follow the Joy-Cons (ced_man)
  */
@@ -19,7 +22,17 @@
 
 typedef uim_transport ced_transport; /* sends a request text, copies the answer text: dcapi_request() of the device */
 
-enum { CED_PAGE_PORT, CED_PAGE_BUTTONS, CED_PAGE_PICK, CED_PAGE_MOTION, CED_PAGES };
+enum { CED_PAGE_PORT, CED_PAGE_BUTTONS, CED_PAGE_PICK, CED_PAGE_MOTION, CED_PAGE_GAME, CED_PAGES };
+
+/* The games "Load game id" offers, and how an id reaches the adapter (the front end: the card's game list, vm2_set_id() on the port's memory
+ * card unit). send returns 0 when the adapter took it. */
+typedef struct ced_games {
+    int (*count)(void* user);
+    const char* (*name)(void* user, int i);
+    const char* (*id)(void* user, int i);
+    int (*send)(void* user, const char* id, const char* name);
+    void* user;
+} ced_games;
 
 #define CED_OUTPUTS 26
 #define CED_VALUE_MAX 40
@@ -34,6 +47,11 @@ typedef struct ced {
     char mode[12], acc[8], layout[12], devname[32];
     char modes[96], accs[40], layouts[40];  /* the values the device accepts, separated by commas */
     char unsaved[4];             /* yes / no */
+    int api;                     /* 1: the device speaks the DC API; 0: only the game id (Pico2Maple), a page of hints */
+    char devkind[16];            /* for the page without the DC API: "Pico2Maple" */
+    int has_slot, has_game_mode; /* the device has port.<X>.vmu.slot / game.mode */
+    char slot[8], slots[64], game_mode[8];
+    ced_games games;
     char map[CED_OUTPUTS][CED_VALUE_MAX];   /* what drives each output */
     int map_loaded;
     int pick_out;                /* the output the Pick page is for */
@@ -45,6 +63,9 @@ typedef struct ced {
 } ced;
 
 void ced_init(ced* e, ced_transport send, void* user, int port);
+/* A device that does not speak the DC API but takes a game id (kind: "Pico2Maple"): the editor shows hints and Load game id */
+void ced_init_plain(ced* e, const char* kind, int port);
+void ced_set_games(ced* e, const ced_games* g);
 /* Reads the port's keys. Returns 1, 0 when the device has no such port, negative when it did not answer. */
 int ced_refresh(ced* e);
 

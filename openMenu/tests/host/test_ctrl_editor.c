@@ -39,10 +39,103 @@ static int engine(void* user, const char* req, char* ans, size_t cap) {
 
 static int silent(void* user, const char* req, char* ans, size_t cap) { (void)user; (void)req; (void)ans; (void)cap; return -1; }
 
+/* a device with the proposed keys port.A.vmu.slot(s) and game.mode (docs/dcapi.md): answers from a small table */
+static char fake_slot[24] = "3", fake_game[24] = "off", fake_acc[24] = "vmu";
+static int fake(void* user, const char* req, char* ans, size_t cap) {
+    char line[96];
+    size_t n = 0;
+    (void)user;
+    n += (size_t)snprintf(ans + n, cap - n, "dc1\n");
+    for (const char* s = req; *s;) {
+        size_t l = strcspn(s, "\n");
+        if (l >= sizeof(line)) l = sizeof(line) - 1;
+        memcpy(line, s, l);
+        line[l] = 0;
+        s += l;
+        if (*s) s++;
+        if (!strncmp(line, "get ", 4)) {
+            const char* k = line + 4;
+            const char* val = !strcmp(k, "port.A.mode") ? "normal" : !strcmp(k, "port.A.acc") ? fake_acc : !strcmp(k, "port.A.vmu.slot") ? fake_slot
+                            : !strcmp(k, "port.A.vmu.slots") ? "1,2,3,4,5,6,7,8,9,10" : !strcmp(k, "game.mode") ? fake_game
+                            : !strcmp(k, "port.A.accs") ? "none,vmu" : !strcmp(k, "sys.unsaved") ? "no" : NULL;
+            n += (size_t)(val ? snprintf(ans + n, cap - n, "ok %s %s\n", k, val) : snprintf(ans + n, cap - n, "err %s unknown\n", k));
+        } else if (!strncmp(line, "set ", 4)) {
+            char k[40], val[24];
+            if (sscanf(line + 4, "%39s %23s", k, val) == 2) {
+                if (!strcmp(k, "port.A.vmu.slot")) snprintf(fake_slot, sizeof(fake_slot), "%s", val);
+                if (!strcmp(k, "game.mode")) snprintf(fake_game, sizeof(fake_game), "%s", val);
+                if (!strcmp(k, "port.A.acc")) snprintf(fake_acc, sizeof(fake_acc), "%s", val);
+                n += (size_t)snprintf(ans + n, cap - n, "ok %s %s\n", k, val);
+            }
+        }
+    }
+    return (int)n;
+}
+
+static const char* const game_names[2] = {"Sonic Adventure", "Shenmue"};
+static const char* const game_ids[2] = {"MK-51000", "MK-51059"};
+static char sent_id[16];
+static int g_count(void* u) { (void)u; return 2; }
+static const char* g_name(void* u, int i) { (void)u; return game_names[i]; }
+static const char* g_id(void* u, int i) { (void)u; return game_ids[i]; }
+static int g_send(void* u, const char* id, const char* name) { (void)u; (void)name; snprintf(sent_id, sizeof(sent_id), "%s", id); return 0; }
+
 int main(void) {
     ced e;
     char l[40], v[40];
     const char* h;
+    const ced_games games = {g_count, g_name, g_id, g_send, NULL};
+
+    /* a device with slots and the game id switch: the rows appear; rumble is not offered by it */
+    ced_init(&e, fake, NULL, 0);
+    ced_set_games(&e, &games);
+    CHECK(ced_refresh(&e) == 1 && e.has_slot && e.has_game_mode);
+    CHECK(ced_rows(&e) == 10);
+    ced_row(&e, 2, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Memory card slot"); SAME(v, "3");
+    ced_row(&e, 3, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Game id"); SAME(v, "Off");
+    ced_set_cursor(&e, 2);
+    CHECK(ced_change(&e, 1) == 1);
+    SAME(fake_slot, "4");
+    ced_change(&e, -1);
+    ced_change(&e, -1);
+    ced_change(&e, -1);
+    ced_change(&e, -1);
+    SAME(fake_slot, "10"); /* wraps */
+    ced_set_cursor(&e, 3);
+    ced_change(&e, 1);
+    SAME(fake_game, "on");
+    ced_row(&e, 3, l, sizeof(l), v, sizeof(v), &h); SAME(v, "On");
+    ced_set_cursor(&e, 5); /* Rumble: this device lists no rumble */
+    ced_change(&e, 1);
+    SAME(fake_acc, "vmu");
+    SAME(e.msg, "Not on this device");
+    /* Load game id: the game page, A sends the id */
+    ced_set_cursor(&e, 4);
+    CHECK(ced_activate(&e) == 1 && e.page == CED_PAGE_GAME);
+    SAME(ced_title(&e), "Load game id");
+    CHECK(ced_rows(&e) == 2);
+    ced_row(&e, 1, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Shenmue"); SAME(v, "MK-51059");
+    ced_set_cursor(&e, 1);
+    CHECK(ced_activate(&e) == 1 && e.page == CED_PAGE_PORT);
+    SAME(sent_id, "MK-51059");
+    SAME(e.msg, "Sent MK-51059");
+
+    /* a device without the DC API (Pico2Maple): hints and Load game id, nothing asked */
+    ced_init_plain(&e, "Pico2Maple", 1);
+    ced_set_games(&e, &games);
+    CHECK(ced_refresh(&e) == 1);
+    SAME(ced_title(&e), "Pico2Maple");
+    CHECK(ced_rows(&e) == 6);
+    ced_row(&e, 0, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Settings"); SAME(v, "On the controller");
+    ced_row(&e, 4, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Load game id");
+    CHECK(ced_change(&e, 1) == 0);
+    ced_set_cursor(&e, 4);
+    sent_id[0] = 0;
+    CHECK(ced_activate(&e) == 1 && e.page == CED_PAGE_GAME);
+    ced_set_cursor(&e, 0);
+    ced_activate(&e);
+    SAME(sent_id, "MK-51000");
+    CHECK(ced_back(&e) == 1);
 
     ced_init(&e, silent, NULL, 0);
     CHECK(ced_refresh(&e) < 0 && !e.reachable);
@@ -59,11 +152,15 @@ int main(void) {
     ced_init(&e, engine, NULL, 0);
     CHECK(ced_refresh(&e) == 1 && e.reachable);
     SAME(ced_title(&e), "Controller");
-    CHECK(ced_rows(&e) == 6);
+    /* Type, Memory card, Load game id, Rumble, Layout, Buttons, Save, Undo: the iBlue has no slots and no game id switch (yet) */
+    CHECK(!e.has_slot && !e.has_game_mode);
+    CHECK(ced_rows(&e) == 8);
     ced_row(&e, 0, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Type"); SAME(v, "Controller");
-    ced_row(&e, 1, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Both");
-    ced_row(&e, 2, l, sizeof(l), v, sizeof(v), &h); CHECK(!strcmp(v, "Standard") || !strcmp(v, "Custom"));
-    ced_row(&e, 4, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Save"); SAME(v, "Saved");
+    ced_row(&e, 1, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Memory card"); SAME(v, "On");
+    ced_row(&e, 2, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Load game id");
+    ced_row(&e, 3, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Rumble"); SAME(v, "On");
+    ced_row(&e, 4, l, sizeof(l), v, sizeof(v), &h); CHECK(!strcmp(v, "Standard") || !strcmp(v, "Custom"));
+    ced_row(&e, 6, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Save"); SAME(v, "Saved");
     CHECK(strlen(h) <= 40);
 
     /* Type: right goes to the next the device accepts, the engine is asked */
@@ -71,21 +168,35 @@ int main(void) {
     CHECK(ced_change(&e, 1) == 1);
     CHECK(nreq == 1 && reqs[0].op == IBLUE_CFG_SET_MODE && reqs[0].a == 0 && reqs[0].b == DEV_PAD_ALT);
     ced_row(&e, 0, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Dual stick");
-    ced_row(&e, 4, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Unsaved changes");
+    ced_row(&e, 6, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Unsaved changes");
     /* ... and round: left from the first one wraps to the last the device lists */
     ced_change(&e, -1);
     ced_row(&e, 0, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Controller");
     ced_change(&e, -1);
     ced_row(&e, 0, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Maracas");
 
-    /* the accessory */
-    ced_move(&e, 1);
+    /* the accessory as two switches: rumble off leaves the memory card (both -> vmu), then memory card off (vmu -> none) */
+    ced_set_cursor(&e, 3);
     nreq = 0;
     ced_change(&e, 1);
-    CHECK(nreq == 1 && reqs[0].op == IBLUE_CFG_SET_ACC);
+    CHECK(nreq == 1 && reqs[0].op == IBLUE_CFG_SET_ACC && reqs[0].b == ACC_MEM);
+    SAME(e.acc, "vmu");
+    ced_row(&e, 3, l, sizeof(l), v, sizeof(v), &h); SAME(v, "Off");
+    ced_set_cursor(&e, 1);
+    nreq = 0;
+    ced_change(&e, -1);
+    CHECK(nreq == 1 && reqs[0].op == IBLUE_CFG_SET_ACC && reqs[0].b == ACC_NONE);
+    /* Load game id needs the memory card on (the id goes to its unit) */
+    ced_set_cursor(&e, 2);
+    CHECK(ced_activate(&e) == 1 && e.page == CED_PAGE_PORT);
+    ced_set_cursor(&e, 1);
+    ced_change(&e, 1);
+    ced_set_cursor(&e, 3);
+    ced_change(&e, 1);
+    SAME(e.acc, "both");
 
     /* Buttons page: output A is driven by "a" */
-    ced_set_cursor(&e, 3);
+    ced_set_cursor(&e, 5);
     CHECK(ced_activate(&e) == 1);
     SAME(ced_title(&e), "Buttons");
     CHECK(ced_rows(&e) == CED_OUTPUTS);
@@ -113,10 +224,10 @@ int main(void) {
     ced_init(&e, engine, NULL, 1);
     CHECK(ced_refresh(&e) == 1);
     SAME(e.mode, "maracas");
-    CHECK(e.motion_known && ced_rows(&e) == 7);
-    ced_row(&e, 4, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Joy-Con motion"); SAME(v, "Ready");
+    CHECK(e.motion_known && ced_rows(&e) == 9);
+    ced_row(&e, 6, l, sizeof(l), v, sizeof(v), &h); SAME(l, "Joy-Con motion"); SAME(v, "Ready");
     CHECK(!ced_wants_man(&e));
-    ced_set_cursor(&e, 4);
+    ced_set_cursor(&e, 6);
     CHECK(ced_activate(&e) == 1 && ced_wants_man(&e));
     SAME(ced_title(&e), "Joy-Con motion");
     CHECK(ced_rows(&e) == uim_rows());
@@ -139,7 +250,7 @@ int main(void) {
     iblue_dcapi_port_set(1, IBLUE_PORT_BT, DEV_PAD, ACC_NONE, 0, 0);
     ced_init(&e, engine, NULL, 1);
     ced_refresh(&e);
-    CHECK(!e.motion_known && ced_rows(&e) == 6);
+    CHECK(!e.motion_known && ced_rows(&e) == 8);
 #else
     (void)l; (void)v; (void)h;
     printf("(IBLUE_FW not set: the part that talks to the firmware's engine was skipped)\n");

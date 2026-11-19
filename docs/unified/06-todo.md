@@ -27,3 +27,8 @@ The owner's list across all repos. Newest additions are marked with their date. 
 - [ ] **Colin Luoma (Pico2Maple author):** ask about source access or permission, and about the decompilation. Until then the decompilation stays out of every repo (D-8c).
 - [ ] **Names:** the openMenu repository is `DC-openMenu-Virtual-Folder-Bundle` while the project notes say "DC-openMenu-Wave".
 - [ ] **Docs size:** these shared documents are copied into six repositories and the Project; decide whether the Project stays the master copy.
+
+## Added 2026-11-19 (openMenu controller editor)
+
+- [ ] **iBlueControlMod: `game.mode` key** (`on`/`off`, the same switch as tap action 10), so openMenu's Game id row appears. Proposed in openMenu `docs/dcapi.md`.
+- [ ] **Pico2Maple: DC API** (`dc1` marker, `0x22`, keys `port.A.mode`, `.acc`, `port.A.vmu.slot(s)`, `game.mode`): not in any firmware as of 2026-04-05 (upstream) / DC-Pico2Maple `unified` dc17edb. Until then openMenu shows a page with its button combos and Load game id (Maple `0x21` works today).
