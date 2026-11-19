@@ -47,6 +47,7 @@
 #include "ui_internet.h"
 #include <backend/gd_list.h>
 
+#include "ui_ctrl.h"
 #include "ui_files.h"
 #include <bios_cdplayer.h>
 #include "ui_list.h"
@@ -54,7 +55,7 @@
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET, SCREEN_CTRL } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -914,7 +915,8 @@ static uint32_t
 screen_accent(void) {
     switch (screen) {
         case SCREEN_GAMES: return BMENU_ACCENT_PLAY;
-        case SCREEN_FILE: return BMENU_ACCENT_FILE;
+        case SCREEN_FILE:
+        case SCREEN_CTRL: return BMENU_ACCENT_FILE;
         case SCREEN_MUSIC:
         case SCREEN_INTERNET: return BMENU_ACCENT_MUSIC;
         case SCREEN_SETTINGS:
@@ -1288,6 +1290,7 @@ log_label(void) {
         case SCREEN_FILE: return "file";
         case SCREEN_MUSIC: return "cd player";
         case SCREEN_INTERNET: return "internet";
+        case SCREEN_CTRL: return "controller";
     }
     return "?";
 }
@@ -1409,6 +1412,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_DATETIME) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_datetime();
+    } else if (screen == SCREEN_CTRL) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        uic_draw();
     } else if (screen == SCREEN_FILE) {
         bscene_draw_background(&menu.bg, gfx_sink());
         uif_draw();
@@ -2627,6 +2633,13 @@ ui_bios_run(const bios_rom* rom) {
             }
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
+        } else if (screen == SCREEN_CTRL) {
+            if (uic_handle(b)) { /* left the controller screen: back to the card grid */
+                uif_open(&menu);
+                uif_set_pal(console_is_pal());
+                vmu_menu_open = 0;
+                screen = SCREEN_FILE;
+            }
         } else if (screen == SCREEN_INTERNET) {
             if (uin_handle(b)) {
                 bmenu_show_main(&menu, ICON_MUSIC);
@@ -2681,12 +2694,28 @@ ui_bios_run(const bios_rom* rom) {
                 bmenu_show_main(&menu, ICON_FILE);
                 screen = SCREEN_MAIN;
             }
+            if (screen == SCREEN_FILE) {
+                int picked = uif_pad_picked(); /* A on a controller in the top row of the card grid */
+                if (picked) {
+                    if (uic_open(&menu, picked - 1, console_is_pal())) {
+                        screen = SCREEN_CTRL;
+                    } else {
+                        sound_sfx(BAUDIO_SFX_ERROR);
+                        show_notice(uic_why());
+                    }
+                }
+            }
+            if (screen == SCREEN_CTRL) {
+                uic_step();
+            }
         }
 
         if (screen == SCREEN_SETTINGS) {
             settings_sync();
         } else if (screen == SCREEN_DATETIME) {
             bdt_sync(&dtedit);
+        } else if (screen == SCREEN_CTRL) {
+            uic_sync();
         } else if (screen == SCREEN_FILE) {
             uif_sync();
         } else if (screen == SCREEN_MUSIC) {

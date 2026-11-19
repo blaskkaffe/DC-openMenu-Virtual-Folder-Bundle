@@ -60,7 +60,7 @@ int main(void) {
     CHECK(uim_rows() == UIM_ROWS);
     row(&m, UIM_ROW_MODE, l, v); SAME(l, "Motion mode"); SAME(v, "Off");
     row(&m, UIM_ROW_STATE, l, v); SAME(v, "Off");
-    row(&m, UIM_ROW_LEFT, l, v); SAME(v, "Not connected");
+    row(&m, UIM_ROW_LEFT, l, v); SAME(v, "Absent");
 
     /* a pose with the mode off is refused on the page, nothing is sent */
     nreq = 0;
@@ -71,14 +71,14 @@ int main(void) {
     CHECK(uim_activate(&m, UIM_ROW_MODE) == 1);
     CHECK(nreq == 1 && reqs[0].op == IBLUE_CFG_MOTION_MODE && reqs[0].a == 1);
     row(&m, UIM_ROW_MODE, l, v); SAME(v, "On");
-    row(&m, UIM_ROW_STATE, l, v); SAME(v, "Waiting for a Joy-Con");
+    row(&m, UIM_ROW_STATE, l, v); SAME(v, "No Joy-Con");
     SAME(m.msg, "On: now connect the Joy-Cons again");
 
     /* Joy-Cons connect, not calibrated */
     iblue_dcapi_motion_set(1, 1, 1);
     CHECK(uim_tick(&m, 800) == 1); /* the state is read on its own */
-    row(&m, UIM_ROW_STATE, l, v); SAME(v, "Needs forward");
-    row(&m, UIM_ROW_RIGHT, l, v); SAME(v, "Needs forward");
+    row(&m, UIM_ROW_STATE, l, v); SAME(v, "Set forward");
+    row(&m, UIM_ROW_RIGHT, l, v); SAME(v, "Set forward");
 
     /* set forward: the adapter is asked for 5 seconds, the page counts down */
     nreq = 0;

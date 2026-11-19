@@ -31,6 +31,8 @@ set(OPENMENU_SOURCES
         src/ui_fallback.c
         src/ui_files.c
         src/ui_motion.c
+        src/ui_ctrl.c
+        src/ctrl_editor.c
         src/pose_man.c
         src/ui_internet.c
         src/ui_list.c

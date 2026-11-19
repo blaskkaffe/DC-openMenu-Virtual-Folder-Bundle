@@ -80,10 +80,10 @@ static const char*
 nice(const char* s) {
     if (!strcmp(s, "off")) return "Off";
     if (!strcmp(s, "on")) return "On";
-    if (!strcmp(s, "waiting")) return "Waiting for a Joy-Con";
-    if (!strcmp(s, "uncalibrated")) return "Needs forward";
+    if (!strcmp(s, "waiting")) return "No Joy-Con";
+    if (!strcmp(s, "uncalibrated")) return "Set forward";
     if (!strcmp(s, "ready")) return "Ready";
-    if (!strcmp(s, "absent")) return "Not connected";
+    if (!strcmp(s, "absent")) return "Absent";
     return "?";
 }
 
