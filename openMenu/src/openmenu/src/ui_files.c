@@ -469,12 +469,19 @@ draw_pad_labels(void) {
         maple_device_t* dev = maple_enum_dev(p, 0);
         char product[sizeof(dev->info.product_name) + 1];
         tw[p] = 0.0f;
-        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px[p], &py[p])) {
+        if (!dev || !dev->valid) {
+            bfs_set_pad_name(&fs, p, "");
             continue;
         }
         memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
         product[sizeof(dev->info.product_name)] = '\0';
+        /* the plate of the selected controller (the card grid's info panel) says what it is; a standard controller has no pill */
         if (!pad_kind_name(dev->info.functions, product, kind[p])) {
+            bfs_set_pad_name(&fs, p, "Controller");
+            continue;
+        }
+        bfs_set_pad_name(&fs, p, kind[p]);
+        if (!bfs_pad_px(&fs, p, &px[p], &py[p])) {
             continue;
         }
         for (;;) { /* a long name of its own (a controller we do not know) is cut to fit the column */
