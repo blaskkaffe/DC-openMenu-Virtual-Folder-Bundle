@@ -290,49 +290,17 @@ controllers(void) {
     return mask;
 }
 
-/* Which controllers can be selected (opened in the controller screen): only a port whose adapter says in its memory card unit's extended device
- * info that it speaks the DC API, or is a Pico2Maple. An official controller, or any that cannot be configured, is never selectable.
- * Asked on the MAIN thread, one port at a time (an ALLINFO to a memory card unit takes milliseconds), as vm2_rescan does: a thread asking
- * shared the maple frames and the ALLINFO answer buffer with the rest of the menu, and on the console the input stopped. Nothing is ever
- * sent to the controller unit itself (a Pico2Maple stopped answering the pads after the DC API's hello there). Until the answer is in a
- * controller cannot be selected; a "no" is asked again every two seconds, up to 8 times, in case the unit was busy. */
-static int pad_ok_mask;      /* bit n: port n answered */
-static int pad_probed;       /* bit n: asked */
-static int pad_tries[4];
-static int pad_wait[4];      /* polls since the last no */
-static char pad_adapter[4][12]; /* what the adapter of port n called itself */
+/* Which controllers can be selected: every plugged one. Nothing is asked of the bus while the File screen is open (a probe that ran here, on
+ * a thread and then on the main thread, stopped the pads' input on the console: the cursor stuck even on the memory cards). Whether the
+ * adapter can be configured is found out when A is pressed on the controller (ui_ctrl.c uic_open, as before): an official one says so in a
+ * notice and the screen stays. The adapter's name for the pill (iBlue) is kept by uic_open's success path when it has one. */
+static int pad_ok_mask;
+static char pad_adapter[4][12];
 
 static void
 poll_pads(int ports) {
-    int asked = 0;
-
-    for (int p = 0; p < 4; p++) {
-        int bit = 1 << p;
-        if (!(ports & bit)) {
-            pad_probed &= ~bit;
-            pad_ok_mask &= ~bit;
-            pad_tries[p] = pad_wait[p] = 0;
-            pad_adapter[p][0] = '\0';
-            continue;
-        }
-        if ((pad_probed & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 8 && ++pad_wait[p] >= 4) {
-            pad_probed &= ~bit;
-            pad_wait[p] = 0;
-        }
-        if (!(pad_probed & bit) && !asked) {
-            char nm[12] = "";
-            int ok = uic_port_configurable(p, nm);
-            asked = 1; /* one port per poll */
-            pad_probed |= bit;
-            pad_tries[p]++;
-            if (ok) {
-                memcpy(pad_adapter[p], nm, sizeof(nm));
-                pad_ok_mask |= bit;
-            }
-            printf("OM pads: port %c %s %s\n", 'A' + p, ok ? "configurable:" : "not configurable", ok ? nm : "");
-        }
-    }
-    fs.pads_ok = pad_ok_mask & ports;
+    (void)ports;
+    fs.pads_ok = -1; /* every plugged controller (the engine's own default) */
 }
 
 /* Cards come and go: what is in the sockets now. */
