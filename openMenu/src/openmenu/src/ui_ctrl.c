@@ -20,6 +20,11 @@
 #include "vm2/dcapi.h"
 #include "vm2/vm2_api.h"
 
+/* 1: also ask the controller unit itself for the DC API's hello (an adapter with no memory card accessory). That is a command the controller
+ * driver's own polling frame carries, and a Pico2Maple (firmware p2m-mod 2.2) on the port froze the console's input with it (the menu still
+ * drew, no pad moved the cursor), so it is off: an adapter is found by the memory card unit's extended device info (the way vm2_rescan does). */
+#define UIC_PAD_HELLO 0
+
 #define PRIO 0x1000
 #define ID_BACK 0x1110
 #define BACK_X (-19.53125f)
@@ -72,6 +77,7 @@ find_adapter(int port, char* name /* NULL or 12 bytes: what it calls itself, sho
     if (name) {
         name[0] = '\0';
     }
+#if UIC_PAD_HELLO
     if (pad && pad->valid) {
         dcapi_hello_t h;
 
@@ -82,6 +88,9 @@ find_adapter(int port, char* name /* NULL or 12 bytes: what it calls itself, sho
             return pad;
         }
     }
+#else
+    (void)pad;
+#endif
     for (int unit = 1; unit <= 2; unit++) {
         maple_device_t* d = maple_enum_dev(port, unit);
         uint32_t caps;
