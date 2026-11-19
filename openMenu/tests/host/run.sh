@@ -16,4 +16,6 @@ else
     cc -Wall -Wextra -Werror -fsanitize=address,undefined -I"$src" -o "$out/ui_motion" "$d/test_ui_motion.c" "$src/ui_motion.c" "$src/vm2/dcapi_text.c"
 fi
 "$out/ui_motion"
+cc -Wall -Wextra -Werror -fsanitize=address,undefined -I"$src" -o "$out/pose_man" "$d/test_pose_man.c" "$src/pose_man.c" -lm
+"$out/pose_man"
 rm -rf "$out"

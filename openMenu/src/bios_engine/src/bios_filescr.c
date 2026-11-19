@@ -47,10 +47,18 @@ static int card_x(const bfs* fs, int i) { return rom_s32(fs, 0x8C036F98u + (uint
 static int card_y(const bfs* fs, int i) { return rom_s32(fs, 0x8C036FBCu + (uint32_t)i * 4u); }
 
 /* Cursor tables (cursor_tables.txt): up, down, left, right */
-static const signed char grid_table[9][4] = { /* 0x8C03884C */
+static const signed char grid_table[13][4] = { /* 0x8C03884C; 9..12 (this app's) the controllers A..D above the cards */
     {1, 1, 8, 2}, {0, 0, 8, 3}, {3, 3, 0, 4}, {2, 2, 1, 5}, {5, 5, 2, 6},
     {4, 4, 3, 7}, {7, 7, 4, 8}, {6, 6, 5, 8}, {0, 1, 7, 1},
+    {9, 0, 9, 10}, {10, 2, 9, 11}, {11, 4, 10, 12}, {12, 6, 11, 12},
 };
+#define GRID_PAD0 9 /* the cursor position of controller A; B is 10 ... */
+#ifndef PAD_SELECT_SCALE
+#define PAD_SELECT_SCALE 1.3f
+#define PAD_SELECT_LIFT 2.5f
+#define PAD_SELECT_NEAR 0.0f
+#endif
+
 static const signed char browser_table[26][4] = { /* 0x8C0389B8: 0 the card (all files), 1 BACK, 2..25 the tiles */
     {0, 1, 1, 2},     {0, 1, 9, 0},     {2, 10, 0, 3},    {3, 11, 2, 4},    {4, 12, 3, 5},    {5, 13, 4, 6},
     {6, 14, 5, 7},    {7, 15, 6, 8},    {8, 16, 7, 9},    {9, 17, 8, 1},    {2, 18, 0, 11},   {3, 19, 10, 12},
@@ -306,14 +314,21 @@ fx_plate(bfs* fs, bvm_obj* o) {
         return;
     }
     int ok = i >= 0 && i < BFS_SLOTS && fs->card[i].status == BFS_CARD_READY;
-    int sig = ok ? (int)(fs->card[i].serial * 16u) + i + 1 : -1;
+    int pad = i >= 9 && i <= 12; /* a controller (this app's): its letter and what it is */
+    int sig = ok ? (int)(fs->card[i].serial * 16u) + i + 1 : (pad ? 1000 + i * 64 + (int)(fs->pad_name_sig[i - 9] & 63u) : -1);
     if (sig == fs->plate_sig) {
         return;
     }
     fs->plate_sig = sig;
     bsurf_clear(s);
     float gauge = 0.0f;
-    if (ok) {
+    if (pad) {
+        char label[2] = {(char)('A' + i - 9), '\0'};
+        s->advance = 13;
+        bsurf_print(s, 0x38, 0x20, label);
+        s->advance = 11;
+        bsurf_print(s, 0x10, 0x4B, fs->pad_name[i - 9][0] ? fs->pad_name[i - 9] : "Pad");
+    } else if (ok) {
         const bfs_card* c = &fs->card[i];
         char label[4] = {(char)('A' + i / 2), '-', (char)('1' + i % 2), '\0'};
         s->advance = 13;
@@ -501,19 +516,80 @@ grid_select(bfs* fs) {
             c->motion_tw.cur = 15.0f;
         }
     }
+    /* a controller the cursor is on is lifted and enlarged, as a card is (this app's) */
+    for (int p = 0; p < 4; p++) {
+        bvm_obj* pad = obj(fs, ID_PAD(p));
+        int on = fs->g_cursor == GRID_PAD0 + p;
+        if (pad) {
+            pad->model_scale = on ? PAD_SELECT_SCALE : 0.0f;
+            pad->model_off[1] = on ? PAD_SELECT_LIFT : 0.0f;
+            pad->model_off[2] = on ? PAD_SELECT_NEAR : 0.0f;
+        }
+    }
     if (back) {
-        back->var[0] = fs->g_cursor > 7;
+        back->var[0] = fs->g_cursor == 8;
     }
     bvm_obj* plate = obj(fs, ID_PLATE);
     if (plate) {
-        plate->var[0] = fs->g_cursor;
+        plate->var[0] = fs->g_cursor < 8 ? fs->g_cursor : (fs->g_cursor >= GRID_PAD0 ? fs->g_cursor : 8); /* 9..12: a controller */
     }
+}
+
+static int
+pad_there(const bfs* fs, int p) {
+    return p >= 0 && p < 4 && ((fs->ports >> p) & 1);
+}
+
+/* Moves of the cursor that involve the controllers above the cards (this app's): up from the first card of a column to its controller,
+ * and left / right / down from a controller. Returns 1 when it moved the cursor. */
+static int
+pad_nav(bfs* fs, int dir, int* pos) {
+    int cur = fs->g_cursor, to = -1;
+    if (cur >= GRID_PAD0) {
+        int p = cur - GRID_PAD0;
+        if (dir == 1) {
+            if (grid_pick_ok(fs, p * 2) && fs->card[p * 2].status != BFS_CARD_NONE) {
+                to = p * 2;
+            } else if (grid_pick_ok(fs, p * 2 + 1) && fs->card[p * 2 + 1].status != BFS_CARD_NONE) {
+                to = p * 2 + 1;
+            }
+        } else if (dir == 2 || dir == 3) {
+            for (int q = p + (dir == 3 ? 1 : -1); q >= 0 && q < 4; q += dir == 3 ? 1 : -1) {
+                if (pad_there(fs, q)) {
+                    to = GRID_PAD0 + q;
+                    break;
+                }
+            }
+        }
+        if (to < 0) {
+            return 1; /* nowhere to go: stays (no sound) */
+        }
+    } else if (dir == 0 && cur < 8 && (cur & 1) == 0 && pad_there(fs, cur / 2)) {
+        to = GRID_PAD0 + cur / 2;
+    } else {
+        return 0;
+    }
+    sfx(fs, 0);
+    fs->g_cursor = to;
+    *pos = to;
+    grid_select(fs);
+    grid_arrow(fs);
+    return 1;
 }
 
 /* vmu_card_grid_cursor_cb 0x8C01FE8C */
 static void
 grid_cb(bfs* fs, int code, int* pos) {
     int dir = -1;
+    if (code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT && pad_nav(fs, code - 1, pos)) {
+        return;
+    }
+    if (code == BFS_KEY_A && fs->g_cursor >= GRID_PAD0) {
+        sfx(fs, 1); /* a controller picked: the caller opens its screen (bfs_pad_event), the grid stays */
+        fs->pad_event = fs->g_cursor - GRID_PAD0 + 1;
+        *pos = fs->g_cursor;
+        return;
+    }
     if (code == BFS_KEY_B) {
         sfx(fs, 2);
         fs->g_state = 3;
@@ -557,7 +633,7 @@ grid_cb(bfs* fs, int code, int* pos) {
     }
     bvm_obj* back = obj(fs, ID_BACK);
     if (back) {
-        back->var[0] = fs->g_cursor >= 8;
+        back->var[0] = fs->g_cursor == 8;
     }
     grid_arrow(fs);
 }
@@ -607,7 +683,7 @@ grid_create(bfs* fs) {
             }
         }
     }
-    cursor_install(fs, 0, grid_table, 9, cursor, grid_cb);
+    cursor_install(fs, 0, grid_table, 13, cursor, grid_cb);
     fs->g_cursor = cursor;
     grid_select(fs);
     grid_arrow(fs);
@@ -652,7 +728,7 @@ card_grid(bfs* fs, int param) {
                 if (count_cards(fs)) {
                     progress_dialog(fs, 0);
                 }
-                if (param == 1) {
+                if (param == 1 && fs->g_cursor < GRID_PAD0) {
                     fs->g_result = fs->g_cursor + 1;
                     fs->g_state = 3;
                 }
@@ -667,7 +743,7 @@ card_grid(bfs* fs, int param) {
             return fs->g_result;
         case 4:
             if (!(fs->changed & 1)) {
-                cursor_install(fs, 0, grid_table, 9, fs->g_cursor, grid_cb);
+                cursor_install(fs, 0, grid_table, 13, fs->g_cursor, grid_cb);
                 count_cards(fs);
                 progress_dialog(fs, 0);
                 fs->g_state = 2;
@@ -2928,6 +3004,32 @@ draw_serial_mark(bfs* fs, const bscene_sink* sink, const bvm_obj* o) {
     }
     float alpha = (o->flags & BVM_F_FLAG17) ? 1.0f - fs->m->scene.fade : 1.0f;
     sd_icon_draw(sink, cx + hw - SD_ICON_W - SD_ICON_INSET_X, cy + hh - SD_ICON_H - SD_ICON_INSET_Y, iw + 0.00004f, alpha);
+}
+
+void
+bfs_set_pad_name(bfs* fs, int port, const char* name) {
+    unsigned h = 5381;
+
+    if (port < 0 || port > 3) {
+        return;
+    }
+    snprintf(fs->pad_name[port], sizeof(fs->pad_name[port]), "%.10s", name ? name : "");
+    for (const char* c = fs->pad_name[port]; *c; c++) {
+        h = h * 33 + (unsigned char)*c;
+    }
+    fs->pad_name_sig[port] = h;
+}
+
+int
+bfs_pad_event(bfs* fs) {
+    int e = fs->pad_event;
+    fs->pad_event = 0;
+    return e;
+}
+
+int
+bfs_pad_selected(const bfs* fs) {
+    return fs->g_cursor >= GRID_PAD0 && fs->g_state == 2 ? fs->g_cursor - GRID_PAD0 : -1;
 }
 
 int

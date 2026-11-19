@@ -30,6 +30,8 @@ set(OPENMENU_SOURCES
         src/ui_bios.c
         src/ui_fallback.c
         src/ui_files.c
+        src/ui_motion.c
+        src/pose_man.c
         src/ui_internet.c
         src/ui_list.c
         src/ui_settings.c

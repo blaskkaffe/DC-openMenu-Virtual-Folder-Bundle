@@ -407,8 +407,25 @@ uif_handle(button_t b) {
     return 0;
 }
 
+/* The controller the user picked with A in the top row of the card grid (1 + its port), 0 when none since the last call. ui_bios.c opens
+ * that controller's screen (Joy-Con motion, ui_motion.c). */
+static int pad_picked;
+
+int
+uif_pad_picked(void) {
+    int p = pad_picked;
+    pad_picked = 0;
+    return p;
+}
+
 int
 uif_step(void) {
+    if (!left) {
+        int e = bfs_pad_event(&fs);
+        if (e) {
+            pad_picked = e;
+        }
+    }
     if (!left && bfs_update(&fs)) {
         left = 1;
         bsurf_free_all();
