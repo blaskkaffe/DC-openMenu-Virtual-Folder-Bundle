@@ -77,7 +77,7 @@ uim_rows(void) {
 }
 
 static const char*
-nice(const char* s) {
+state_text(const char* s) {
     if (!strcmp(s, "off")) return "Off";
     if (!strcmp(s, "on")) return "On";
     if (!strcmp(s, "waiting")) return "No Joy-Con";
@@ -110,10 +110,10 @@ uim_row(const uim* m, int row, char* label, size_t label_cap, char* value, size_
     copy(label, label_cap, labels[row]);
     *help = helps[row];
     switch (row) {
-        case UIM_ROW_MODE: v = nice(m->mode); break;
-        case UIM_ROW_STATE: v = nice(m->state); break;
-        case UIM_ROW_LEFT: v = nice(m->left); break;
-        case UIM_ROW_RIGHT: v = nice(m->right); break;
+        case UIM_ROW_MODE: v = state_text(m->mode); break;
+        case UIM_ROW_STATE: v = state_text(m->state); break;
+        case UIM_ROW_LEFT: v = state_text(m->left); break;
+        case UIM_ROW_RIGHT: v = state_text(m->right); break;
         case UIM_ROW_FORWARD:
         case UIM_ROW_UP:
         case UIM_ROW_OUT:
