@@ -51,6 +51,40 @@ int main(void) {
         CHECK(pose_man_guides(cx, by, 1.0f, 0, 0, g, 3) <= 3);
     }
 
+    /* the arm picture: the arm is in it, turned the right way (the hand end follows the angle), the shoulder is in the middle */
+    {
+        static uint16_t img[PM_ARM_IMG * PM_ARM_IMG];
+        float f = pose_man_ref_scale(0.9f);
+        for (int side = 0; side < 2; side++) {
+            for (int deg = -90; deg <= 90; deg += 45) {
+                long sx_ = 0, sy_ = 0, n = 0;
+                pose_man_arm_image(side, (float)deg, f, img);
+                for (int y = 0; y < PM_ARM_IMG; y++) {
+                    for (int x = 0; x < PM_ARM_IMG; x++) {
+                        if ((img[y * PM_ARM_IMG + x] >> 12) > 8) { sx_ += x; sy_ += y; n++; }
+                    }
+                }
+                CHECK(n > 150);                                         /* something is drawn, and not all of the picture */
+                CHECK(n < PM_ARM_IMG * PM_ARM_IMG / 3);
+                {
+                    float mx = (float)sx_ / (float)n - PM_ARM_IMG / 2, my = (float)sy_ / (float)n - PM_ARM_IMG / 2;
+                    float out = side ? mx : -mx;                         /* outwards of the body is positive */
+                    if (deg == 90) { CHECK(my < -10); }                  /* up: the arm is above the shoulder */
+                    if (deg == -90) { CHECK(my > 10); }
+                    if (deg == 0) { CHECK(out > 10 && fabsf(my) < 12); } /* level: out to the side, at shoulder height */
+                }
+            }
+        }
+        {
+            int w, h;
+            CHECK(pose_man_leg_image(0, &w, &h) != NULL && w > 40 && h > 80);
+            CHECK(pose_man_leg_image(1, &w, &h) != NULL && w > 40 && h > 80);
+        }
+    }
+    /* a low polygon count: under 250 triangles for the whole man at any angle */
+    pose_man_build(cx, by, 1.0f, 30, -60, &sc);
+    CHECK(sc.ntri < 250);
+
     printf("pose_man: %d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

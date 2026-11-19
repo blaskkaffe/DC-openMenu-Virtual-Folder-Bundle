@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "pose_man.h"
+#include "pose_man_tex.inc"
 
 #define MATTE_R 13
 #define MATTE_G 19
@@ -58,11 +59,19 @@ shade(float nz) {
     return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-/* The front half of an ellipsoid (x radius rx, y radius ry, depth rx) as triangles: rings from the middle to the rim, 16 points a ring. With
- * `flat` the colour is the cream of the rim everywhere (the larger globe behind), otherwise the matte shade. */
+/* The front half of an ellipsoid (x radius rx, y radius ry, depth rx) as triangles: 3 rings from the middle to the rim, 14 points a ring (70
+ * triangles: smooth enough at 640x480, where the head is 40 pixels tall). With `flat` it is a single fan of 14 triangles in the cream of the rim
+ * (the larger globe behind), otherwise the matte shade. */
 static void
 globe(pm_scene* o, float cx, float cy, float rx, float ry, int flat) {
-    enum { RINGS = 5, SEG = 16 };
+    enum { RINGS = 3, SEG = 14 };
+    if (flat) {
+        for (int k = 0; k < SEG; k++) {
+            float t0 = 2.0f * PI_F * (float)k / SEG, t1 = 2.0f * PI_F * (float)(k + 1) / SEG;
+            push(o, cx, cy, cx + rx * cosf(t0), cy + ry * sinf(t0), cx + rx * cosf(t1), cy + ry * sinf(t1), CREAM, CREAM, CREAM);
+        }
+        return;
+    }
     for (int r = 0; r < RINGS; r++) {
         float a0 = (PI_F / 2.0f) * (float)r / RINGS, a1 = (PI_F / 2.0f) * (float)(r + 1) / RINGS; /* from the front pole outwards */
         float s0 = sinf(a0), s1 = sinf(a1), n0 = cosf(a0), n1 = cosf(a1);
@@ -177,4 +186,57 @@ pose_man_guides(float cx, float base_y, float s, float left_deg, float right_deg
         }
     }
     return n;
+}
+
+float
+pose_man_ref_scale(float scale) {
+    return 200.0f * scale / (REF_BOTTOM - REF_TOP);
+}
+
+void
+pose_man_shoulder(float cx, float base_y, float scale, int side, float* x, float* y) {
+    tr t = {cx, base_y, pose_man_ref_scale(scale)};
+    *x = sx(&t, shoulder_x[side ? 1 : 0]);
+    *y = sy(&t, shoulder_y);
+}
+
+void
+pose_man_leg_rect(float cx, float base_y, float scale, int side, float* x, float* y, float* w, float* h) {
+    tr t = {cx, base_y, pose_man_ref_scale(scale)};
+    const pm_sprite_def* d = &pm_sprite_defs[side ? PM_SPR_LEG_R : PM_SPR_LEG_L];
+    *x = sx(&t, (float)d->x);
+    *y = sy(&t, (float)d->y);
+    *w = (float)d->w * t.f;
+    *h = (float)d->h * t.f;
+}
+
+const uint16_t*
+pose_man_leg_image(int side, int* w, int* h) {
+    *w = side ? PM_TEX_LEG_R_W : PM_TEX_LEG_L_W;
+    *h = side ? PM_TEX_LEG_R_H : PM_TEX_LEG_L_H;
+    return side ? pm_tex_leg_r : pm_tex_leg_l;
+}
+
+/* the arm turned about the shoulder into a picture: for each pixel the place in the arm picture it comes from (nearest) */
+void
+pose_man_arm_image(int side, float deg, float f, uint16_t* out) {
+    const uint16_t* tex = side ? pm_tex_arm_r : pm_tex_arm_l;
+    const int tw = side ? PM_TEX_ARM_R_W : PM_TEX_ARM_L_W, th = side ? PM_TEX_ARM_R_H : PM_TEX_ARM_L_H;
+    const pm_sprite_def* d = &pm_sprite_defs[side ? PM_SPR_ARM_R : PM_SPR_ARM_L];
+    float th_rad = deg * PI_F / 180.0f, dir = side ? 1.0f : -1.0f;
+    float vx = hand_x_ref[side ? 1 : 0] - shoulder_x[side ? 1 : 0], vy = hand_y_ref - shoulder_y;
+    float dx = dir * cosf(th_rad), dy = -sinf(th_rad);
+    float phi = atan2f(dy, dx) - atan2f(vy, vx), c = cosf(phi), s = sinf(phi);
+    /* the shoulder in the arm picture, in texture pixels */
+    float shx = (shoulder_x[side ? 1 : 0] - (float)d->x) * PM_TEXF, shy = (shoulder_y - (float)d->y) * PM_TEXF;
+    float k = PM_TEXF / f; /* screen pixels to texture pixels */
+
+    for (int y = 0; y < PM_ARM_IMG; y++) {
+        for (int x = 0; x < PM_ARM_IMG; x++) {
+            float ox = ((float)x + 0.5f - PM_ARM_IMG / 2) * k, oy = ((float)y + 0.5f - PM_ARM_IMG / 2) * k;
+            float u = shx + (ox * c + oy * s), v = shy + (-ox * s + oy * c); /* the turn undone */
+            int iu = (int)floorf(u), iv = (int)floorf(v);
+            out[y * PM_ARM_IMG + x] = (iu >= 0 && iu < tw && iv >= 0 && iv < th) ? tex[iv * tw + iu] : 0;
+        }
+    }
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Cuts the matte arm and leg pieces of the calibration man (src/openmenu/src/pose_man.c) out of the reference picture.
 
-Usage: make_sprites.py reference.jpg outdir
+Usage: make_sprites.py reference.jpg outdir [pose_man_tex.inc]
+With a third argument also writes the four pieces, scaled to PM_TEXF of their size, as ARGB4444 arrays for pose_man.c.
 Writes arm_l.png arm_r.png leg_l.png leg_r.png (transparent outside, the inside flat matte, the cream rim kept) and prints the boxes
 that pm_sprite_defs in pose_man.c holds. The reference picture is not part of the repository.
 """
@@ -16,7 +17,10 @@ SHOULDER_L, SHOULDER_R, HIPS, CENTRE = 548, 657, 790, 602
 HAND_L, HAND_R = 500, 705  # below the elbows the arm is cut further out, so that nothing of the legs comes with it
 
 
-def main(ref, outdir):
+TEXF = 0.17  # the pieces in the program are this much of the reference's size (the man is about 0.15 on screen)
+
+
+def main(ref, outdir, inc=None):
     a = np.asarray(Image.open(ref).convert('RGB')).astype(np.float32)
     h, w, _ = a.shape
     lum = a.mean(axis=2)
@@ -57,14 +61,33 @@ def main(ref, outdir):
         'leg_l': ((250, 780, 640, 1380), (xx <= CENTRE) & (yy >= HIPS) & ((yy >= 860) | (xx >= HAND_L + 5))),
         'leg_r': ((560, 780, 960, 1380), (xx > CENTRE) & (yy >= HIPS) & ((yy >= 860) | (xx <= HAND_R - 5))),
     }
+    arrays = []
     for name, (box, mask) in pieces.items():
         sub = np.array(full.crop(box))
         sub[..., 3] = (sub[..., 3] * mask[box[1]:box[3], box[0]:box[2]]).astype(np.uint8)
         piece = Image.fromarray(sub, 'RGBA')
         bb = piece.getbbox()
-        piece.crop(bb).save(f'{outdir}/{name}.png')
+        piece = piece.crop(bb)
+        piece.save(f'{outdir}/{name}.png')
         print(name, (box[0] + bb[0], box[1] + bb[1], bb[2] - bb[0], bb[3] - bb[1]))
+        if inc:
+            small = piece.resize((max(1, round(piece.width * TEXF)), max(1, round(piece.height * TEXF))), Image.LANCZOS)
+            px = np.asarray(small).astype(int)
+            alpha = (px[..., 3] * 15 + 127) // 255
+            word = (alpha << 12) | ((px[..., 0] * 15 + 127) // 255 << 8) | ((px[..., 1] * 15 + 127) // 255 << 4) | ((px[..., 2] * 15 + 127) // 255)
+            arrays.append((name, small.width, small.height, word.flatten()))
+    if inc:
+        with open(inc, 'w') as f:
+            f.write('/* made by tools/pose-man/make_sprites.py: the matte pieces of the calibration man, ARGB4444, PM_TEXF of the reference size */\n')
+            f.write(f'#define PM_TEXF {TEXF}f\n')
+            for name, w, h, data in arrays:
+                up = name.upper()
+                f.write(f'#define PM_TEX_{up}_W {w}\n#define PM_TEX_{up}_H {h}\n')
+                f.write(f'static const uint16_t pm_tex_{name}[{w * h}] = {{\n')
+                for i in range(0, len(data), 12):
+                    f.write('    ' + ', '.join(f'0x{int(v):04X}' for v in data[i:i + 12]) + ',\n')
+                f.write('};\n')
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
