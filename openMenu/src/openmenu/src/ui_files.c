@@ -16,6 +16,7 @@
 #include "serial_vmu.h"
 #include "gfx.h"
 #include "sound.h"
+#include "ui_ctrl.h"
 #include "ui_files.h"
 #include "vmu_files.h"
 
@@ -288,6 +289,62 @@ controllers(void) {
     return mask;
 }
 
+/* Which controllers can be selected (opened in the controller screen): only a port whose adapter answers the DC API, or a Pico2Maple.
+ * An official controller, or any that cannot be configured, is never selectable. Asking costs maple transactions that wait up to 200 ms each
+ * when nothing answers, so it is done once per plugged controller on its own thread, below the menu; until the answer is in, the controller
+ * cannot be selected. A controller that was unplugged is asked again when it comes back, and a "no" is asked up to three times in case the
+ * port's frame was busy with something else. */
+static volatile int pad_ok_mask;     /* bit n: port n answered */
+static volatile int pad_probe_req;   /* bit n: ask port n */
+static volatile int pad_probe_busy;  /* the thread is running */
+static int pad_probed;               /* bit n: asked (the main thread's) */
+static int pad_tries[4];
+
+static void*
+pad_probe_main(void* arg) {
+    (void)arg;
+    for (int p = 0; p < 4; p++) {
+        if (pad_probe_req & (1 << p)) {
+            pad_probe_req &= ~(1 << p);
+            if (uic_port_configurable(p)) {
+                pad_ok_mask |= 1 << p;
+            } else {
+                pad_ok_mask &= ~(1 << p);
+            }
+        }
+    }
+    pad_probe_busy = 0;
+    return NULL;
+}
+
+static void
+poll_pads(int ports) {
+    for (int p = 0; p < 4; p++) {
+        int bit = 1 << p;
+        if (!(ports & bit)) {
+            pad_probed &= ~bit;
+            pad_ok_mask &= ~bit;
+            pad_tries[p] = 0;
+        } else if (pad_probed & bit) {
+            if (!pad_probe_busy && !(pad_probe_req & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 3) {
+                pad_probed &= ~bit; /* answered "no": ask again, a few times */
+            }
+        } else if (!pad_probe_busy) {
+            pad_probed |= bit;
+            pad_tries[p]++;
+            pad_probe_req |= bit;
+            pad_probe_busy = 1;
+            kthread_t* t = thd_create(1, pad_probe_main, NULL);
+            if (t) {
+                thd_set_prio(t, PRIO_DEFAULT + 4);
+            } else {
+                pad_probe_main(NULL); /* no thread: here, once */
+            }
+        }
+    }
+    fs.pads_ok = pad_ok_mask & ports;
+}
+
 /* Cards come and go: what is in the sockets now. */
 static void
 poll_cards(void) {
@@ -308,6 +365,7 @@ poll_cards(void) {
         present[i] = now;
     }
     fs.ports = controllers();
+    poll_pads(fs.ports);
 }
 
 /* The command the screen asked for, a file a frame. */

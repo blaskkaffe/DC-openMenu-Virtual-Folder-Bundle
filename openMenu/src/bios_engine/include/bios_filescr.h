@@ -128,6 +128,7 @@ typedef struct bfs {
     bfs_host host;
     bfs_card* card; /* BFS_SLOTS cards */
     int ports;      /* bit n: a controller in port n */
+    int pads_ok;    /* bit n: the controller in port n can be selected (the app found out that it can be configured); the controllers above the cards are reached only when this is set. -1 (the host tools): every plugged one */
     int language;   /* 1 English, see btext_message() */
     int date_order; /* 0 year first, 1 month first, 2 day first */
     int pal;

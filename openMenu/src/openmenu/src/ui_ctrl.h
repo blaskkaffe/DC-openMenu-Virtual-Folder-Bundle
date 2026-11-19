@@ -23,3 +23,6 @@ void uic_step(void);
 void uic_sync(void);
 /* Everything of the screen (the caller has drawn the background) */
 void uic_draw(void);
+
+/* 1 when the port has an adapter that can be configured here (it answers the DC API, or is a Pico2Maple). Asks the bus: not on the main thread. */
+int uic_port_configurable(int port);

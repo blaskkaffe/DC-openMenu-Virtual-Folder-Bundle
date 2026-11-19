@@ -54,8 +54,8 @@ static const signed char grid_table[13][4] = { /* 0x8C03884C; 9..12 (this app's)
 };
 #define GRID_PAD0 9 /* the cursor position of controller A; B is 10 ... */
 #ifndef PAD_SELECT_SCALE
-#define PAD_SELECT_SCALE 1.3f
-#define PAD_SELECT_LIFT 2.5f
+#define PAD_SELECT_SCALE 1.2f
+#define PAD_SELECT_LIFT (-0.29f) /* the controller models grow from their bottom edge (the origin is there): this moves the enlarged one down so it grows from its centre; measured with bios_preview: top 107 -> 102 px at 1.3, in proportion to the scale minus 1 */
 #define PAD_SELECT_NEAR 0.0f
 #endif
 
@@ -537,7 +537,18 @@ grid_select(bfs* fs) {
 
 static int
 pad_there(const bfs* fs, int p) {
-    return p >= 0 && p < 4 && ((fs->ports >> p) & 1);
+    return p >= 0 && p < 4 && ((fs->ports >> p) & 1) && ((fs->pads_ok >> p) & 1);
+}
+
+/* is there a card the cursor could go to */
+static int
+any_card_pick(bfs* fs) {
+    for (int i = 0; i < 8; i++) {
+        if (grid_pick_ok(fs, i)) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Moves of the cursor that involve the controllers above the cards (this app's): up from the first card of a column to its controller,
@@ -561,11 +572,23 @@ pad_nav(bfs* fs, int dir, int* pos) {
                 }
             }
         }
+        if (to < 0 && dir == 1 && !any_card_pick(fs)) {
+            to = 8; /* no card in any socket: down from a controller goes to BACK */
+        }
         if (to < 0) {
             return 1; /* nowhere to go: stays (no sound) */
         }
     } else if (dir == 0 && cur < 8 && (cur & 1) == 0 && pad_there(fs, cur / 2)) {
         to = GRID_PAD0 + cur / 2;
+    } else if (dir == 0 && cur == 8 && !any_card_pick(fs)) {
+        for (int q = 0; q < 4 && to < 0; q++) { /* no card in any socket (no VMU): up from BACK reaches the first controller */
+            if (pad_there(fs, q)) {
+                to = GRID_PAD0 + q;
+            }
+        }
+        if (to < 0) {
+            return 0;
+        }
     } else {
         return 0;
     }
@@ -1737,6 +1760,7 @@ bfs_init(bfs* fs, bmenu* m, const bfs_host* host, bfs_card cards[BFS_SLOTS]) {
     fs->language = 1;
     fs->date_order = 1;
     fs->ports = 1;
+    fs->pads_ok = -1;
     fs->grid_search = bios_rom_ptr(fs->rom, 0x8C036FE0u, 4 * 81);
     fs->arrow_tab = bios_rom_ptr(fs->rom, 0x8C037124u, 64);
     bsurf_init(fs->rom);

@@ -39,6 +39,7 @@ dcapi_request(maple_device_t* dev, const char* req, char* ans, size_t ans_cap) {
     }
     ans[0] = 0;
 
+    int again_n = 0;
 again:
     if (maple_frame_lock(&dev->frame) < 0) {
         return -1;
@@ -68,7 +69,7 @@ again:
     }
 
     resp = (maple_response_t*)resp_buf;
-    if (resp->response == MAPLE_RESPONSE_AGAIN) {
+    if (resp->response == MAPLE_RESPONSE_AGAIN && ++again_n < 5) { /* a device that keeps saying so would hang the menu */
         goto again;
     }
     if (resp->response != MAPLE_RESPONSE_DATATRF) {

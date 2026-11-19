@@ -155,6 +155,13 @@ port_has_plain_adapter(int port, const char** kind) {
     return 0;
 }
 
+int
+uic_port_configurable(int port) {
+    const char* kind;
+
+    return find_adapter(port) != NULL || port_has_plain_adapter(port, &kind);
+}
+
 const char*
 uic_why(void) {
     return why;
