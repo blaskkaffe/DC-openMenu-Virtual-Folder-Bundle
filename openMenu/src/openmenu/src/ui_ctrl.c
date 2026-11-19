@@ -59,9 +59,19 @@ send_text(void* user, const char* req, char* ans, size_t cap) {
     return dcapi_request(dev, req, ans, cap);
 }
 
-/* the memory card unit of the port that speaks the DC API (it answers on a unit that is a memory card) */
+/* the unit of the port that speaks the DC API: the controller unit first (the adapter answers there in any pad mode, with or without a memory
+ * card accessory), then the memory card units that said so in their extended device info */
 static maple_device_t*
 find_adapter(int port) {
+    maple_device_t* pad = maple_enum_dev(port, 0);
+
+    if (pad && pad->valid) {
+        dcapi_hello_t h;
+
+        if (dcapi_get_hello(pad, &h) == 0 && h.name[0]) {
+            return pad;
+        }
+    }
     for (int unit = 1; unit <= 2; unit++) {
         maple_device_t* d = maple_enum_dev(port, unit);
         uint32_t caps;
@@ -91,7 +101,7 @@ int
 uic_open(bmenu* m, int port, int pal) {
     dev = find_adapter(port);
     if (!dev) {
-        why = "No controller adapter on this port speaks the DC API (the memory card must be on)";
+        why = "No adapter on this port speaks the DC API";
         return 0;
     }
     menu = m;

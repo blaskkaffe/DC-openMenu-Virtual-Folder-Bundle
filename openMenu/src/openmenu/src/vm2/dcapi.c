@@ -46,7 +46,7 @@ again:
 
     maple_frame_init(&dev->frame);
     send_buf = (uint32_t*)dev->frame.recv_buf;
-    send_buf[0] = MAPLE_FUNC_MEMCARD;
+    send_buf[0] = dev->unit == 0 ? MAPLE_FUNC_CONTROLLER : MAPLE_FUNC_MEMCARD; /* the controller unit needs no memory card accessory */
     memset(&dev->frame.recv_buf[4], 0, words * 4); /* text NUL padded to whole words, like the game id */
     memcpy(&dev->frame.recv_buf[4], req, n);
     dev->frame.cmd = DCAPI_CMD;
