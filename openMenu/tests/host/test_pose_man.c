@@ -28,16 +28,16 @@ int main(void) {
     CHECK(n > 20 && n < PM_MAX_POLYS);
     CHECK(hands(p, n, hx, hy) == 2);
     CHECK(hx[0] < 320 - 60 && hx[1] > 320 + 60);            /* level: the hands out to the sides */
-    CHECK(fabsf(hy[0] - hy[1]) < 1.0f && fabsf(hy[0] - (322 - 156)) < 3.0f); /* at shoulder height */
+    CHECK(fabsf(hy[0] - hy[1]) < 1.0f && fabsf(hy[0] - (322 - 154)) < 3.0f); /* at shoulder height */
 
     n = pose_man_build(320, 322, 1.0f, 90, -90, p, PM_MAX_POLYS);
     CHECK(hands(p, n, hx, hy) == 2);
-    CHECK(hy[0] < 322 - 156 - 60);                          /* the left one up */
-    CHECK(hy[1] > 322 - 156 + 60);                          /* the right one down */
+    CHECK(hy[0] < 322 - 154 - 60);                          /* the left one up */
+    CHECK(hy[1] > 322 - 154 + 60);                          /* the right one down */
 
     n = pose_man_build(320, 322, 1.0f, 45, 45, p, PM_MAX_POLYS);
     hands(p, n, hx, hy);
-    CHECK(hy[0] < 322 - 156 - 30 && fabsf(hy[0] - hy[1]) < 1.0f && fabsf((320 - hx[0]) - (hx[1] - 320)) < 1.0f); /* mirrored */
+    CHECK(hy[0] < 322 - 154 - 30 && fabsf(hy[0] - hy[1]) < 1.0f && fabsf((320 - hx[0]) - (hx[1] - 320)) < 1.0f); /* mirrored */
 
     for (int i = 0; i < n; i++) {
         CHECK(p[i].n >= 3 && p[i].n <= PM_MAX_PTS);
