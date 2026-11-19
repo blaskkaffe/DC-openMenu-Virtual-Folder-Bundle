@@ -300,6 +300,7 @@ static volatile int pad_probe_req;   /* bit n: ask port n */
 static volatile int pad_probe_busy;  /* the thread is running */
 static int pad_probed;               /* bit n: asked (the main thread's) */
 static int pad_tries[4];
+static int pad_wait[4]; /* polls since the last no */
 static char pad_adapter[4][12]; /* what the adapter of port n called itself (written by the thread before the bit in pad_ok_mask) */
 
 static void*
@@ -309,7 +310,9 @@ pad_probe_main(void* arg) {
         if (pad_probe_req & (1 << p)) {
             pad_probe_req &= ~(1 << p);
             char nm[12] = "";
-            if (uic_port_configurable(p, nm)) {
+            int ok = uic_port_configurable(p, nm);
+            printf("OM pads: port %c %s %s\n", 'A' + p, ok ? "configurable:" : "not configurable", ok ? nm : "");
+            if (ok) {
                 memcpy(pad_adapter[p], nm, sizeof(nm));
                 pad_ok_mask |= 1 << p;
             } else {
@@ -328,11 +331,12 @@ poll_pads(int ports) {
         if (!(ports & bit)) {
             pad_probed &= ~bit;
             pad_ok_mask &= ~bit;
-            pad_tries[p] = 0;
+            pad_tries[p] = pad_wait[p] = 0;
             pad_adapter[p][0] = '\0';
         } else if (pad_probed & bit) {
-            if (!pad_probe_busy && !(pad_probe_req & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 3) {
-                pad_probed &= ~bit; /* answered "no": ask again, a few times */
+            if (!pad_probe_busy && !(pad_probe_req & bit) && !(pad_ok_mask & bit) && pad_tries[p] < 8 && ++pad_wait[p] >= 4) {
+                pad_probed &= ~bit; /* answered no: ask again every two seconds, a few times (the port's frame may have been busy) */
+                pad_wait[p] = 0;
             }
         } else if (!pad_probe_busy) {
             pad_probed |= bit;

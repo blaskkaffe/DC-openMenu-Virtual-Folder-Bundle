@@ -4,6 +4,7 @@
 #include <dc/maple.h>
 #include <kos/dbglog.h>
 #include <kos/genwait.h>
+#include <kos/thread.h>
 
 #include "dcapi.h"
 
@@ -41,8 +42,12 @@ dcapi_request(maple_device_t* dev, const char* req, char* ans, size_t ans_cap) {
 
     int again_n = 0;
 again:
-    if (maple_frame_lock(&dev->frame) < 0) {
-        return -1;
+    /* the frame of a controller unit is also the console's own poll of it, busy about once a frame: wait a little for it instead of failing */
+    for (int tries = 0; maple_frame_lock(&dev->frame) < 0; tries++) {
+        if (tries >= 20) {
+            return -1;
+        }
+        thd_sleep(5);
     }
 
     maple_frame_init(&dev->frame);
