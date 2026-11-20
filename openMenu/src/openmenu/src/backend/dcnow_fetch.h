@@ -23,6 +23,16 @@ typedef struct dcnow_player {
     char network[8]; /* "DCNow!", "DCNET", ... */
 } dcnow_player_t;
 
+#define DCNET_GAME_MAX 64
+
+/* One game of DCNET's /games list that is online now: how many players it has. */
+typedef struct dcnet_game {
+    char id[16];
+    char name[DCNOW_TITLE_LEN];
+    int players;
+    int games;
+} dcnet_game_t;
+
 typedef enum dcnow_fetch_state {
     DCNOW_FETCH_IDLE = 0,
     DCNOW_FETCH_RUNNING,
@@ -60,3 +70,6 @@ void dcnow_fetch_poll(dcnow_fetch_status_t* out);
 
 /* Copies the newest list. Returns how many players were copied. */
 int dcnow_fetch_copy(dcnow_player_t* out, int max);
+
+/* Copies the games DCNET reports as online with their player counts (from the newest list). Returns how many were copied. */
+int dcnow_fetch_copy_games(dcnet_game_t* out, int max);

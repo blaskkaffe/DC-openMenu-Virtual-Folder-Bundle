@@ -103,6 +103,32 @@ rebuild(void) {
         }
     }
 
+    /* DCNET's own games list: its count stands when it is higher than what the player list shows (players in a lobby are not named there) */
+    dcnet_game_t dg[DCNET_GAME_MAX];
+    const int ng = dcnow_fetch_copy_games(dg, DCNET_GAME_MAX);
+    for (int i = 0; i < ng; i++) {
+        int found = -1;
+
+        normalize(dg[i].name, norm, sizeof(norm));
+        if (norm[0] == '\0') {
+            continue;
+        }
+        for (int t = 0; t < title_count; t++) {
+            if (strcmp(titles[t], norm) == 0) {
+                found = t;
+                break;
+            }
+        }
+        if (found < 0 && title_count < TITLE_MAX) {
+            found = title_count++;
+            memcpy(titles[found], norm, sizeof(norm));
+            title_players[found] = 0;
+        }
+        if (found >= 0 && dg[i].players > title_players[found]) {
+            title_players[found] = dg[i].players;
+        }
+    }
+
     if (flags == NULL || flags_len != count) {
         free(flags);
         flags = count > 0 ? calloc((size_t)count, 1) : NULL;

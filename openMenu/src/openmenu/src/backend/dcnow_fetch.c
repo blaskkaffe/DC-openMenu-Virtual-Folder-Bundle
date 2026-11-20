@@ -28,6 +28,7 @@
 #define DCNOW_PATH            "/now/api/users.json"
 #define DCNET_HOST            "dcnet.flyca.st"
 #define DCNET_USERS_PATH      "/status/api/users"
+#define DCNET_GAMES_PATH      "/status/api/games"
 #define DCNET_PLAYERS_PATH    "/status/api/players"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
@@ -357,6 +358,8 @@ parse_users(const char* text, int truncated, int* total) {
 }
 
 static int multi_network = 0;
+static dcnet_game_t parsed_games[DCNET_GAME_MAX], games[DCNET_GAME_MAX]; /* DCNET's /games: being filled, and as published */
+static int parsed_games_n = 0, games_n = 0;
 
 static void
 publish(int count, int total) {
@@ -369,6 +372,8 @@ publish(int count, int total) {
     fetch.multi_network = multi_network;
     fetch.online_dcnow = parsed_dcnow;
     fetch.online_dcnet = parsed_dcnet;
+    memcpy(games, parsed_games, sizeof(games[0]) * (size_t)parsed_games_n);
+    games_n = parsed_games_n;
     fetch.generation++;
     fetch.state = DCNOW_FETCH_DONE;
     fetch.counter_line = -1;
@@ -487,6 +492,12 @@ append_dcnet(int count, int* total) {
             added += t;
         }
     }
+    code = abort_requested ? -2 : http_get(&addr, DCNET_HOST, DCNET_GAMES_PATH, DCNOW_STEP_TIMEOUT_MS, &used);
+    json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
+    if (json != NULL) { /* the games with their player counts: no answer only leaves the counts to the player list */
+        int g = dcnet_parse_games(json + 4, parsed_games, DCNET_GAME_MAX);
+        parsed_games_n = g > 0 ? g : 0;
+    }
     *total += added;
     parsed_dcnet = added;
     if (added > 0) {
@@ -513,6 +524,7 @@ run_fetch(void) {
 
     fetch_reset(DCNOW_FETCH_RUNNING);
     multi_network = 0;
+    parsed_games_n = 0;
     fetch_push("Fetching player list from " DCNOW_HOST "...", 0);
 
     fetch_push("Resolving host...", 0);
@@ -696,6 +708,7 @@ dcnow_fetch_clear(void) {
     fetch.player_count = 0;
     fetch.online_total = 0;
     fetch.list_valid = 0;
+    games_n = 0;
     fetch.generation++;
     mutex_unlock(&fetch_mutex);
 }
@@ -714,6 +727,17 @@ dcnow_fetch_copy(dcnow_player_t* out, int max) {
     mutex_lock(&fetch_mutex);
     count = fetch.player_count < max ? fetch.player_count : max;
     memcpy(out, players, sizeof(players[0]) * (size_t)count);
+    mutex_unlock(&fetch_mutex);
+    return count;
+}
+
+int
+dcnow_fetch_copy_games(dcnet_game_t* out, int max) {
+    int count;
+
+    mutex_lock(&fetch_mutex);
+    count = games_n < max ? games_n : max;
+    memcpy(out, games, sizeof(games[0]) * (size_t)count);
     mutex_unlock(&fetch_mutex);
     return count;
 }
