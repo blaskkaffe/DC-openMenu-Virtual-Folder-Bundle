@@ -30,6 +30,7 @@ int main(void) {
     CHECK(np_player_toggle("A very long player name here") == 1);
     CHECK(np_game_toggle(0xDEADBEEF) == 1 && np_game_starred(0xDEADBEEF));
     CHECK(np_event_toggle("DC99 Friday") == 1 && np_event_starred("DC99 Friday") && !np_event_starred("other"));
+    np_set_chat("Dreamer", "throwaway");
     int n = np_pack(buf, NP_MAX_BYTES);
     CHECK(n > 0 && n <= NP_MAX_BYTES);
     CHECK(np_pack(buf, 10) == 0);
@@ -39,6 +40,14 @@ int main(void) {
     CHECK(np_iface() == 3 && np_net() == NP_NET_DCNET && np_game_net_saved(100 + 7) == NP_NET_DCNOW);
     CHECK(np_isp()->mode == NP_ISP_STATIC && np_isp()->ip[3] == 77 && strcmp(np_isp()->number, "5551234") == 0 && strcmp(np_isp()->login, "me") == 0);
     CHECK(np_player_starred("Alice") && np_star_player_count() == 2 && np_game_starred(0xDEADBEEF) && np_event_starred("DC99 Friday"));
+    CHECK(!strcmp(np_chat_nick(), "Dreamer") && !strcmp(np_chat_pass(), "throwaway"));
+    { /* a file from before the chat login: it still loads, the login is empty */
+        CHECK(np_unpack(buf, n - 2 * NP_CHAT_LEN) == 0 && np_chat_nick()[0] == 0 && np_chat_pass()[0] == 0 && np_player_starred("Alice"));
+        CHECK(np_unpack(buf, n) == 0 && !strcmp(np_chat_nick(), "Dreamer"));
+        np_set_chat("A-nick-that-is-far-too-long-for-irc", "p");
+        CHECK(strlen(np_chat_nick()) == NP_CHAT_LEN - 1);
+        np_set_chat("Dreamer", "throwaway");
+    }
     /* toggling off */
     CHECK(np_player_toggle("Alice") == 0 && !np_player_starred("Alice") && np_star_player_count() == 1);
     CHECK(np_game_toggle(0xDEADBEEF) == 0 && np_star_game_count() == 0);
@@ -48,7 +57,7 @@ int main(void) {
     /* garbage and short files leave the defaults */
     CHECK(np_unpack(buf, 5) == -1 && np_iface() == 0);
     buf[0] = 'X'; CHECK(np_unpack(buf, n) == -1);
-    buf[0] = 'N'; CHECK(np_unpack(buf, n - 3) == -1 && np_star_player_count() == 0); /* truncated tail */
+    buf[0] = 'N'; CHECK(np_unpack(buf, n - 2 * NP_CHAT_LEN - 3) == -1 && np_star_player_count() == 0); /* truncated tail */
     printf(bad ? "%d failed\n" : "netprefs ok\n", bad);
     return bad != 0;
 }

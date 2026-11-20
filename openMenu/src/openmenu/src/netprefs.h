@@ -17,6 +17,7 @@
 #define NP_STAR_GAMES 20
 #define NP_STAR_EVENTS 10
 #define NP_DIAL_LEN 16
+#define NP_CHAT_LEN 21 /* an IRC nick is at most 20 characters */
 
 /* The networks a game or the global setting can name (kept for the saved file; nothing switches networks any more). 0 as a game's value: none saved, use the global one. */
 enum { NP_NET_NONE = 0, NP_NET_DCNOW = 1, NP_NET_DCNET = 2 };
@@ -48,6 +49,11 @@ int np_set_game_net(uint32_t hash, int net);     /* NP_NET_NONE forgets it; retu
 
 const np_isp_t* np_isp(void);
 void np_set_isp(const np_isp_t* isp);
+
+/* The DC99 IRC login (nick and password; the server registers a nick on its first use). Kept as typed, in the clear, like the ISP login. */
+const char* np_chat_nick(void);
+const char* np_chat_pass(void);
+void np_set_chat(const char* nick, const char* pass);
 
 /* Stars: a toggle returns 1 (now starred), 0 (not any more) or -1 (the list is full). */
 int np_player_starred(const char* name);

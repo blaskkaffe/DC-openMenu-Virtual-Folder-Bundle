@@ -46,6 +46,8 @@ set(OPENMENU_SOURCES
         src/backend/w5500.c
         src/backend/w5500_net.c
         src/backend/net_test.c
+        src/backend/dc99_chat.c
+        src/backend/dc99_chat_parse.c
         src/backend/dcnet_parse.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
