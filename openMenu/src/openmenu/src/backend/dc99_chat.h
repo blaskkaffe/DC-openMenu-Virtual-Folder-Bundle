@@ -43,3 +43,8 @@ void dc99_irc_stop(void);
 void dc99_chat_status(int which, dc99_chat_status_t* out);
 /* Copies the newest rows, oldest first. Returns how many. */
 int dc99_chat_copy(int which, dc99_row_t* out, int max);
+
+/* Sockets for the other backend files: a connected non-blocking TCP socket (-1 failed, -2 stop asked), and the poll loop
+ * (the events that came, 0 at the deadline in ms, -1 when *stop was set). */
+int dc99_net_open(const char* host, int port, volatile int* stop);
+int dc99_net_wait(int fd, short events, uint64_t deadline, volatile int* stop);

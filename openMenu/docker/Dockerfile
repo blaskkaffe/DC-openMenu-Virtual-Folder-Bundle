@@ -64,6 +64,13 @@ RUN cd /opt/toolchains/dc/kos && \
   make -C utils clean && \
   find addons -name '*.o' -delete
 
+# mbedTLS from kos-ports, for posting to KosNet (HTTPS only). If the port does not build the image still does, and openMenu
+# is then built without TLS (its CMake says so).
+RUN (source /opt/toolchains/dc/kos/environ.sh && \
+  git clone --depth 1 https://github.com/KallistiOS/kos-ports.git /opt/toolchains/dc/kos-ports && \
+  cd /opt/toolchains/dc/kos-ports/mbedtls && \
+  make install clean) || echo "mbedtls port not installed"
+
 WORKDIR /home/${USER_NAME}
 RUN touch .bashrc && echo "source /opt/toolchains/dc/kos/environ.sh" >> .bashrc
 

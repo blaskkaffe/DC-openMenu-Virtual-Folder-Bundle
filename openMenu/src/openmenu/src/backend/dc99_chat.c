@@ -160,6 +160,17 @@ open_tcp(const char* host, int port, volatile int* stop) {
     return fd;
 }
 
+/* The same helpers for kosnet_post.c (TLS over the same sockets). */
+int
+dc99_net_open(const char* host, int port, volatile int* stop) {
+    return open_tcp(host, port, stop);
+}
+
+int
+dc99_net_wait(int fd, short events, uint64_t deadline, volatile int* stop) {
+    return wait_fd(fd, events, deadline, stop);
+}
+
 static int
 send_all(int fd, const char* data, size_t len, volatile int* stop) {
     size_t sent = 0;

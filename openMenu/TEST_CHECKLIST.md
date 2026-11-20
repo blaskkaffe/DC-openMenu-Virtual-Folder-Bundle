@@ -229,3 +229,11 @@ I
 - [ ] Is `irc.dc99.net:6667` reachable from the console's network (it is DNS-only, not Cloudflare; never tested live)? A first-time nick registers itself with the password
 - [ ] A while connected opens the line to say; A sends it, it shows in green; B cancels; long lines wrap; hanging up or leaving the screen disconnects (QUIT)
 - [ ] The login (nick + password, in the clear) is kept in EXTENDED.SYS; Y changes it and reconnects
+
+## KosNet posting (TLS)
+- [ ] The Chat page, KosNet tab, signed out: the bar says "Sign in to KosNet to post" with SIGN IN; A opens the username editor, then the password (stars); "Signing in..." then "Signed in" and your display name top right
+- [ ] Wrong password: "Wrong username or password"; an unverified email: "Verify your email on KosNet first"
+- [ ] SAY: a line you type shows up in the chat within a few seconds (it comes back through DC99's feed, so it can take one poll)
+- [ ] Y signs out; leaving the Internet screen drops the login (nothing is saved)
+- [ ] If the build has no TLS the bar says "Posting needs TLS: not in this build" (the CMake output says "mbedTLS not found")
+- [ ] The server certificate is NOT checked yet (traffic is encrypted, but a man in the middle is not detected)

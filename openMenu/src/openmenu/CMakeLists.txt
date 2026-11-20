@@ -44,6 +44,8 @@ set(OPENMENU_SOURCES
         src/backend/net_test.c
         src/backend/dc99_chat.c
         src/backend/dc99_chat_parse.c
+        src/backend/kosnet_json.c
+        src/backend/kosnet_post.c
         src/backend/dcnet_parse.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
@@ -106,6 +108,20 @@ target_link_libraries(openmenu
         uthash
         ppp
 )
+
+# TLS for posting to KosNet (HTTPS only): mbedTLS from kos-ports, installed by docker/Dockerfile. Without it the build still works and
+# the chat page says TLS is not in this build.
+find_library(OM_MBEDTLS NAMES mbedtls HINTS ENV KOS_PORTS PATH_SUFFIXES lib)
+find_library(OM_MBEDX509 NAMES mbedx509 HINTS ENV KOS_PORTS PATH_SUFFIXES lib)
+find_library(OM_MBEDCRYPTO NAMES mbedcrypto HINTS ENV KOS_PORTS PATH_SUFFIXES lib)
+if (OM_MBEDTLS AND OM_MBEDX509 AND OM_MBEDCRYPTO)
+    message(STATUS "mbedTLS found: ${OM_MBEDTLS}")
+    target_compile_definitions(openmenu PRIVATE OM_HAVE_MBEDTLS=1)
+    target_include_directories(openmenu SYSTEM PRIVATE $ENV{KOS_PORTS}/include)
+    target_link_libraries(openmenu PRIVATE ${OM_MBEDTLS} ${OM_MBEDX509} ${OM_MBEDCRYPTO})
+else ()
+    message(WARNING "mbedTLS not found: KosNet posting is left out of this build")
+endif ()
 
 if (NOT DEFINED KOS_OBJCOPY)
     # Try to find the program using find_program first (more robust than env var)
