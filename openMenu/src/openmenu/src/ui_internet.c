@@ -1586,10 +1586,10 @@ draw_test(void) {
  * sender's name over the text, the newest at the bottom (up scrolls back), and an input bar with its button. */
 #define CHAT_TABS_Y (PANE_Y + 6.0f)
 #define CHAT_HEAD_Y (PANE_Y + 36.0f)
-#define CHAT_LIST_Y (PANE_Y + 66.0f)
-#define CHAT_LINE_H 21.0f
-#define CHAT_LINES 7
-#define CHAT_BAR_Y (PANE_Y + 218.0f)
+#define CHAT_LIST_Y (PANE_Y + 68.0f)
+#define CHAT_LINE_H 25.0f
+#define CHAT_LINES 6
+#define CHAT_BAR_Y (PANE_Y + 232.0f)
 #define CHAT_BAR_H 26.0f
 
 /* Does the row show as a name line and a text line? Returns the length of the name, 0 for a one-line row. */
