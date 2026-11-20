@@ -63,6 +63,7 @@ main(int argc, char* argv[]) {
 
     dbglog_boot("rom", (unsigned)timer_ms_gettime64());
     savefile_init();
+    sf_dcnow[0] = DCNOW_ON; /* PREVIEW BUILD: online features on so the Internet icon shows */;
     uis_apply_card_defaults(); /* the card's [BIOSMENU] defaults (stock Card Manager), before online_boot reads them */
     dbglog_boot("save", (unsigned)timer_ms_gettime64());
 
