@@ -22,6 +22,8 @@ jobs:
   # that is committed in the Card Manager's tools folder (Derek's release)
   openmenu:
     uses: ./.github/workflows/build-newopenmenu.yml
+    permissions:
+      contents: write # the called workflow can publish binaries on manual runs; here it never does
 
   build:
     needs: openmenu

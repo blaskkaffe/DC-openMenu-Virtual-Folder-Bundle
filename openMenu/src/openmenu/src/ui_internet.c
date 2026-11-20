@@ -23,6 +23,7 @@
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
 #include "backend/events_fetch.h"
+#include "backend/kosnet_post.h"
 #include "backend/net_test.h"
 #include "backend/netsel.h"
 #include "backend/news_fetch.h"
@@ -44,7 +45,7 @@
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
 #define BACK_Z (-351.5625f)
-#define PAGES 4
+#define PAGES 5
 #define CUR_BACK (-1)
 
 /* The panel: from where the rows start to the right edge of the rows' area, down to just above the buttons */
@@ -64,11 +65,10 @@
 #define STATUS_Y 10.0f /* the connection status, above the panel */
 #define CHAR_W 11 /* the BIOS font's advance */
 
-enum { PAGE_ONLINE, PAGE_PLAY, PAGE_EVENTS, PAGE_SETTINGS };
-static const char* const page_names[PAGES] = {"Online", "Play", "Events", "Settings"};
+enum { PAGE_ONLINE, PAGE_PLAY, PAGE_EVENTS, PAGE_CHAT, PAGE_SETTINGS };
+static const char* const page_names[PAGES] = {"Online", "Play", "Events", "Chat", "Settings"};
 /* A page can show more than one list: START switches (Online: players / games, Events: events / news) */
-enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2, VIEW_IRC = 2, VIEW_KOSNET = 3 }; /* Online: players, games, the DC99 IRC chat, the KosNet chat */
-#define ONLINE_VIEWS 4
+enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2 }; /* Chat: A = the DC99 IRC chat, B = the KosNet chat */
 
 /* The lists behind the pages */
 enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LISTS };
@@ -105,7 +105,7 @@ static dcnow_device_t device = DCNOW_DEV_NONE;
 static dcnow_isp_t isp;
 static dcnow_status_t conn;
 static int was_online;
-static uint64_t last_players_fetch;
+static uint64_t last_players_fetch, last_events_fetch, last_news_fetch;
 static char notice[64];
 static int notice_frames;
 
@@ -350,7 +350,8 @@ build_events(void) {
 static int
 page_list(int p) {
     switch (p) {
-        case PAGE_ONLINE: return view[p] == VIEW_A ? LIST_PLAYERS : view[p] == VIEW_B ? LIST_OGAMES : -1; /* the chats scroll on their own */
+        case PAGE_ONLINE: return view[p] == VIEW_A ? LIST_PLAYERS : LIST_OGAMES;
+        case PAGE_CHAT: return -1; /* the chats scroll on their own */
         case PAGE_PLAY: return LIST_PLAY;
         case PAGE_EVENTS: return view[p] == VIEW_A ? LIST_EVENTS : LIST_NEWS;
         case PAGE_SETTINGS: return view[p] == VIEW_A ? LIST_SETTINGS : view[p] == VIEW_SET_ISP ? LIST_ISP : LIST_TEST;
@@ -415,7 +416,7 @@ uin_set_launch(int (*start)(const gd_item*)) {
 
 static void
 start_fetches(void) {
-    last_players_fetch = timer_ms_gettime64();
+    last_players_fetch = last_events_fetch = last_news_fetch = timer_ms_gettime64();
     dcnow_fetch_start();
     events_fetch_start();
     news_fetch_start();
@@ -484,7 +485,10 @@ uin_open(bmenu* m, int pal) {
 
 /* ---- the editor for an address or a short text (the ISP settings) ------------------------------------------------------- */
 
-enum { ED_ISP = 0, ED_CHAT_NICK, ED_CHAT_PASS, ED_CHAT_MSG };
+enum { ED_ISP = 0, ED_CHAT_NICK, ED_CHAT_PASS, ED_CHAT_MSG, ED_KN_USER, ED_KN_PASS, ED_KN_MSG };
+static char kn_user[48]; /* the KosNet login typed this visit (nothing is saved) */
+static kosnet_post_status_t kn_st;
+static int kn_gen = -1;
 #define ED_MAX 120
 #define ED_SHOWN 36 /* characters of the text on the panel at once */
 
@@ -506,6 +510,7 @@ static editor_t ed;
 #define TEXT_SET " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!"
 #define CHAT_SET " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!'-_:;()/@#+="
 #define NICK_SET "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-[]{}^`|"
+#define KN_PASS_SET "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ "
 #define PASS_SET "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#+=:;,?"
 
 static void
@@ -548,8 +553,8 @@ editor_open_chat(int kind, const char* start) {
     memset(&ed, 0, sizeof(ed));
     ed.active = 1;
     ed.kind = kind;
-    ed.max = kind == ED_CHAT_MSG ? ED_MAX : NP_CHAT_LEN;
-    ed.set = kind == ED_CHAT_NICK ? NICK_SET : kind == ED_CHAT_PASS ? PASS_SET : CHAT_SET;
+    ed.max = kind == ED_CHAT_MSG || kind == ED_KN_MSG ? ED_MAX : kind == ED_KN_USER || kind == ED_KN_PASS ? 41 : NP_CHAT_LEN;
+    ed.set = kind == ED_CHAT_NICK ? NICK_SET : kind == ED_CHAT_PASS ? PASS_SET : kind == ED_KN_PASS ? KN_PASS_SET : kind == ED_KN_USER ? PASS_SET : CHAT_SET;
     snprintf(ed.text, sizeof(ed.text), "%s", start);
     ed.len = (int)strlen(ed.text);
     ed.pos = ed.len;
@@ -582,6 +587,35 @@ chat_editor_done(void) {
     snprintf(text, sizeof(text), "%s", ed.text);
     for (int n = (int)strlen(text); n > 0 && text[n - 1] == ' '; n--) {
         text[n - 1] = '\0';
+    }
+    if (kind == ED_KN_MSG) {
+        ed.active = 0;
+        if (text[0] && kosnet_post(text) == 0) {
+            sound_sfx(BAUDIO_SFX_CONFIRM);
+            chat_back[DC99_CHAT_KOSNET] = 0;
+        } else if (text[0]) {
+            sound_sfx(BAUDIO_SFX_ERROR);
+            say("Not sent: sign in first");
+        }
+        return;
+    }
+    if (kind == ED_KN_USER || kind == ED_KN_PASS) {
+        if (text[0] == '\0') {
+            sound_sfx(BAUDIO_SFX_ERROR);
+            say(kind == ED_KN_USER ? "A username is needed" : "A password is needed");
+            return;
+        }
+        if (kind == ED_KN_USER) {
+            snprintf(kn_user, sizeof(kn_user), "%s", text);
+            sound_sfx(BAUDIO_SFX_CONFIRM);
+            editor_open_chat(ED_KN_PASS, "");
+            return;
+        }
+        ed.active = 0;
+        sound_sfx(BAUDIO_SFX_CONFIRM);
+        kosnet_login(kn_user, text);
+        memset(ed.text, 0, sizeof(ed.text));
+        return;
     }
     if (kind == ED_CHAT_MSG) {
         ed.active = 0;
@@ -890,9 +924,29 @@ leave_screen(void) {
     events_fetch_abort();
     news_fetch_abort();
     dc99_chat_stop();
+    kosnet_post_stop();
 }
 
 /* A in the IRC view: sets the login up, connects, or opens the line to say. */
+static void
+kosnet_activate(int online) {
+    if (!online) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        say("Not connected: X connects");
+    } else if (!kosnet_tls_available()) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        say("Posting needs TLS: not in this build");
+    } else if (kn_st.state == KOSNET_BUSY) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+    } else if (kn_st.state == KOSNET_IN) {
+        editor_open_chat(ED_KN_MSG, "");
+        sound_sfx(BAUDIO_SFX_ENTER);
+    } else {
+        editor_open_chat(ED_KN_USER, kn_user);
+        sound_sfx(BAUDIO_SFX_ENTER);
+    }
+}
+
 static void
 chat_irc_activate(int online) {
     if (!online) {
@@ -942,10 +996,10 @@ uin_handle(button_t b) {
         case BTN_PAGE_UP:
         case BTN_PAGE_DOWN: {
             int l = page_list(page);
-            if (page == PAGE_ONLINE && view[page] >= VIEW_IRC) { /* a chat: up goes back in time */
-                int w = view[page] == VIEW_IRC ? DC99_CHAT_IRC : DC99_CHAT_KOSNET;
-                int step = b == BTN_UP ? 1 : b == BTN_DOWN ? -1 : b == BTN_PAGE_UP ? ROWS : -ROWS;
-                int most = chat_n[w] > ROWS ? chat_n[w] - ROWS : 0;
+            if (page == PAGE_CHAT) { /* a chat: up goes back in time */
+                int w = view[page] == VIEW_A ? DC99_CHAT_IRC : DC99_CHAT_KOSNET;
+                int step = b == BTN_UP ? 1 : b == BTN_DOWN ? -1 : b == BTN_PAGE_UP ? 4 : -4;
+                int most = chat_n[w] > 1 ? chat_n[w] - 1 : 0;
                 int to = chat_back[w] + step;
                 chat_back[w] = to < 0 ? 0 : to > most ? most : to;
                 break;
@@ -979,13 +1033,15 @@ uin_handle(button_t b) {
             }
             int online = conn.state == DCNOW_CONN_ONLINE;
             switch (page) {
-                case PAGE_ONLINE:
-                    if (view[page] == VIEW_IRC) {
+                case PAGE_CHAT:
+                    if (view[page] == VIEW_A) {
                         chat_irc_activate(online);
-                    } else if (view[page] == VIEW_KOSNET) {
-                        sound_sfx(BAUDIO_SFX_ERROR);
-                        say(online ? "Read only: KosNet needs its own login" : "Not connected: X connects");
-                    } else if (view[page] == VIEW_A) { /* the player list: refresh it */
+                    } else {
+                        kosnet_activate(online);
+                    }
+                    break;
+                case PAGE_ONLINE:
+                    if (view[page] == VIEW_A) { /* the player list: refresh it */
                         if (online) {
                             sound_sfx(BAUDIO_SFX_CONFIRM);
                             start_fetches();
@@ -1044,10 +1100,7 @@ uin_handle(button_t b) {
                 break;
             }
             detail = 0;
-            if (page == PAGE_ONLINE) {
-                view[page] = (view[page] + 1) % ONLINE_VIEWS;
-                sound_sfx(BAUDIO_SFX_CURSOR);
-            } else if (page == PAGE_EVENTS) {
+            if (page == PAGE_ONLINE || page == PAGE_EVENTS || page == PAGE_CHAT) { /* players / games, events / news, IRC / KosNet */
                 view[page] = view[page] == VIEW_A ? VIEW_B : VIEW_A;
                 sound_sfx(BAUDIO_SFX_CURSOR);
             }
@@ -1056,11 +1109,20 @@ uin_handle(button_t b) {
             if (cursor == CUR_BACK) {
                 break;
             }
-            if (page == PAGE_ONLINE && view[page] == VIEW_IRC) {
+            if (page == PAGE_CHAT && view[page] == VIEW_A) {
                 editor_open_chat(ED_CHAT_NICK, np_chat_nick()); /* the login: nick, then password */
                 sound_sfx(BAUDIO_SFX_ENTER);
-            } else if (page == PAGE_ONLINE && view[page] == VIEW_KOSNET) {
-                sound_sfx(BAUDIO_SFX_ERROR);
+            } else if (page == PAGE_CHAT) { /* KosNet: the login (or out again) */
+                if (kn_st.state == KOSNET_IN) {
+                    kosnet_logout();
+                    sound_sfx(BAUDIO_SFX_CONFIRM);
+                    say("Signed out of KosNet");
+                } else if (conn.state == DCNOW_CONN_ONLINE && kosnet_tls_available() && kn_st.state != KOSNET_BUSY) {
+                    editor_open_chat(ED_KN_USER, kn_user);
+                    sound_sfx(BAUDIO_SFX_ENTER);
+                } else {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                }
             } else if (detail && page == PAGE_EVENTS && page_list(page) == LIST_EVENTS) {
                 star_selected();
             } else if (!detail && !star_selected()) {
@@ -1085,6 +1147,7 @@ uin_handle(button_t b) {
                 uint64_t t1 = timer_ms_gettime64();
                 news_fetch_abort();
                 dc99_chat_stop();
+                kosnet_post_stop();
                 printf("OM B: events stopped in %u ms, news in %u ms\n", (unsigned)(t1 - t0), (unsigned)(timer_ms_gettime64() - t1));
             }
             return 1;
@@ -1151,9 +1214,17 @@ uin_sync(void) {
     }
     if (!online && was_online) {
         dc99_chat_stop(); /* the sockets went with the connection */
+        kosnet_post_stop();
     }
-    if (online && page == PAGE_ONLINE && view[page] == VIEW_KOSNET) {
+    if (online && page == PAGE_CHAT && view[page] == VIEW_B) {
         dc99_kosnet_start(); /* reading starts when the view is looked at; stays until the screen is left */
+    }
+    kosnet_post_status(&kn_st);
+    if (kn_st.generation != kn_gen) {
+        kn_gen = kn_st.generation;
+        if (kn_st.note[0] && page == PAGE_CHAT) {
+            say(kn_st.note); /* signed in, sent, or what went wrong */
+        }
     }
     for (int w = 0; w < DC99_CHATS; w++) {
         dc99_chat_status(w, &chat_st[w]);
@@ -1201,6 +1272,20 @@ uin_sync(void) {
         && timer_ms_gettime64() - last_players_fetch >= (uint64_t)dcnow_refresh_seconds(sf_dcnow_refresh[0]) * 1000u) {
         last_players_fetch = timer_ms_gettime64();
         dcnow_fetch_start();
+    }
+    /* Events and news refresh on their own as well: every minute while their page is open (and a failed fetch is tried again then),
+     * every ten minutes otherwise; not while an item is open for reading. */
+    if (online && !detail) {
+        uint64_t now = timer_ms_gettime64();
+        uint64_t every = (page == PAGE_EVENTS ? 60u : 600u) * 1000u;
+        if (estat.state != EVENTS_RUNNING && now - last_events_fetch >= every) {
+            last_events_fetch = now;
+            events_fetch_start();
+        }
+        if (nstat.state != NEWS_RUNNING && now - last_news_fetch >= every) {
+            last_news_fetch = now;
+            news_fetch_start();
+        }
     }
     for (int l = 0; l < LISTS; l++) {
         clamp_list(l);
@@ -1582,23 +1667,58 @@ draw_test(void) {
     draw_arrows(LIST_TEST);
 }
 
-/* A chat: the status above, the newest rows at the bottom (up scrolls back). */
+/* A chat, laid out like DCPlaya's: the two chats as tabs, a status line (dot, LIVE, the title, who you are), the messages as the
+ * sender's name over the text, the newest at the bottom (up scrolls back), and an input bar with its button. */
+#define CHAT_TABS_Y (PANE_Y + 6.0f)
+#define CHAT_HEAD_Y (PANE_Y + 36.0f)
+#define CHAT_LIST_Y (PANE_Y + 68.0f)
+#define CHAT_LINE_H 25.0f
+#define CHAT_LINES 7
+#define CHAT_BAR_Y (PANE_Y + PANE_H - 36.0f) /* the chat fills the panel: no hint line under it */
+#define CHAT_BAR_H 26.0f
+
+/* Does the row show as a name line and a text line? Returns the length of the name, 0 for a one-line row. */
+static int
+chat_name_len(const dc99_row_t* r) {
+    const char* c;
+    if (r->kind != DC99_ROW_MSG && r->kind != DC99_ROW_SELF) {
+        return 0;
+    }
+    c = strstr(r->text, ": ");
+    return c && c - r->text > 0 && c - r->text <= 20 ? (int)(c - r->text) : 0;
+}
+
 static void
 draw_chat(int w) {
     char line[96];
-    float x = PANE_X + PAD;
-    int online = conn.state == DCNOW_CONN_ONLINE;
+    const float x = PANE_X + PAD;
+    const float right = PANE_X + PANE_W - PAD;
+    const int online = conn.state == DCNOW_CONN_ONLINE;
     const dc99_chat_status_t* st = &chat_st[w];
-    int n = chat_n[w];
-    int first = n - ROWS - chat_back[w];
+    const int n = chat_n[w];
+    const int login = np_chat_nick()[0] && np_chat_pass()[0];
+    static const char* const tab_names[DC99_CHATS] = {"IRC #DC99", "KosNet Global"};
+    static const float tab_w[DC99_CHATS] = {124.0f, 154.0f};
+    float tx = x;
 
-    if (w == DC99_CHAT_IRC) {
-        const char* nick = np_chat_nick();
-        snprintf(line, sizeof(line), "DC99 chat #dc99  %s", st->state == DC99_CHAT_ON ? nick : st->state == DC99_CHAT_CONNECTING ? "connecting..." : "not connected");
-    } else {
-        snprintf(line, sizeof(line), "KosNet global chat  %s", st->state == DC99_CHAT_ON ? "(read only)" : st->state == DC99_CHAT_CONNECTING ? "loading..." : "");
+    for (int t = 0; t < DC99_CHATS; t++) { /* the tabs: the open one is lit */
+        gfx_rect(tx, CHAT_TABS_Y, tab_w[t], 26.0f, 0.45f, t == w ? 0x60FFFFFFu : 0x20FFFFFFu);
+        gfx_text(tab_names[t], tx + 8.0f, CHAT_TABS_Y + 1.0f, TEXT_Z, t == w ? YELLOW : GREY, 1);
+        tx += tab_w[t] + 8.0f;
     }
-    gfx_text(line, x, HEAD_Y, TEXT_Z, WHITE, 1);
+
+    /* the status line */
+    {
+        const char* word = st->state == DC99_CHAT_ON ? "LIVE" : st->state == DC99_CHAT_CONNECTING ? "WAIT" : st->state == DC99_CHAT_FAILED ? "FAIL" : "OFF";
+        uint32_t col = st->state == DC99_CHAT_ON ? GREEN : st->state == DC99_CHAT_CONNECTING ? YELLOW : st->state == DC99_CHAT_FAILED ? RED : DIM;
+        const char* who = w == DC99_CHAT_KOSNET ? (kn_st.state == KOSNET_IN ? kn_st.name : "NOT SIGNED IN") : login ? np_chat_nick() : "NOT SIGNED IN";
+        gfx_rect(x, CHAT_HEAD_Y + 9.0f, 9.0f, 9.0f, 0.45f, col);
+        gfx_text(word, x + 16.0f, CHAT_HEAD_Y, TEXT_Z, col, 1);
+        gfx_text(w == DC99_CHAT_IRC ? "DC99 chat" : "KosNet global chat", x + 16.0f + 5.0f * CHAR_W, CHAT_HEAD_Y, TEXT_Z, WHITE, 1);
+        gfx_text(who, right - (float)(strlen(who) * CHAR_W), CHAT_HEAD_Y, TEXT_Z, DIM, 1);
+        gfx_rect(x, CHAT_HEAD_Y + 26.0f, right - x, 1.0f, 0.45f, 0x50FFFFFFu);
+    }
+
     if (n == 0) {
         const char* msg;
         if (!online) {
@@ -1606,29 +1726,92 @@ draw_chat(int w) {
         } else if (st->state == DC99_CHAT_FAILED) {
             msg = st->note[0] ? st->note : "The chat did not answer";
         } else if (w == DC99_CHAT_IRC && st->state != DC99_CHAT_CONNECTING) {
-            msg = np_chat_nick()[0] && np_chat_pass()[0] ? "A: join the chat" : "A: set up your chat login";
+            msg = login ? "A: join the chat" : "A: set up your chat login";
         } else {
             msg = "Waiting for the chat...";
         }
-        text_cut(msg, 44, x, LIST_Y, GREY);
-    }
-    for (int r = 0; r < ROWS; r++) {
-        int i = first + r;
-        uint32_t col;
-        if (i < 0 || i >= n) {
-            continue;
+        text_cut(msg, 44, x + 8.0f, CHAT_LIST_Y, GREY);
+    } else {
+        /* the rows that fit, from the newest shown backwards, then drawn from the top */
+        int end = n - chat_back[w]; /* one past the last shown */
+        int from = end, used = 0;
+        float y;
+        while (from > 0) {
+            int need = chat_name_len(&chat_rows[w][from - 1]) ? 2 : 1;
+            if (used + need > CHAT_LINES) {
+                break;
+            }
+            used += need;
+            from--;
         }
-        col = chat_rows[w][i].kind == DC99_ROW_SYS ? DIM : chat_rows[w][i].kind == DC99_ROW_SELF ? GREEN : chat_rows[w][i].kind == DC99_ROW_ERR ? RED : WHITE;
-        text_cut(chat_rows[w][i].text, DC99_ROW_CHARS, x, LIST_Y + (float)r * ROW_H, col);
+        y = CHAT_LIST_Y + (float)(CHAT_LINES - used) * CHAT_LINE_H;
+        for (int i = from; i < end; i++) {
+            const dc99_row_t* r = &chat_rows[w][i];
+            int nl = chat_name_len(r);
+            if (nl) {
+                snprintf(line, sizeof(line), "%.*s", nl, r->text);
+                gfx_text(line, x + 8.0f, y, TEXT_Z, r->kind == DC99_ROW_SELF ? GREEN : YELLOW, 1);
+                y += CHAT_LINE_H;
+                text_cut(r->text + nl + 2, 42, x + 8.0f + 2.0f * CHAR_W, y, WHITE);
+            } else {
+                text_cut(r->text, DC99_ROW_CHARS, x + 8.0f, y, r->kind == DC99_ROW_ERR ? RED : DIM);
+            }
+            y += CHAT_LINE_H;
+        }
+        if (chat_back[w] > 0) {
+            gfx_text("v", right - 11.0f, CHAT_LIST_Y + (float)(CHAT_LINES - 1) * CHAT_LINE_H, TEXT_Z, GREY, 1);
+        }
+        if (from > 0) {
+            gfx_text("^", right - 11.0f, CHAT_LIST_Y, TEXT_Z, GREY, 1);
+        }
     }
-    if (n > 0 && st->state == DC99_CHAT_FAILED && st->note[0]) {
-        text_cut(st->note, 44, x, PANE_Y + PANE_H - 60.0f, RED);
+
+    /* the input bar and its button */
+    {
+        const char* hint;
+        const char* btn;
+        uint32_t hcol = GREY;
+        if (w == DC99_CHAT_KOSNET) {
+            if (!kosnet_tls_available()) {
+                hint = "Posting needs TLS: not in this build";
+                btn = "NO TLS";
+            } else if (kn_st.state == KOSNET_BUSY) {
+                hint = kn_st.note[0] ? kn_st.note : "Working...";
+                btn = "WAIT";
+            } else if (kn_st.state == KOSNET_IN) {
+                hint = "Say something to KosNet";
+                btn = "SAY";
+            } else {
+                hint = "Sign in to KosNet to post";
+                btn = "SIGN IN";
+                hcol = YELLOW;
+            }
+        } else if (!login) {
+            hint = "Sign in to IRC to post";
+            btn = "SIGN IN";
+            hcol = YELLOW;
+        } else if (st->state != DC99_CHAT_ON) {
+            hint = "Join #dc99 to post";
+            btn = "JOIN";
+        } else {
+            hint = "Say something in #dc99";
+            btn = "SAY";
+        }
+        {
+            float bw = (float)(strlen(btn) * CHAR_W) + 20.0f;
+            gfx_rect(x, CHAT_BAR_Y, right - x - bw - 8.0f, CHAT_BAR_H, 0.45f, 0x30FFFFFFu);
+            const int dead = w == DC99_CHAT_KOSNET && (!kosnet_tls_available() || kn_st.state == KOSNET_BUSY);
+            if (notice_frames > 0) { /* what just happened takes the bar's place for a moment */
+                hint = notice;
+                hcol = WHITE;
+            }
+            text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
+            gfx_rect(right - bw, CHAT_BAR_Y, bw, CHAT_BAR_H, 0.45f, dead ? 0x30FFFFFFu : 0x70F0C040u);
+            gfx_text(btn, right - bw + 10.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+        }
     }
-    if (chat_back[w] > 0) {
-        gfx_text("v", PANE_X + PANE_W - PAD - 11.0f, LIST_Y + (float)(ROWS - 1) * ROW_H, TEXT_Z, GREY, 1);
-    }
-    if (n > ROWS && first > 0) {
-        gfx_text("^", PANE_X + PANE_W - PAD - 11.0f, LIST_Y - 4.0f, TEXT_Z, GREY, 1);
+    if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
+        text_cut(st->note, 44, x + 8.0f, CHAT_HEAD_Y + 30.0f, RED);
     }
 }
 
@@ -1638,7 +1821,9 @@ draw_editor(void) {
     static const char* const names[] = {"IP address", "Netmask", "Gateway", "DNS server", "Dial number", "Login", "Password"};
     float x = PANE_X + PAD;
     char line[64];
-    if (ed.kind != ED_ISP) {
+    if (ed.kind == ED_KN_USER || ed.kind == ED_KN_PASS || ed.kind == ED_KN_MSG) {
+        snprintf(line, sizeof(line), "%s", ed.kind == ED_KN_USER ? "KosNet username (sent over TLS)" : ed.kind == ED_KN_PASS ? "KosNet password (shown as stars)" : "Say in the KosNet chat");
+    } else if (ed.kind != ED_ISP) {
         snprintf(line, sizeof(line), "%s", ed.kind == ED_CHAT_NICK ? "Chat nick (1-20 letters, digits, _-[]{}^`|)"
                                            : ed.kind == ED_CHAT_PASS ? "Chat password (sent as typed, use a throwaway)" : "Say in #dc99");
     } else {
@@ -1661,7 +1846,7 @@ draw_editor(void) {
     } else {
         int from = ed.pos > ED_SHOWN - 4 ? ed.pos - (ED_SHOWN - 4) : 0; /* the text scrolls along with the cursor */
         for (int i = from; i < ed.len && i < from + ED_SHOWN; i++) {
-            char c[2] = {ed.row == ISP_PASS || ed.text[i] != ' ' ? ed.text[i] : '_', 0};
+            char c[2] = {ed.kind == ED_KN_PASS && i != ed.pos ? '*' : ed.row == ISP_PASS || ed.text[i] != ' ' ? ed.text[i] : '_', 0};
             gfx_text(c, x + 40.0f + (float)(i - from) * CHAR_W, LIST_Y + 20.0f, TEXT_Z, i == ed.pos ? YELLOW : WHITE, 1);
         }
         gfx_text("^", x + 40.0f + (float)(ed.pos - from) * CHAR_W, LIST_Y + 46.0f, TEXT_Z, YELLOW, 1);
@@ -1669,7 +1854,7 @@ draw_editor(void) {
         gfx_text("Left/Right: move   Y: delete", x, LIST_Y + 136.0f, TEXT_Z, DIM, 1);
         gfx_text("past the end: Up adds one", x, LIST_Y + 162.0f, TEXT_Z, DIM, 1);
     }
-    gfx_text(ed.kind == ED_CHAT_MSG ? "A: send   B: cancel" : ed.kind == ED_CHAT_NICK ? "A: next   B: cancel" : "A: save   B: cancel", x, PANE_Y + PANE_H - 34.0f, TEXT_Z, DIM, 1);
+    gfx_text(ed.kind == ED_CHAT_MSG || ed.kind == ED_KN_MSG ? "A: send   B: cancel" : ed.kind == ED_CHAT_NICK || ed.kind == ED_KN_USER ? "A: next   B: cancel" : ed.kind == ED_KN_PASS ? "A: sign in   B: cancel" : "A: save   B: cancel", x, PANE_Y + PANE_H - 34.0f, TEXT_Z, DIM, 1);
 }
 
 static void
@@ -1691,10 +1876,9 @@ draw_page(void) {
                 draw_players();
             } else if (view[page] == VIEW_B) {
                 draw_ogames();
-            } else {
-                draw_chat(view[page] == VIEW_IRC ? DC99_CHAT_IRC : DC99_CHAT_KOSNET);
             }
             break;
+        case PAGE_CHAT: draw_chat(view[page] == VIEW_A ? DC99_CHAT_IRC : DC99_CHAT_KOSNET); break;
         case PAGE_PLAY: draw_play(); break;
         case PAGE_EVENTS:
             if (view[page] == VIEW_A) {
@@ -1738,7 +1922,7 @@ static void
 draw_footer(void) {
     const char* text = NULL;
     char line[96];
-    if (ed.active) {
+    if (ed.active || page == PAGE_CHAT) { /* the chat page has its own bar down to the panel's edge */
         return;
     }
     if (notice_frames > 0) {
@@ -1751,11 +1935,11 @@ draw_footer(void) {
         snprintf(line, sizeof(line), "A: refresh  Y: star  START: games  X: %s", conn.state == DCNOW_CONN_ONLINE ? "hang up" : "connect");
         text = line;
     } else if (page == PAGE_ONLINE && view[page] == VIEW_B) {
-        text = "A: join or start  Y: star  START: chat";
-    } else if (page == PAGE_ONLINE && view[page] == VIEW_IRC) {
-        text = chat_st[DC99_CHAT_IRC].state == DC99_CHAT_ON ? "A: say  Y: login  START: KosNet" : "A: join  Y: login  START: KosNet";
-    } else if (page == PAGE_ONLINE) {
-        text = "Up/Down: scroll back  START: players";
+        text = "A: join or start  Y: star  START: players";
+    } else if (page == PAGE_CHAT && view[page] == VIEW_A) {
+        text = chat_st[DC99_CHAT_IRC].state == DC99_CHAT_ON ? "A: say  Y: login  START: KosNet  Up: back" : "A: join  Y: login  START: KosNet";
+    } else if (page == PAGE_CHAT) {
+        text = "Up/Down: scroll back  START: IRC";
     } else if (page == PAGE_PLAY && sel[LIST_PLAY] < ngames) {
         const game_row* g = &games[sel[LIST_PLAY]];
         struct db_item* meta = NULL;

@@ -7,12 +7,19 @@ on:
       - 'openMenu/**'
       - '.github/workflows/build-newopenmenu.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Also push 1ST_READ.BIN and the ELF to the ci-binaries branch (for emulator tests; no BIOS data in them)'
+        type: boolean
+        default: false
   # Also run as the first job of "Build Card Manager", which packs this 1ST_READ.BIN into the Card Manager
   workflow_call:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # only used by the optional ci-binaries publish step
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +68,12 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
             openMenu/src/openmenu/test/dc99_chat_parse_test.c openMenu/src/openmenu/src/backend/dc99_chat_parse.c -o dc99_chat_parse_test
           ./dc99_chat_parse_test
+
+      - name: kosnet json test
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/kosnet_json_test.c openMenu/src/openmenu/src/backend/kosnet_json.c -o kosnet_json_test
+          ./kosnet_json_test
 
       # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
       - name: gfx host test
@@ -120,3 +133,15 @@ jobs:
           name: openmenu.elf
           path: openMenu/cmake-build-dc-release/bin/*.elf
           if-no-files-found: warn
+
+      - name: Publish the binaries to the ci-binaries branch (manual runs with publish on)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: |
+          mkdir /tmp/pub
+          cp openMenu/cmake-build-dc-release/bin/1ST_READ.BIN /tmp/pub/
+          cp openMenu/cmake-build-dc-release/bin/*.elf /tmp/pub/ || true
+          cd /tmp/pub
+          git init -q -b ci-binaries
+          git -c user.name=ci -c user.email=ci@example.invalid add -A
+          git -c user.name=ci -c user.email=ci@example.invalid commit -q -m "Binaries of ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-binaries:ci-binaries
