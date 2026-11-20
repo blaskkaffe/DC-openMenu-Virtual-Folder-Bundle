@@ -237,3 +237,6 @@ I
 - [ ] Y signs out; leaving the Internet screen drops the login (nothing is saved)
 - [ ] If the build has no TLS the bar says "Posting needs TLS: not in this build" (the CMake output says "mbedTLS not found")
 - [ ] The server certificate is NOT checked yet (traffic is encrypted, but a man in the middle is not detected)
+
+## Lists refresh on their own
+- [ ] Online: players and games follow the "Player list refresh" setting; Events and News refresh every minute while the Events button is open (a failed fetch is tried again then) and every ten minutes in the background; not while an event or news item is open

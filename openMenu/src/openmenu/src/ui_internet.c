@@ -105,7 +105,7 @@ static dcnow_device_t device = DCNOW_DEV_NONE;
 static dcnow_isp_t isp;
 static dcnow_status_t conn;
 static int was_online;
-static uint64_t last_players_fetch;
+static uint64_t last_players_fetch, last_events_fetch, last_news_fetch;
 static char notice[64];
 static int notice_frames;
 
@@ -416,7 +416,7 @@ uin_set_launch(int (*start)(const gd_item*)) {
 
 static void
 start_fetches(void) {
-    last_players_fetch = timer_ms_gettime64();
+    last_players_fetch = last_events_fetch = last_news_fetch = timer_ms_gettime64();
     dcnow_fetch_start();
     events_fetch_start();
     news_fetch_start();
@@ -1272,6 +1272,20 @@ uin_sync(void) {
         && timer_ms_gettime64() - last_players_fetch >= (uint64_t)dcnow_refresh_seconds(sf_dcnow_refresh[0]) * 1000u) {
         last_players_fetch = timer_ms_gettime64();
         dcnow_fetch_start();
+    }
+    /* Events and news refresh on their own as well: every minute while their page is open (and a failed fetch is tried again then),
+     * every ten minutes otherwise; not while an item is open for reading. */
+    if (online && !detail) {
+        uint64_t now = timer_ms_gettime64();
+        uint64_t every = (page == PAGE_EVENTS ? 60u : 600u) * 1000u;
+        if (estat.state != EVENTS_RUNNING && now - last_events_fetch >= every) {
+            last_events_fetch = now;
+            events_fetch_start();
+        }
+        if (nstat.state != NEWS_RUNNING && now - last_news_fetch >= every) {
+            last_news_fetch = now;
+            news_fetch_start();
+        }
     }
     for (int l = 0; l < LISTS; l++) {
         clamp_list(l);
