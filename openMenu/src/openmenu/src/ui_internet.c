@@ -255,6 +255,28 @@ build_ogames(void) {
         }
         nogames++;
     }
+    /* DCNET's games list: a game it counts players in that the list has not shown yet, or with more players than the list names */
+    dcnet_game_t dg[DCNET_GAME_MAX];
+    int ng = dcnow_fetch_copy_games(dg, DCNET_GAME_MAX);
+    for (int d = 0; d < ng; d++) {
+        int at = -1;
+        for (int k = 0; at < 0 && k < nogames; k++) {
+            size_t n = strlen(dg[d].name);
+            if (name_cmp(ogames[k].title, dg[d].name) == 0 || (n >= 6 && strncasecmp_n(ogames[k].title, dg[d].name, n))) {
+                at = k;
+            }
+        }
+        if (at >= 0) {
+            if (dg[d].players > ogames[at].players) {
+                ogames[at].players = dg[d].players;
+            }
+        } else if (nogames < OGAMES_MAX) {
+            const gd_item* card = online_games_find(dg[d].name);
+            snprintf(ogames[nogames].title, sizeof(ogames[nogames].title), "%s", card ? card->name : dg[d].name);
+            ogames[nogames].players = dg[d].players;
+            ogames[nogames++].item = card;
+        }
+    }
     qsort(ogames, (size_t)nogames, sizeof(ogames[0]), ogame_cmp);
 }
 

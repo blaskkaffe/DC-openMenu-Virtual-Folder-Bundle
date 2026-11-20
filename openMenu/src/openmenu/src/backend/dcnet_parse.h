@@ -12,15 +12,6 @@
 
 #include "backend/dcnow_fetch.h"
 
-#define DCNET_GAME_MAX 64
-
-typedef struct dcnet_game {
-    char id[16];
-    char name[DCNOW_TITLE_LEN];
-    int players;
-    int games;
-} dcnet_game_t;
-
 /* Appends the connected users to out[*n] (network "DCNET", title empty) up to max, counts every one in *total. Returns 0, or -1 when the text
  * is not a JSON array. */
 int dcnet_parse_users(const char* json, dcnow_player_t* out, int* n, int max, int* total);
