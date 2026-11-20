@@ -418,9 +418,11 @@ uin_set_launch(int (*start)(const gd_item*)) {
 static void
 start_fetches(void) {
     last_players_fetch = last_events_fetch = last_news_fetch = timer_ms_gettime64();
+#ifndef OM_PREVIEW_ON
     dcnow_fetch_start();
     events_fetch_start();
     news_fetch_start();
+#endif
 }
 
 void
@@ -1224,6 +1226,29 @@ preview_fill(void) {
             }
         }
     }
+    if (nevents == 0) {
+        static const char* const et[][3] = {{"DC99 Alien Front Online night", "Fri 20 Nov 21:00", "DC99"}, {"Phantasy Star Online meetup", "Sat 21 Nov 20:00", "Sega Online Discord"},
+                                            {"Toy Racer tournament", "Sun 22 Nov 19:00", "DreamcastLive"}, {"Quake III Arena FFA", "Mon 23 Nov 22:00", "DC99"}};
+        static const char* const ek[] = {"2026-11-20 21:00", "2026-11-21 20:00", "2026-11-22 19:00", "2026-11-23 22:00"};
+        for (int i = 0; i < 4; i++) {
+            snprintf(events[i].title, sizeof(events[i].title), "%s", et[i][0]);
+            snprintf(events[i].when, sizeof(events[i].when), "%s", et[i][1]);
+            snprintf(events[i].source, sizeof(events[i].source), "%s", et[i][2]);
+            snprintf(events[i].sort_key, sizeof(events[i].sort_key), "%s", ek[i]);
+        }
+        nevents = 4;
+        build_events();
+        nnews = 3;
+        snprintf(news[0].title, sizeof(news[0].title), "DCNET servers back online");
+        snprintf(news[0].body, sizeof(news[0].body), "The community DCNET servers are back. Sonic Adventure 2 and Alien Front Online lobbies are open again.");
+        snprintf(news[0].source, sizeof(news[0].source), "Sega Online");
+        snprintf(news[1].title, sizeof(news[1].title), "New Dreamcast homebrew: DC99 chat");
+        snprintf(news[1].body, sizeof(news[1].body), "DC99 now has an IRC channel and a global chat that you can read from the console.");
+        snprintf(news[1].source, sizeof(news[1].source), "DreamcastLive");
+        snprintf(news[2].title, sizeof(news[2].title), "Quake III Arena weekend");
+        snprintf(news[2].body, sizeof(news[2].body), "Join the weekend servers.");
+        snprintf(news[2].source, sizeof(news[2].source), "DreamcastLive");
+    }
     pstat.list_valid = 1;
     pstat.online_total = 10;
     conn.state = DCNOW_CONN_ONLINE;
@@ -1307,12 +1332,12 @@ uin_sync(void) {
         games_built = anim;
     }
     news_fetch_poll(&nstat);
-    if (nstat.generation != news_gen) {
+    if (!OM_PREVIEW_ON && nstat.generation != news_gen) {
         news_gen = nstat.generation;
         nnews = news_fetch_copy(news, NEWS_MAX);
     }
     events_fetch_poll(&estat);
-    if (estat.generation != events_gen) {
+    if (!OM_PREVIEW_ON && estat.generation != events_gen) {
         events_gen = estat.generation;
         nevents = events_fetch_copy(events, EVENTS_MAX);
         build_events();
@@ -1328,7 +1353,7 @@ uin_sync(void) {
     }
     /* Events and news refresh on their own as well: every minute while their page is open (and a failed fetch is tried again then),
      * every ten minutes otherwise; not while an item is open for reading. */
-    if (online && !detail) {
+    if (online && !detail && !OM_PREVIEW_ON) {
         uint64_t now = timer_ms_gettime64();
         uint64_t every = (page == PAGE_EVENTS ? 60u : 600u) * 1000u;
         if (estat.state != EVENTS_RUNNING && now - last_events_fetch >= every) {
