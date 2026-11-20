@@ -16,6 +16,7 @@ static uint32_t star_game[NP_STAR_GAMES];
 static int star_game_n;
 static uint32_t star_event[NP_STAR_EVENTS];
 static int star_event_n;
+static char chat_nick[NP_CHAT_LEN], chat_pass[NP_CHAT_LEN];
 static void (*hook)(void);
 
 static void
@@ -31,6 +32,8 @@ np_reset(void) {
     net = NP_NET_DCNOW;
     memset(&isp_cfg, 0, sizeof(isp_cfg));
     game_net_n = star_player_n = star_game_n = star_event_n = 0;
+    memset(chat_nick, 0, sizeof(chat_nick));
+    memset(chat_pass, 0, sizeof(chat_pass));
 }
 
 void
@@ -98,6 +101,8 @@ np_pack(uint8_t* out, int room) {
     for (int i = 0; i < star_event_n; i++) {
         put32(out + n, star_event[i]), n += 4;
     }
+    memcpy(out + n, chat_nick, NP_CHAT_LEN), n += NP_CHAT_LEN; /* added later: a file without it still loads */
+    memcpy(out + n, chat_pass, NP_CHAT_LEN), n += NP_CHAT_LEN;
     return n;
 }
 
@@ -158,6 +163,11 @@ np_unpack(const uint8_t* in, int len) {
         star_event[i] = get32(in + n);
     }
     star_event_n = count;
+    if (n + 2 * NP_CHAT_LEN <= len) {
+        memcpy(chat_nick, in + n, NP_CHAT_LEN);
+        memcpy(chat_pass, in + n + NP_CHAT_LEN, NP_CHAT_LEN);
+        chat_nick[NP_CHAT_LEN - 1] = chat_pass[NP_CHAT_LEN - 1] = '\0';
+    }
     return 0;
 bad:
     np_reset();
@@ -245,6 +255,28 @@ np_set_isp(const np_isp_t* isp) {
     if (memcmp(&isp_cfg, isp, sizeof(isp_cfg)) != 0) {
         isp_cfg = *isp;
         isp_cfg.number[NP_DIAL_LEN - 1] = isp_cfg.login[NP_DIAL_LEN - 1] = isp_cfg.password[NP_DIAL_LEN - 1] = '\0';
+        changed();
+    }
+}
+
+const char*
+np_chat_nick(void) {
+    return chat_nick;
+}
+
+const char*
+np_chat_pass(void) {
+    return chat_pass;
+}
+
+void
+np_set_chat(const char* nick, const char* pass) {
+    char n[NP_CHAT_LEN] = {0}, p[NP_CHAT_LEN] = {0};
+    strncpy(n, nick, NP_CHAT_LEN - 1);
+    strncpy(p, pass, NP_CHAT_LEN - 1);
+    if (memcmp(n, chat_nick, NP_CHAT_LEN) != 0 || memcmp(p, chat_pass, NP_CHAT_LEN) != 0) {
+        memcpy(chat_nick, n, NP_CHAT_LEN);
+        memcpy(chat_pass, p, NP_CHAT_LEN);
         changed();
     }
 }

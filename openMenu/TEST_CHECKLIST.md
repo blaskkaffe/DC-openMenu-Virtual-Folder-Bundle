@@ -221,3 +221,11 @@ I
 - [ ] Online page lists DCNow! players (dreamcast.online) (no DreamPi add-on is used any more).
 - [ ] DCNET players show with network DCNET: does `dcnet.flyca.st` answer plain HTTP? (If it redirects to HTTPS the status line says "the server wants HTTPS, skipped" and only DCNow! shows: tell me.)
 - [ ] With DCNET players in a game, the game title shows (needs `/players`, whose fields were never seen).
+- [ ] DCNET `/games`: Online > Games lists DCNET games with their player counts (also ones the player list does not name); the Play page marks card games with players.
+
+## DC99 chats (Online page: START cycles Players, Games, DC99 chat, KosNet)
+- [ ] KosNet view (connected): messages appear within a few seconds and new ones keep arriving every ~6 s; "joined" lines are dim; non-ASCII shows as "?"; Up/Down scrolls back and the view stays put while lines arrive; A says "Read only"
+- [ ] DC99 chat, first time: A (or Y) asks for a nick, then a password (Up/Down character, X ten on, Left/Right, Y delete, A next/save); then A connects: "Joined #dc99" and the channel's lines; wrong password says "Wrong password for that nickname."; nick taken says so
+- [ ] Is `irc.dc99.net:6667` reachable from the console's network (it is DNS-only, not Cloudflare; never tested live)? A first-time nick registers itself with the password
+- [ ] A while connected opens the line to say; A sends it, it shows in green; B cancels; long lines wrap; hanging up or leaving the screen disconnects (QUIT)
+- [ ] The login (nick + password, in the clear) is kept in EXTENDED.SYS; Y changes it and reconnects
