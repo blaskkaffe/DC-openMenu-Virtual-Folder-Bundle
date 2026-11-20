@@ -4,6 +4,7 @@
  * The Online page also holds the two DC99 chats (backend/dc99_chat). Four pages on the CD player's buttons: Online (who is online / the games being played), Play (the card's online games and the
  * browsers), Events (going on and coming up / the news), Settings (connection, ISP settings, network test). The connection status is
  * drawn above the panel. A acts, Y stars, START switches the list of a page, X connects or hangs up. */
+#define OM_PREVIEW_ON 1 /* PREVIEW BUILD */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1184,6 +1185,55 @@ place(bvm_obj* o, float x, float y, float z) {
     o->pos_tw[0].step = o->pos_tw[1].step = o->pos_tw[2].step = 0;
 }
 
+
+/* PREVIEW BUILD (emu-preview branch only, never merged): sample players, games and chat lines so the screens can be rendered in an emulator
+ * that has no network. */
+static void
+preview_fill(void) {
+    static const char* const pn[] = {"Anna", "Quinsided", "flycast1", "Mara", "Bobby", "enfilade", "Kiko", "DCfan99", "Rex", "Lia"};
+    static const char* const pt[] = {"Sonic Adventure 2", "Phantasy Star Online", "", "Alien Front Online", "Quake III Arena", "", "Toy Racer", "Outtrigger", "Sonic Adventure 2", ""};
+    static int done;
+    if (!done) {
+        done = 1;
+        nplayers = 10;
+        for (int i = 0; i < nplayers; i++) {
+            snprintf(players[i].name, sizeof(players[i].name), "%s", pn[i]);
+            snprintf(players[i].title, sizeof(players[i].title), "%s", pt[i]);
+            snprintf(players[i].network, sizeof(players[i].network), "%s", i % 3 == 2 || i == 7 ? "DCNET" : "DCNow!");
+        }
+        np_player_toggle("Anna");
+        nogames = 5;
+        static const char* const gn[] = {"Sonic Adventure 2", "Phantasy Star Online", "Alien Front Online", "Quake III Arena", "Outtrigger"};
+        static const int gp[] = {4, 3, 2, 1, 1};
+        for (int i = 0; i < nogames; i++) {
+            snprintf(ogames[i].title, sizeof(ogames[i].title), "%s", gn[i]);
+            ogames[i].players = gp[i];
+            ogames[i].item = NULL;
+        }
+        static const char* const irc[][2] = {{"S", "Joined #dc99"}, {"M", "enfilade: welcome to the dc99 chat!"}, {"M", "Mara: anyone up for an Alien Front match tonight?"},
+                                             {"S", "Kiko joined"}, {"M", "Kiko: I am in, 9pm?"}, {"O", "Dreamer: sounds good to me"}, {"M", "enfilade: DCNET lobby is open"}};
+        static const char* const kn[][2] = {{"S", "'Quinsided' joined the chat. Say Hi!"}, {"M", "enfilade: Hello World!"}, {"M", "Quinsided: hi all, first time on a Dreamcast"},
+                                            {"M", "Rex: anyone playing Sonic Adventure 2?"}, {"S", "'Lia' joined the chat. Say Hi!"}, {"M", "Lia: hey!"}};
+        for (int w = 0; w < 2; w++) {
+            const char* const(*src)[2] = w == 0 ? irc : kn;
+            int n = w == 0 ? 7 : 6;
+            chat_n[w] = n;
+            for (int i = 0; i < n; i++) {
+                snprintf(chat_rows[w][i].text, sizeof(chat_rows[w][i].text), "%s", src[i][1]);
+                chat_rows[w][i].kind = src[i][0][0] == 'S' ? DC99_ROW_SYS : src[i][0][0] == 'O' ? DC99_ROW_SELF : DC99_ROW_MSG;
+            }
+        }
+    }
+    pstat.list_valid = 1;
+    pstat.online_total = 10;
+    conn.state = DCNOW_CONN_ONLINE;
+    chat_st[DC99_CHAT_IRC].state = DC99_CHAT_ON;
+    chat_st[DC99_CHAT_KOSNET].state = DC99_CHAT_ON;
+    chat_gen[0] = chat_st[0].generation;
+    chat_gen[1] = chat_st[1].generation;
+    players_gen = pstat.generation;
+}
+
 void
 uin_sync(void) {
     anim++;
@@ -1203,6 +1253,7 @@ uin_sync(void) {
         }
     }
     dcnow_conn_poll(&conn);
+    preview_fill();
     int online = conn.state == DCNOW_CONN_ONLINE;
     if (online && !was_online) {
         start_fetches(); /* just connected */
@@ -1216,6 +1267,7 @@ uin_sync(void) {
         dc99_chat_stop(); /* the sockets went with the connection */
         kosnet_post_stop();
     }
+#ifndef OM_PREVIEW_ON
     if (online && page == PAGE_CHAT && view[page] == VIEW_B) {
         dc99_kosnet_start(); /* reading starts when the view is looked at; stays until the screen is left */
     }
@@ -1240,6 +1292,7 @@ uin_sync(void) {
             }
         }
     }
+#endif
     was_online = online;
 
     dcnow_fetch_poll(&pstat);
