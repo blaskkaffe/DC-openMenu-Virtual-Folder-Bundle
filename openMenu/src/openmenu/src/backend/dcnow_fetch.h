@@ -41,7 +41,7 @@ typedef struct dcnow_fetch_status {
     int online_total; /* online players in the feed, the list keeps at most DCNOW_PLAYER_MAX */
     time_t updated;   /* console clock when the newest list arrived */
     int list_valid;   /* a list is in the store, kept until the store is cleared */
-    int from_pi;      /* the newest list came from the DreamPi add-on, so it can hold more than one network */
+    int multi_network; /* the newest list holds players of more than one network (DCNow! and DCNET) */
     int online_dcnow; /* online players on DCNow! (everything that is not DCNET), counted over the whole feed */
     int online_dcnet; /* online players on DCNET */
 } dcnow_fetch_status_t;

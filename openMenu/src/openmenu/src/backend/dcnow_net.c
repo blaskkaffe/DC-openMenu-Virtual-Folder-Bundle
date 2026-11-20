@@ -28,7 +28,6 @@
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
 #include "backend/dcnow_vmu.h"
-#include "backend/dreampi_link.h"
 #include "backend/netsel.h"
 #include "backend/w5500_net.h"
 #include "backend/online_time_sync.h"
@@ -1328,7 +1327,6 @@ dcnow_net_shutdown(void) {
     dcnow_status_t snap;
 
     dcnow_fetch_abort(); /* first: it may be waiting for the Pi or the web, and the rest of the shutdown waits for it */
-    dreampi_link_abort();
     dcnow_conn_poll(&snap);
     if (dialup_link() && (snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_CONNECTING)) {
         dcnow_vmu_hanging_up();

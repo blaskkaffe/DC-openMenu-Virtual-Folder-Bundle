@@ -23,7 +23,6 @@
 
 #include "backend/dcnet_parse.h"
 #include "backend/dcnow_fetch.h"
-#include "backend/dreampi_link.h"
 
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
@@ -33,7 +32,6 @@
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
-#define DCNOW_PI_TIMEOUT_MS   15000
 
 static mutex_t fetch_mutex = MUTEX_INITIALIZER;
 static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, 0};
@@ -358,23 +356,7 @@ parse_users(const char* text, int truncated, int* total) {
     return parse_list(text, "\"users\"", 0, truncated, total);
 }
 
-/* The add-on's GET /players: {"time": N, "players": [{"player", "game", "network", "country", ...}], ...}. A time of
- * zero means it has not fetched its feeds yet, which is -2 so the caller asks dreamcast.online instead. */
-static int
-parse_pi_players(const char* text, int truncated, int* total) {
-    const char* t = strstr(text, "\"time\"");
-
-    *total = 0;
-    if (t != NULL) {
-        t = json_ws(t + 6);
-        if (*t == ':' && strtol(json_ws(t + 1), NULL, 10) <= 0) {
-            return -2;
-        }
-    }
-    return parse_list(text, "\"players\"", 1, truncated, total);
-}
-
-static int from_pi_list = 0;
+static int multi_network = 0;
 
 static void
 publish(int count, int total) {
@@ -384,7 +366,7 @@ publish(int count, int total) {
     fetch.online_total = total;
     fetch.updated = rtc_unix_secs();
     fetch.list_valid = 1;
-    fetch.from_pi = from_pi_list;
+    fetch.multi_network = multi_network;
     fetch.online_dcnow = parsed_dcnow;
     fetch.online_dcnet = parsed_dcnet;
     fetch.generation++;
@@ -464,38 +446,6 @@ http_get(const struct sockaddr_in* addr, const char* host, const char* path, uin
     return code;
 }
 
-/* Tries the DreamPi add-on's merged list (DCNow!, DCNET and others). Returns 1 when it published a list, 2 when the
- * fetch was aborted, 0 when there is no add-on or it had nothing, so the caller asks dreamcast.online. */
-static int
-fetch_from_pi(void) {
-    struct sockaddr_in addr;
-    char host[20];
-    const char* json;
-    size_t used;
-    int code;
-    int count;
-    int total = 0;
-
-    if (!dreampi_link_pi(&addr, host, sizeof(host), &abort_requested)) {
-        return abort_requested ? 2 : 0;
-    }
-    fetch_push("Fetching player list from DreamPi...", 0);
-    code = http_get(&addr, host, "/players", DCNOW_PI_TIMEOUT_MS, &used);
-    if (code == -2) {
-        fetch_reset(DCNOW_FETCH_IDLE);
-        return 2;
-    }
-    json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
-    count = json != NULL ? parse_pi_players(json + 4, used == DCNOW_BODY_MAX, &total) : -1;
-    if (count < 0) {
-        fetch_reset(DCNOW_FETCH_RUNNING); /* clears the line above; the web fetch starts its own */
-        return 0;
-    }
-    from_pi_list = 1;
-    publish(count, total);
-    return 1;
-}
-
 /* DCNET, from its own status endpoints (plain HTTP, the console has no TLS): who is connected (/users), and which of them play what (/players).
  * Added to the list DCNow! just gave (parsed[0..count)); the DCNow! feed is the one that must work, so everything here is best effort: a
  * failure leaves the list as it is and adds a line to the status. Returns the new count; *total grows by the DCNET players. */
@@ -540,13 +490,13 @@ append_dcnet(int count, int* total) {
     *total += added;
     parsed_dcnet = added;
     if (added > 0) {
-        from_pi_list = 1; /* the list now holds more than one network: the window shows the network column */
+        multi_network = 1; /* the list now holds more than one network: the window shows the network column */
     }
     return count;
 }
 
 static void
-run_direct(void) {
+run_fetch(void) {
     struct sockaddr_in addr;
     char request[160];
     char text[DCNOW_STATUS_WIDTH];
@@ -562,7 +512,7 @@ run_direct(void) {
     const char* json;
 
     fetch_reset(DCNOW_FETCH_RUNNING);
-    from_pi_list = 0;
+    multi_network = 0;
     fetch_push("Fetching player list from " DCNOW_HOST "...", 0);
 
     fetch_push("Resolving host...", 0);
@@ -693,27 +643,6 @@ run_direct(void) {
         count = append_dcnet(count, &total);
     }
     publish(count, total);
-}
-
-/* The status endpoints are asked directly (DCNow! and DCNET). The DreamPi add-on's merged list is only the fallback, when they cannot be reached. */
-static void
-run_fetch(void) {
-    dcnow_fetch_status_t failed;
-
-    run_direct();
-    mutex_lock(&fetch_mutex);
-    failed = fetch;
-    mutex_unlock(&fetch_mutex);
-    if (failed.state != DCNOW_FETCH_FAILED || abort_requested) {
-        return;
-    }
-    from_pi_list = 0;
-    if (fetch_from_pi() == 1) {
-        return; /* published */
-    }
-    mutex_lock(&fetch_mutex);
-    fetch = failed; /* the add-on had nothing either: the direct failure stays what the window shows */
-    mutex_unlock(&fetch_mutex);
 }
 
 static void*

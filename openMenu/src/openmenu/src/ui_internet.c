@@ -1,9 +1,9 @@
 /* ui_internet: see ui_internet.h. The connection, the player list and the online games are the main branch's engine
- * (backend/dcnow_*, dreampi_link, online_games); the events are backend/events_fetch, the news backend/news_fetch, the way to the network
+ * (backend/dcnow_*, dcnet_parse, online_games); the events are backend/events_fetch, the news backend/news_fetch, the way to the network
  * backend/netsel + dcnow_net, the saved settings and stars netprefs.
  * Four pages on the CD player's buttons: Online (who is online / the games being played), Play (the card's online games and the
  * browsers), Events (going on and coming up / the news), Settings (connection, ISP settings, network test). The connection status is
- * drawn above the panel. A acts, Y stars, START switches the list of a page (on Play it picks the game's network), X connects or hangs up. */
+ * drawn above the panel. A acts, Y stars, START switches the list of a page, X connects or hangs up. */
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,7 +20,6 @@
 
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
-#include "backend/dreampi_link.h"
 #include "backend/events_fetch.h"
 #include "backend/net_test.h"
 #include "backend/netsel.h"
@@ -71,7 +70,7 @@ enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2 };
 /* The lists behind the pages */
 enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LISTS };
 /* Settings page rows; the Internet rows of ui_settings.c follow (uis_net_first) */
-enum { SET_STATUS, SET_WAY, SET_NET, SET_ISP, SET_TEST, SET_PI, SET_ROWS };
+enum { SET_STATUS, SET_WAY, SET_ISP, SET_TEST, SET_SOURCES, SET_ROWS };
 /* ISP view rows */
 enum { ISP_PRESET, ISP_ADDR, ISP_IP, ISP_MASK, ISP_GW, ISP_DNS, ISP_NUMBER, ISP_LOGIN, ISP_PASS, ISP_RESET, ISP_ROWS };
 
@@ -196,11 +195,6 @@ strncasecmp_n(const char* hay, const char* needle, size_t n) {
 static uint32_t
 item_hash(const gd_item* g) {
     return (uint32_t)gd_item_recent_hash(g);
-}
-
-static const char*
-net_name(int net) {
-    return net == NP_NET_DCNET ? "DCNet" : "DCNow!";
 }
 
 /* Games first by players online, then by name; the browsers last. */
@@ -691,10 +685,9 @@ setting_text(int row, char* out, size_t size) {
                 snprintf(out + n, size - n, "%s)", dcnow_device_short_name(used));
             }
             break;
-        case SET_NET: snprintf(out, size, "Preferred network  %s", net_name(np_net())); break;
         case SET_ISP: snprintf(out, size, "ISP settings  %s >", isp_preset_name(np_isp())); break;
         case SET_TEST: snprintf(out, size, "Network test >"); break;
-        default: snprintf(out, size, "DreamPi add-on  %s", pstat.from_pi ? "in use" : "not used"); break;
+        default: snprintf(out, size, "Players  %s", pstat.multi_network ? "DCNow! and DCNET" : "DCNow!"); break;
     }
     return out;
 }
@@ -716,11 +709,6 @@ settings_activate(int row) {
             online_apply_prefs();
             sound_sfx(BAUDIO_SFX_CONFIRM);
             say(conn.state == DCNOW_CONN_ONLINE ? "Used at the next connect" : np_iface() == NETSEL_AUTO ? "Auto: the fastest one that is there" : "Only this one is tried");
-            break;
-        case SET_NET:
-            np_set_net(np_net() == NP_NET_DCNOW ? NP_NET_DCNET : NP_NET_DCNOW);
-            sound_sfx(BAUDIO_SFX_CONFIRM);
-            say("For games with no network of their own (START on Play)");
             break;
         case SET_ISP:
             view[PAGE_SETTINGS] = VIEW_SET_ISP;
@@ -770,26 +758,6 @@ star_selected(void) {
         say(r ? "Starred: you are told when it is on" : "Star removed");
     }
     return 1;
-}
-
-/* START on Play: the network of the selected game: DCNow! -> DCNet -> the preferred one (no saved choice) */
-static void
-cycle_game_net(void) {
-    if (sel[LIST_PLAY] >= ngames || games[sel[LIST_PLAY]].browser) {
-        sound_sfx(BAUDIO_SFX_ERROR);
-        return;
-    }
-    uint32_t h = item_hash(games[sel[LIST_PLAY]].item);
-    int saved = np_game_net_saved(h);
-    int next = saved == NP_NET_NONE ? NP_NET_DCNOW : saved == NP_NET_DCNOW ? NP_NET_DCNET : NP_NET_NONE;
-    if (np_set_game_net(h, next) < 0) {
-        sound_sfx(BAUDIO_SFX_ERROR);
-        say("Too many games have their own network");
-        return;
-    }
-    sound_sfx(BAUDIO_SFX_CONFIRM);
-    snprintf(notice, sizeof(notice), next == NP_NET_NONE ? "Network: the preferred one (%s)" : "Network for this game: %s", net_name(next == NP_NET_NONE ? np_net() : next));
-    notice_frames = 180;
 }
 
 /* A launch from the Online or Play list */
@@ -935,8 +903,6 @@ uin_handle(button_t b) {
             if (page == PAGE_ONLINE || page == PAGE_EVENTS) {
                 view[page] = view[page] == VIEW_A ? VIEW_B : VIEW_A;
                 sound_sfx(BAUDIO_SFX_CURSOR);
-            } else if (page == PAGE_PLAY) {
-                cycle_game_net();
             }
             break;
         case BTN_Y:
@@ -1103,9 +1069,7 @@ draw_status(void) {
     dcnow_device_t used = dcnow_device_hint();
     switch (conn.state) {
         case DCNOW_CONN_ONLINE: {
-            int net = dreampi_link_network(); /* 1 DCNow!, 2 DCNET, 0 not known */
-            snprintf(line, sizeof(line), "Online%s%s%s%s  X: hang up", used != DCNOW_DEV_NONE ? " via " : "", used != DCNOW_DEV_NONE ? dcnow_device_short_name(used) : "",
-                     net ? ", " : "", net ? net_name(net) : "");
+            snprintf(line, sizeof(line), "Online%s%s  X: hang up", used != DCNOW_DEV_NONE ? " via " : "", used != DCNOW_DEV_NONE ? dcnow_device_short_name(used) : "");
             break;
         }
         case DCNOW_CONN_CONNECTING:
@@ -1125,7 +1089,7 @@ draw_status(void) {
 }
 
 /* What the player fetch is doing or why it failed (its last status line), for the empty lists: "Loading..." alone hides where
- * it stops (the DreamPi add-on, DNS, the connection to the server, the answer). */
+ * it stops (DNS, the connection to the server, the answer). */
 static const char*
 fetch_note(char* out, size_t size) {
     if (pstat.state == DCNOW_FETCH_FAILED && pstat.count > 0) {
@@ -1277,9 +1241,6 @@ draw_play(void) {
         float tag_x = x + PANE_W - PAD * 2.0f - 7.0f * CHAR_W - 16.0f;
         if (g->browser) {
             gfx_text("browser", tag_x, y, TEXT_Z, DIM, 1);
-        } else {
-            int saved = np_game_net_saved(item_hash(g->item));
-            gfx_text(net_name(np_game_net(item_hash(g->item))), tag_x + CHAR_W, y, TEXT_Z, saved ? YELLOW : DIM, 1); /* yellow: this game's own choice */
         }
     }
     draw_arrows(LIST_PLAY);
@@ -1529,7 +1490,7 @@ draw_page(void) {
             break;
         default:
             if (view[page] == VIEW_A) {
-                gfx_text("Network and DreamPi", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
+                gfx_text("Network", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
                 draw_list(LIST_SETTINGS, settings_row);
             } else if (view[page] == VIEW_SET_ISP) {
                 gfx_text("ISP settings", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
@@ -1566,10 +1527,10 @@ draw_footer(void) {
             text = "A: start the browser";
         } else if (have_meta && !db_get_meta(g->item->product, &meta) && meta && (meta->network & 3)) { /* what META.DAT says about its connections */
             static const char* const how[] = {"", "modem", "broadband adapter", "modem or broadband adapter"};
-            snprintf(line, sizeof(line), "Connects by: %s  START: network", how[meta->network & 3]);
+            snprintf(line, sizeof(line), "Connects by: %s", how[meta->network & 3]);
             text = line;
         } else {
-            text = "A: start  Y: star  START: network";
+            text = "A: start  Y: star";
         }
     } else if (page == PAGE_EVENTS) {
         text = view[page] == VIEW_A ? (nev_rows > 0 ? "A: open  Y: star  START: news" : "START: news") : (nnews > 0 ? "A: read  START: events" : "START: events");

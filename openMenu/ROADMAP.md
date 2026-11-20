@@ -154,3 +154,11 @@ Ordered by what unblocks the most and what can be done without new hardware or d
 Waiting on you (hardware): OPEN 1 (crash log), OPEN 2 (fps numbers), OPEN 6 (serial tests).
 
 Waiting on you (cloud session access): allow `dc.dreamcastlive.net` and `dc.segaonline.net` in the environment's Network access (cloud environment menu, Edit, Allowed domains, or a broader level), then the News parser can be checked against the real pages (the DreamcastLive page shape is known from a paste; the Sega Online page has not been seen). Also useful to allow later: `dc99.net` (events).
+
+## DreamPi add-on integration removed
+The companion link (`backend/dreampi_link.c`: game list upload, launch queue, `/players`, `/api/events/upcoming`, NET switching, PLAYING, the event
+banner) is gone. Players come straight from the status endpoints (DCNow! and DCNET, `dcnet_parse.c`), events from the dc99.net community page,
+news from its own source. With it went the preferred / per-game network (Settings row, START on Play, the X popup row: the add-on was the only
+thing that could switch the DreamPi's network; `netprefs` still stores the numbers so the file does not change), the "DreamPi add-on" settings row
+(now "Players: DCNow! / DCNow! and DCNET") and the DCNET header logo (the network was known only from the add-on: the logo is "Now!" while online).
+The serial cable and modem dial to a DreamPi are a connection way, not the add-on, and stay. Rows above that mention the add-on describe what was.

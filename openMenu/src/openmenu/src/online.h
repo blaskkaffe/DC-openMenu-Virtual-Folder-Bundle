@@ -1,5 +1,5 @@
-/* online: the main branch's online features (Dreamcast Now!, DCNET through the DreamPi add-on, the VMU status screen,
- * Online Time Sync), run from the BIOS-style front end. The engine (backend/dcnow_*, dreampi_link, online_games,
+/* online: the main branch's online features (Dreamcast Now! and DCNET, the VMU status screen,
+ * Online Time Sync), run from the BIOS-style front end. The engine (backend/dcnow_*, dcnet_parse, online_games,
  * online_time_sync) is the main branch's, so the saved settings and the connection behave the same. */
 #pragma once
 
@@ -7,9 +7,6 @@
  * connection engine. Called at boot and after any of them changed. */
 void online_apply_prefs(void);
 
-struct gd_item;
-/* Before a game starts: switches the DreamPi to the game's network (netprefs.h) when it differs. */
-void online_select_network_for(const struct gd_item* g);
 
 /* At boot, after the settings are loaded: Auto-Connect starts dialing on its own thread, as the main branch does. */
 void online_boot(void);

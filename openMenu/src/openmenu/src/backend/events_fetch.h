@@ -1,9 +1,8 @@
 /*
  * File: events_fetch.h
  * Project: openmenu
- * Upcoming DC99 community events for the Internet screen, read on a worker thread: from the DreamPi add-on's events
- * module (GET /api/events/upcoming) when the console is online through it, otherwise from the dc99.net community
- * page itself (the JSON list in it, plain HTTP).
+ * Upcoming DC99 community events for the Internet screen, read on a worker thread from the dc99.net community page itself (the JSON
+ * list in it, plain HTTP).
  */
 #pragma once
 
@@ -27,7 +26,6 @@ typedef struct events_status {
     events_state_t state;
     int generation;  /* grows by one for every list that arrived */
     int count;
-    int from_pi;     /* the list came from the DreamPi add-on (else from dc99.net) */
     char line[48];   /* what is going on, or why it failed */
 } events_status_t;
 

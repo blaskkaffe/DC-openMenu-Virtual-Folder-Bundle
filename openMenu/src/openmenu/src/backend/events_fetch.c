@@ -20,14 +20,11 @@
 #include <sys/socket.h>
 
 #include "backend/dcnow_net.h"
-#include "backend/dreampi_link.h"
 #include "backend/events_fetch.h"
 
 #define DC99_HOST       "dc99.net"
 #define DC99_PATH       "/community/"
-#define PI_PATH         "/api/events/upcoming?limit=40"
 #define BODY_MAX        (160 * 1024) /* the community page is about 84 KB */
-#define PI_TIMEOUT_MS   15000
 #define WEB_TIMEOUT_MS  30000
 
 static mutex_t events_mutex = MUTEX_INITIALIZER;
@@ -309,7 +306,7 @@ by_time(const void* a, const void* b) {
 
 /* Reads the array that starts at the first '[' after `marker`. Returns how many events it kept, -1 if there is none. */
 static int
-parse_events(const char* text, const char* marker, int from_pi) {
+parse_events(const char* text, const char* marker) {
     const char* p = strstr(text, marker);
     char today[16];
     time_t now = time(NULL);
@@ -323,7 +320,7 @@ parse_events(const char* text, const char* marker, int from_pi) {
     p = json_ws(p + 1);
     while (*p != ']' && *p != '\0') {
         raw_event e;
-        p = json_event(p, &e, from_pi ? "start_time" : "date", from_pi ? "source_label" : "source");
+        p = json_event(p, &e, "date", "source");
         if (p == NULL) {
             break; /* cut short: keep what was read */
         }
@@ -337,14 +334,8 @@ parse_events(const char* text, const char* marker, int from_pi) {
         event_item_t it;
         memset(&it, 0, sizeof(it));
         snprintf(it.title, sizeof(it.title), "%s", e.title);
-        if (from_pi) {
-            /* the add-on gives the time in the Pi's own zone, with the offset: shown as it is */
-            snprintf(it.source, sizeof(it.source), "%s", e.source);
-            if (!format_when(e.time, "", &it)) {
-                continue;
-            }
-        } else {
-            /* dc99.net: no time zone; US Eastern, UK time for an event with "UK" in its title (as the add-on reads it) */
+        {
+            /* dc99.net: no time zone; US Eastern, UK time for an event with "UK" in its title */
             const char* uk = strstr(e.title, "UK");
             int is_uk = uk != NULL && (uk == e.title || !isalnum((unsigned char)uk[-1])) && !isalnum((unsigned char)uk[2]);
             snprintf(it.source, sizeof(it.source), "%s",
@@ -370,44 +361,27 @@ parse_events(const char* text, const char* marker, int from_pi) {
 }
 
 static void
-publish(int count, int from_pi) {
+publish(int count) {
     mutex_lock(&events_mutex);
     memcpy(items, parsed, sizeof(parsed[0]) * (size_t)count);
     status.count = count;
-    status.from_pi = from_pi;
     status.generation++;
     status.state = EVENTS_DONE;
-    snprintf(status.line, sizeof(status.line), "%s", from_pi ? "From the DreamPi" : "From dc99.net");
+    snprintf(status.line, sizeof(status.line), "From dc99.net");
     mutex_unlock(&events_mutex);
 }
 
 static void
 run_fetch(void) {
     struct sockaddr_in addr;
-    char host[20];
     size_t used;
     int code, count;
 
-    /* the DreamPi add-on first (online through the modem and the add-on answers) */
-    if (dreampi_link_pi(&addr, host, sizeof(host), &abort_requested)) {
-        set_line(EVENTS_RUNNING, "Asking the DreamPi...");
-        code = http_get(&addr, host, PI_PATH, PI_TIMEOUT_MS, &used);
-        if (code == -2) {
-            set_line(EVENTS_IDLE, "");
-            return;
-        }
-        const char* json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
-        count = json ? parse_events(json + 4, "\"events\"", 1) : -1;
-        if (count >= 0) {
-            publish(count, 1);
-            return;
-        }
-    }
-    if (abort_requested) {
+        if (abort_requested) {
         set_line(EVENTS_IDLE, "");
         return;
     }
-    /* then the community page itself */
+    /* the community page */
     set_line(EVENTS_RUNNING, "Reading dc99.net...");
     if (!dcnow_resolve(DC99_HOST, 80, &addr)) {
         set_line(EVENTS_FAILED, "dc99.net could not be found");
@@ -422,12 +396,12 @@ run_fetch(void) {
         set_line(EVENTS_FAILED, code >= 300 && code < 400 ? "dc99.net wants https (no events)" : "dc99.net did not answer");
         return;
     }
-    count = parse_events(body, "const EVENTS", 0);
+    count = parse_events(body, "const EVENTS");
     if (count < 0) {
         set_line(EVENTS_FAILED, "No event list on dc99.net");
         return;
     }
-    publish(count, 0);
+    publish(count);
 }
 
 static void*
