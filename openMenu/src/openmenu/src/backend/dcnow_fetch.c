@@ -21,11 +21,15 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "backend/dcnet_parse.h"
 #include "backend/dcnow_fetch.h"
 #include "backend/dreampi_link.h"
 
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
+#define DCNET_HOST            "dcnet.flyca.st"
+#define DCNET_USERS_PATH      "/status/api/users"
+#define DCNET_PLAYERS_PATH    "/status/api/players"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
@@ -492,8 +496,57 @@ fetch_from_pi(void) {
     return 1;
 }
 
+/* DCNET, from its own status endpoints (plain HTTP, the console has no TLS): who is connected (/users), and which of them play what (/players).
+ * Added to the list DCNow! just gave (parsed[0..count)); the DCNow! feed is the one that must work, so everything here is best effort: a
+ * failure leaves the list as it is and adds a line to the status. Returns the new count; *total grows by the DCNET players. */
+static int
+append_dcnet(int count, int* total) {
+    struct sockaddr_in addr;
+    size_t used = 0;
+    int code;
+    int added = 0;
+    int t = 0;
+    const char* json;
+
+    if (!dcnow_resolve(DCNET_HOST, 80, &addr)) {
+        fetch_push("DCNET: host not found, skipped.", 0);
+        return count;
+    }
+    fetch_push("Fetching DCNET players...", 0);
+    code = http_get(&addr, DCNET_HOST, DCNET_USERS_PATH, DCNOW_STEP_TIMEOUT_MS, &used);
+    if (code == -2) {
+        return count;
+    }
+    if (code == 301 || code == 302 || code == 307 || code == 308) {
+        fetch_push("DCNET: the server wants HTTPS, skipped.", 0);
+        return count;
+    }
+    json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
+    if (json == NULL || dcnet_parse_users(json + 4, parsed, &count, DCNOW_PLAYER_MAX, &t) < 0) {
+        fetch_push("DCNET: no answer, skipped.", 0);
+        return count;
+    }
+    added = t;
+    code = abort_requested ? -2 : http_get(&addr, DCNET_HOST, DCNET_PLAYERS_PATH, DCNOW_STEP_TIMEOUT_MS, &used);
+    json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
+    if (json != NULL) {
+        t = 0;
+        int n = dcnet_apply_players(json + 4, parsed, count, DCNOW_PLAYER_MAX, &t);
+        if (n >= 0) {
+            count = n;
+            added += t;
+        }
+    }
+    *total += added;
+    parsed_dcnet = added;
+    if (added > 0) {
+        from_pi_list = 1; /* the list now holds more than one network: the window shows the network column */
+    }
+    return count;
+}
+
 static void
-run_fetch(void) {
+run_direct(void) {
     struct sockaddr_in addr;
     char request[160];
     char text[DCNOW_STATUS_WIDTH];
@@ -510,13 +563,6 @@ run_fetch(void) {
 
     fetch_reset(DCNOW_FETCH_RUNNING);
     from_pi_list = 0;
-    rc = fetch_from_pi();
-    if (rc != 0) {
-        if (rc == 2 && abort_requested) {
-            fetch_reset(DCNOW_FETCH_IDLE);
-        }
-        return;
-    }
     fetch_push("Fetching player list from " DCNOW_HOST "...", 0);
 
     fetch_push("Resolving host...", 0);
@@ -643,7 +689,31 @@ run_fetch(void) {
         fetch_fail("The server answer could not be read.");
         return;
     }
+    if (!abort_requested) {
+        count = append_dcnet(count, &total);
+    }
     publish(count, total);
+}
+
+/* The status endpoints are asked directly (DCNow! and DCNET). The DreamPi add-on's merged list is only the fallback, when they cannot be reached. */
+static void
+run_fetch(void) {
+    dcnow_fetch_status_t failed;
+
+    run_direct();
+    mutex_lock(&fetch_mutex);
+    failed = fetch;
+    mutex_unlock(&fetch_mutex);
+    if (failed.state != DCNOW_FETCH_FAILED || abort_requested) {
+        return;
+    }
+    from_pi_list = 0;
+    if (fetch_from_pi() == 1) {
+        return; /* published */
+    }
+    mutex_lock(&fetch_mutex);
+    fetch = failed; /* the add-on had nothing either: the direct failure stays what the window shows */
+    mutex_unlock(&fetch_mutex);
 }
 
 static void*

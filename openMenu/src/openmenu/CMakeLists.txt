@@ -46,6 +46,7 @@ set(OPENMENU_SOURCES
         src/backend/w5500.c
         src/backend/w5500_net.c
         src/backend/net_test.c
+        src/backend/dcnet_parse.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
         src/backend/events_fetch.c
