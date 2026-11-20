@@ -83,10 +83,10 @@ static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Se
 static void
 set_icon_labels(void) {
     for (int i = 0; i < BMENU_ICONS; i++) {
-        gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF ? "Internet" : icon_names[i]);
+        gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && (1 /* PREVIEW */ || sf_dcnow[0] != DCNOW_OFF) ? "Internet" : icon_names[i]);
     }
     /* and the icon is the globe (it turns while selected), not the music note */
-    if (sf_dcnow[0] != DCNOW_OFF) {
+    if ((1 /* PREVIEW */ || sf_dcnow[0] != DCNOW_OFF)) {
         bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.115f, -11.75f, -13.96f, 40.0f); /* 40 units back: behind the caption's pill */
     } else {
         bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f, 0.0f);
@@ -1567,7 +1567,7 @@ handle_main(button_t b) {
                 page.pal = console_is_pal();
                 settings_popup = 0;
                 screen = SCREEN_SETTINGS;
-            } else if (menu.selected == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF) {
+            } else if (menu.selected == ICON_MUSIC && (1 /* PREVIEW */ || sf_dcnow[0] != DCNOW_OFF)) {
                 sound_sfx(BAUDIO_SFX_ENTER); /* online features on: the icon is Internet */
                 uin_open(&menu, console_is_pal());
                 screen = SCREEN_INTERNET;
