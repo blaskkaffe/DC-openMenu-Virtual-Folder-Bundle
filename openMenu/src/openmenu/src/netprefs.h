@@ -18,7 +18,7 @@
 #define NP_STAR_EVENTS 10
 #define NP_DIAL_LEN 16
 
-/* The networks a game or the global setting can name (the DreamPi add-on's numbering). 0 as a game's value: none saved, use the global one. */
+/* The networks a game or the global setting can name (kept for the saved file; nothing switches networks any more). 0 as a game's value: none saved, use the global one. */
 enum { NP_NET_NONE = 0, NP_NET_DCNOW = 1, NP_NET_DCNET = 2 };
 /* How an adapter gets its address */
 enum { NP_ISP_CONSOLE = 0, NP_ISP_DHCP = 1, NP_ISP_STATIC = 2 };

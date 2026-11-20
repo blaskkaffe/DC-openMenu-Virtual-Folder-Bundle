@@ -14,7 +14,6 @@
 #include <backend/gd_list.h>
 #include "backend/dcnow_net.h"
 #include "backend/dcnow_vmu.h"
-#include "backend/dreampi_link.h"
 #include "backend/online_games.h"
 #include "backend/online_time_sync.h"
 #include <backend/gd_item.h>
@@ -39,37 +38,6 @@ online_apply_prefs(void) {
     dcnow_net_set_interface(np_iface());
     dcnow_net_set_adapter_mode(isp->mode, &fixed);
     dcnow_net_set_dial(isp->number, isp->login, isp->password);
-}
-
-/* The network of a game about to start: when the console is online through a DreamPi with the add-on and that has another network selected than the game
- * wants (its own saved one, else the preferred one), ask the Pi to switch and wait a moment for the answer. With no add-on there is nothing to switch:
- * the game starts on whatever the link is. */
-void
-online_select_network_for(const gd_item* g) {
-    dcnow_status_t c;
-    if (!g || sf_dcnow[0] == DCNOW_OFF) {
-        return;
-    }
-    dcnow_conn_poll(&c);
-    if (c.state != DCNOW_CONN_ONLINE) {
-        return;
-    }
-    int want = np_game_net(gd_item_recent_hash(g));
-    int have = dreampi_link_network(); /* 0: not known */
-    if (have == 0 || have == want) {
-        return;
-    }
-    dreampi_link_select_clear();
-    if (dreampi_link_select_network(want) != 0) {
-        return;
-    }
-    for (int i = 0; i < 30; i++) { /* up to 1.5 s: 0 queued, 1 sending */
-        int r = dreampi_link_select_result();
-        if (r >= 2) {
-            break;
-        }
-        thd_sleep(50);
-    }
 }
 
 void
@@ -116,7 +84,7 @@ vmu_lcd_check_insertions(void) {
 }
 
 /* The top bar shows the player count, so the list is read once a link is up even when nobody has opened the Internet screen. The
- * online games code keeps it fresh when it can; with the DreamPi add-on it does not use the list, so this keeps it fresh then. */
+ * online games code keeps it fresh (Auto-Refresh). */
 static void
 header_fetch_tick(void) {
     static uint64_t last_start;
@@ -138,12 +106,6 @@ header_fetch_tick(void) {
     if (!fetch.list_valid && fetch.state == DCNOW_FETCH_IDLE) {
         last_start = timer_ms_gettime64();
         dcnow_fetch_start(); /* once per link: a failure leaves the state FAILED, not IDLE, until the Internet screen retries */
-    } else if (fetch.list_valid && dreampi_link_playing_known()) {
-        int seconds = dcnow_refresh_seconds(sf_dcnow_refresh[0]);
-        if (seconds > 0 && timer_ms_gettime64() - last_start >= (uint64_t)seconds * 1000u) {
-            last_start = timer_ms_gettime64();
-            dcnow_fetch_start();
-        }
     }
 }
 
@@ -168,7 +130,6 @@ online_header_get(online_header* out) {
         default: break;
     }
     if (out->state == 2) {
-        out->network = dreampi_link_network(); /* 0 without the DreamPi add-on: plain Dreamcast Now! */
         dcnow_fetch_poll(&fetch);
         if (fetch.list_valid) {
             out->players = fetch.online_total;
@@ -309,8 +270,7 @@ online_tick(int menu_idle) {
     vmu_lcd_check_insertions();
     header_fetch_tick();
     dcnow_conn_tick();
-    dreampi_link_ui_idle(menu_idle);
-    dreampi_link_tick();
+    (void)menu_idle;
     online_games_tick();
     dcnow_vmu_tick();
     online_time_sync_tick();

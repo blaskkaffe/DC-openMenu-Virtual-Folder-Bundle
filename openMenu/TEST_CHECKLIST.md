@@ -144,9 +144,9 @@ Drops to 30fps
 - [ ] Serial: X hangs up, the 5 s cooldown runs, X connects again; pulling the cable while online shows "Connection lost." within a few seconds
 - [ ] Serial: launch a game while online (hangs up first); Alien Front Online then dials over serial by itself (needs the console's ISP settings set to the serial port)
 - [ ] Nothing on the serial port and no modem: "No modem, network adapter, or DreamPi on the serial port"
-- [ ] Events: upcoming DC99 events from the DreamPi add-on; without the add-on from dc99.net (only if it answers plain http)
+- [ ] Events: upcoming DC99 events read from dc99.net (only if it answers plain HTTP; else the page says it wants https).
 - [ ] Layout (written without a console build): five buttons Online / Play / Events / News / Settings fit the CD buttons; Online shows Players left and Games right, Y switches the yellow heading, rows and arrows scroll, footer shows the selected player's game; Play lists the browsers + a dim catalogue row; News shows its placeholder; Settings rows: A on Connection connects/hangs up, the others say coming soon
-- [ ] Players: DCNow! and DCNET players (from the DreamPi add-on, else dreamcast.online), refresh as set
+- [ ] Players: DCNow! and DCNET players read directly (dreamcast.online, dcnet.flyca.st), refresh as set.
 - [ ] Games: games being played with player counts, "*" for the ones on the SD card; A on one of those starts it (through the Serial VMU restore when that is on)
 - [ ] Play: browser discs on the card start with A; the catalogue row says "coming soon"
 - [ ] VMU online status, Online time sync, phone page launch (DreamPi openMenu link) work as on the main branch
@@ -201,7 +201,7 @@ I
 - [ ] Settings > Network test: ways found when idle; address, DNS and server times while online
 - [ ] ISP settings: fixed IP/mask/gateway/DNS reach a BBA, DHCP preset, custom dial number/login/password reach a modem or serial dial; Reset goes back
 - [ ] Y stars a player / game / event; the star shows, survives a restart (memory card and SD copy), a notice appears over the main menu when it is on; the file with 4 blocks fits the card
-- [ ] X popup of a game: Network (DCNow!/DCNet/preferred); on a DreamPi with the add-on the game starts on that network
+- [ ] X popup of a game: Start game, Disc, Emulator, Favorite, Game information (no Network row any more: the DreamPi add-on integration was removed).
 - [ ] Events: LIVE for the first three hours after the start, then gone; the time zone of the sources against the console clock
 
 ### Performance test (Settings > Other > Performance test)
@@ -218,7 +218,6 @@ I
 - [ ] A crash prints KOS's "Unhandled exception: PC ..." register dump and stack trace
 
 ## Player list sources (direct DCNow! + DCNET)
-- [ ] Online page lists DCNow! players (dreamcast.online) with no DreamPi add-on on the network.
+- [ ] Online page lists DCNow! players (dreamcast.online) (no DreamPi add-on is used any more).
 - [ ] DCNET players show with network DCNET: does `dcnet.flyca.st` answer plain HTTP? (If it redirects to HTTPS the status line says "the server wants HTTPS, skipped" and only DCNow! shows: tell me.)
 - [ ] With DCNET players in a game, the game title shows (needs `/players`, whose fields were never seen).
-- [ ] With the DreamPi add-on and no direct route, the add-on's list is used as the fallback.

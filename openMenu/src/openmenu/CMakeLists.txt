@@ -52,7 +52,6 @@ set(OPENMENU_SOURCES
         src/backend/events_fetch.c
         src/backend/news_fetch.c
         src/backend/news_parse.c
-        src/backend/dreampi_link.c
         src/backend/online_games.c
         src/backend/online_time_sync.c
         src/bench.c

@@ -3,7 +3,7 @@
  * Project: openmenu
  * The Internet screen's network test: which interfaces answer, and (when online) the address, the DNS lookup and the server round trip, on a worker
  * thread. Every line says where it was measured: local to this console, or against a server (then it only means something while online). Port
- * forwarding and anything that needs an outside service or a DreamPi add-on is listed as not tested, never guessed.
+ * forwarding and anything that needs an outside service is listed as not tested, never guessed.
  */
 #pragma once
 

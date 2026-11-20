@@ -1604,7 +1604,6 @@ svmu_active(void) {
  * here and only returned because the launch failed. */
 static int
 start_game(const gd_item* g) {
-    online_select_network_for(g); /* the game's own network (or the preferred one) when the DreamPi add-on offers both */
     if (svmu_applies(g)) {
         svmu_item = g;
         svmu_row = 0;
@@ -1775,7 +1774,7 @@ open_recent(void) {
 
 /* ---- Game options popup (X on a game, also from the case viewer): BIOS window with what can be chosen before a game
  * starts. Rows that are planned but not there yet are shown greyed and say so, as the brief asks. */
-enum { OPT_START, OPT_DISC, OPT_EMU, OPT_FAVORITE, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
+enum { OPT_START, OPT_DISC, OPT_EMU, OPT_FAVORITE, OPT_INFO, OPT_CHEATS };
 #define OPT_MAX 7
 static int opt_ids[OPT_MAX];
 static int opt_count;
@@ -1793,7 +1792,6 @@ options_build(void) {
     }
     opt_ids[opt_count++] = OPT_FAVORITE;
     opt_ids[opt_count++] = OPT_INFO;
-    opt_ids[opt_count++] = OPT_NETWORK;
     opt_ids[opt_count++] = OPT_CHEATS;
     if (options_row >= opt_count) {
         options_row = opt_count - 1;
@@ -1811,14 +1809,6 @@ options_name(int index) {
         case OPT_EMU: return launch_psx_emulator() ? "Emulator  < Bloom >" : "Emulator  < Bleem! >";
         case OPT_FAVORITE: return favorites_is(uil_item(uil_cursor())) ? "Favorite  < On >" : "Favorite  < Off >";
         case OPT_INFO: return "Game information";
-        case OPT_NETWORK: {
-            static char net[40];
-            const gd_item* it = uil_item(uil_cursor());
-            int saved = it ? np_game_net_saved(gd_item_recent_hash(it)) : NP_NET_NONE;
-            int shown = saved != NP_NET_NONE ? saved : np_net();
-            snprintf(net, sizeof(net), saved != NP_NET_NONE ? "Network  < %s >" : "Network  < %s, preferred >", shown == NP_NET_DCNET ? "DCNet" : "DCNow!");
-            return net;
-        }
         case OPT_CHEATS: return "Cheats (coming soon)";
         default: return "?";
     }
@@ -1883,24 +1873,6 @@ toggle_favorite(void) {
     }
 }
 
-/* The game's own network: DCNow! -> DCNet -> the preferred one (nothing saved for it). Used when the game is started online. */
-static void
-cycle_game_network(void) {
-    const gd_item* it = uil_item(uil_cursor());
-    if (!it) {
-        return;
-    }
-    unsigned int h = gd_item_recent_hash(it);
-    int saved = np_game_net_saved(h);
-    int next = saved == NP_NET_NONE ? NP_NET_DCNOW : saved == NP_NET_DCNOW ? NP_NET_DCNET : NP_NET_NONE;
-    if (np_set_game_net(h, next) < 0) {
-        sound_sfx(BAUDIO_SFX_ERROR);
-        show_notice("Too many games have their own network");
-        return;
-    }
-    sound_sfx(BAUDIO_SFX_CURSOR);
-}
-
 static void
 handle_options(button_t b) {
     options_build();
@@ -1928,8 +1900,6 @@ handle_options(button_t b) {
                 sound_sfx(BAUDIO_SFX_CURSOR);
             } else if (id == OPT_FAVORITE) {
                 toggle_favorite();
-            } else if (id == OPT_NETWORK) {
-                cycle_game_network();
             }
             break;
         case BTN_A:
@@ -1942,7 +1912,6 @@ handle_options(button_t b) {
                 case OPT_DISC:
                 case OPT_EMU: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
                 case OPT_FAVORITE: toggle_favorite(); break;
-                case OPT_NETWORK: cycle_game_network(); break;
                 case OPT_INFO:
                     options_open = 0;
                     if (!viewer_open) {
