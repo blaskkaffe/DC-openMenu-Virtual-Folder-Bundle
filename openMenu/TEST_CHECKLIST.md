@@ -216,3 +216,9 @@ I
 - [ ] Overlay on (X), B opens the debug log page and the same numbers arrive as "OM log" lines
 - [ ] On that page X sends the flash ROM (about 30 s, percentage shown); the script saves flash_<date>.bin with CRC OK
 - [ ] A crash prints KOS's "Unhandled exception: PC ..." register dump and stack trace
+
+## Player list sources (direct DCNow! + DCNET)
+- [ ] Online page lists DCNow! players (dreamcast.online) with no DreamPi add-on on the network.
+- [ ] DCNET players show with network DCNET: does `dcnet.flyca.st` answer plain HTTP? (If it redirects to HTTPS the status line says "the server wants HTTPS, skipped" and only DCNow! shows: tell me.)
+- [ ] With DCNET players in a game, the game title shows (needs `/players`, whose fields were never seen).
+- [ ] With the DreamPi add-on and no direct route, the add-on's list is used as the fallback.
