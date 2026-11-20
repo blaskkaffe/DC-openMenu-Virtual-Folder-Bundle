@@ -7,12 +7,19 @@ on:
       - 'openMenu/**'
       - '.github/workflows/build-newopenmenu.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Also push 1ST_READ.BIN and the ELF to the ci-binaries branch (for emulator tests; no BIOS data in them)'
+        type: boolean
+        default: false
   # Also run as the first job of "Build Card Manager", which packs this 1ST_READ.BIN into the Card Manager
   workflow_call:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # only used by the optional ci-binaries publish step
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -120,3 +127,15 @@ jobs:
           name: openmenu.elf
           path: openMenu/cmake-build-dc-release/bin/*.elf
           if-no-files-found: warn
+
+      - name: Publish the binaries to the ci-binaries branch (manual runs with publish on)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: |
+          mkdir /tmp/pub
+          cp openMenu/cmake-build-dc-release/bin/1ST_READ.BIN /tmp/pub/
+          cp openMenu/cmake-build-dc-release/bin/*.elf /tmp/pub/ || true
+          cd /tmp/pub
+          git init -q -b ci-binaries
+          git -c user.name=ci -c user.email=ci@example.invalid add -A
+          git -c user.name=ci -c user.email=ci@example.invalid commit -q -m "Binaries of ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-binaries:ci-binaries
