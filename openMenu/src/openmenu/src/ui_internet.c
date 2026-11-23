@@ -2168,7 +2168,7 @@ draw_keyboard(const char* title) {
             c = key.col + key.span;
         }
     }
-    gfx_text_scaled("A: key  X: space  Y: del  L/R: cursor  START: done  B: cancel", KB_X + 20.0f, KB_Y + KB_H - 32.0f, TEXT_Z, DIM, 0.75f); /* one row */
+    gfx_text("A key  X space  Y del  START done  B cancel", KB_X + 20.0f, KB_Y + KB_H - 34.0f, TEXT_Z, DIM, 1); /* one row (a text is cut at about 44 characters) */
 }
 
 /* The editor over the panel: the value, the cursor, the keys. */
