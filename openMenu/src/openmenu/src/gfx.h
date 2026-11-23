@@ -119,3 +119,6 @@ void gfx_image(int id, float x, float y, float w, float h, float z);
 /* The same picture multiplied by a colour (a grey picture takes the colour); 1 when `id` is a picture that is in video memory. */
 void gfx_image_tint(int id, float x, float y, float w, float h, float z, uint32_t argb);
 int gfx_dyn_valid(int id);
+/* Shows picture `dyn` on texture 0 of every model that uses texlist `texlist` (the pictures on the CD buttons), so it sits in the model and moves
+ * with it. dyn < 0 takes the override away. */
+void gfx_decal_override(int texlist, int dyn);

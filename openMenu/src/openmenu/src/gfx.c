@@ -777,6 +777,13 @@ gfx_set_logo_mode(int mode) {
 }
 
 
+#define DYN_MAX 64
+static rom_tex dyn_tex[DYN_MAX];
+static struct {
+    int texlist, dyn;
+} decal_ovr[16];
+static int decal_n;
+
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
     if (memo_ok && memo_ref.kind == ref.kind && memo_ref.a == ref.a && memo_ref.b == ref.b) {
@@ -791,6 +798,13 @@ get_rom_texture(bscene_texref ref) {
 
 static rom_tex*
 get_rom_texture_uncached(bscene_texref ref) {
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.b == 0) {
+        for (int i = 0; i < decal_n; i++) {
+            if (decal_ovr[i].texlist == ref.a && decal_ovr[i].dyn >= 0 && decal_ovr[i].dyn < DYN_MAX && dyn_tex[decal_ovr[i].dyn].valid) {
+                return &dyn_tex[decal_ovr[i].dyn];
+            }
+        }
+    }
     /* built-in models: slot 0 shows the box art of the bound game, everything else is plain white */
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
         if (ref.b == BMODEL_TEX_FRONT) {
@@ -1517,8 +1531,23 @@ gfx_rect(float x, float y, float w, float h, float z, uint32_t argb) {
 
 /* ---- Small pictures made at run time (file icons of the memory cards) ----------------------------- */
 
-#define DYN_MAX 64
-static rom_tex dyn_tex[DYN_MAX];
+void
+gfx_decal_override(int texlist, int dyn) {
+    for (int i = 0; i < decal_n; i++) {
+        if (decal_ovr[i].texlist == texlist) {
+            if (decal_ovr[i].dyn != dyn) {
+                decal_ovr[i].dyn = dyn;
+                memo_ok = 0; /* the remembered picture of that texlist is no longer the one to show */
+            }
+            return;
+        }
+    }
+    if (decal_n < 16) {
+        decal_ovr[decal_n].texlist = texlist;
+        decal_ovr[decal_n++].dyn = dyn;
+        memo_ok = 0;
+    }
+}
 
 int
 gfx_dyn_create(const unsigned short* argb4444, int w, int h) {
