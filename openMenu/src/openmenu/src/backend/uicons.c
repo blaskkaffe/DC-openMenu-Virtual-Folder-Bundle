@@ -124,18 +124,38 @@ sd_pad(float x, float y) {
     return cut(d, h);
 }
 
+/* The alarm clock of the main menu's Settings icon, traced from a render of it: the body with its face cut out and the two hands left in,
+ * the two bells on top and the knob at the side. Picture coordinates of the render (292,330 is the middle, 620 px the width of the square). */
+#define CX(px) (((px) - 292.0f) / 620.0f + 0.5f)
+#define CY(py) (((py) - 330.0f) / 620.0f + 0.5f)
+#define CL(l) ((l) / 620.0f)
+
 static float
-sd_calendar(float x, float y) {
-    float d = sd_box(x, y, 0.5f, 0.56f, 0.43f, 0.36f, 0.16f);
-    d = u(d, sd_seg(x, y, 0.29f, 0.12f, 0.29f, 0.3f, 0.07f)); /* the binder rings, fat */
-    d = u(d, sd_seg(x, y, 0.71f, 0.12f, 0.71f, 0.3f, 0.07f));
-    float h = sd_box(x, y, 0.5f, 0.4f, 0.34f, 0.028f, 0.014f); /* the header's line */
-    for (int r = 0; r < 2; r++) {
-        for (int c = 0; c < 2; c++) {
-            h = u(h, sd_box(x, y, 0.35f + 0.3f * (float)c, 0.56f + 0.2f * (float)r, 0.1f, 0.07f, 0.04f)); /* four big days */
-        }
+poly_img(float x, float y, const float (*pts)[2], int n) {
+    float v[16 * 2];
+    for (int i = 0; i < n; i++) {
+        v[i * 2] = CX(pts[i][0]);
+        v[i * 2 + 1] = CY(pts[i][1]);
     }
-    return cut(d, h);
+    return sd_poly(x, y, v, n);
+}
+
+static float
+sd_clock(float x, float y) {
+    static const float bell_l[][2] = {{38, 232}, {58, 150}, {130, 84}, {212, 62}, {252, 92}, {242, 128}, {150, 152}, {92, 200}, {58, 238}};
+    static const float bell_r[][2] = {{547, 228}, {527, 150}, {455, 84}, {373, 60}, {330, 72}, {336, 112}, {432, 152}, {497, 200}, {532, 234}};
+    static const float hand_a[][2] = {{190, 215}, {238, 186}, {338, 308}, {296, 354}}; /* the long hand, up to the left */
+    static const float hand_b[][2] = {{318, 298}, {402, 224}, {444, 270}, {346, 338}}; /* the short hand, up to the right */
+    float body = sd_circle(x, y, CX(290), CY(355), CL(218)) - 0.012f;
+    float gap = sd_circle(x, y, CX(290), CY(355), CL(236)); /* a thin gap between the bells and the body */
+    float d = body;
+    d = u(d, cut(poly_img(x, y, bell_l, 9) - 0.016f, gap));
+    d = u(d, cut(poly_img(x, y, bell_r, 9) - 0.016f, gap));
+    d = u(d, sd_box(x, y, CX(548), CY(345), CL(30), CL(44), CL(8)));
+    d = cut(d, sd_circle(x, y, CX(292), CY(345), CL(148))); /* the face */
+    d = u(d, poly_img(x, y, hand_a, 4) - 0.02f);
+    d = u(d, poly_img(x, y, hand_b, 4) - 0.02f);
+    return d;
 }
 
 static float
@@ -164,14 +184,14 @@ sd_wrench(float x, float y) {
 static float
 shape(int id, float x, float y) {
     /* a little crooked and wobbly, as the main menu's models are */
-    static const float tilt[UICON_COUNT] = {-2.0f, 0.0f, 3.0f, -1.5f, 0.0f};
+    static const float tilt[UICON_COUNT] = {-8.0f, 0.0f, 0.0f, -1.5f, 0.0f};
     rot(&x, &y, tilt[id]);
     x += 0.004f * sinf(9.0f * y + (float)id);
     y += 0.004f * sinf(8.0f * x + (float)id * 2.0f);
     switch (id) {
         case UICON_ONLINE: return sd_globe(x, y);
         case UICON_PLAY: return sd_pad(x, y);
-        case UICON_EVENTS: return sd_calendar(x, y);
+        case UICON_EVENTS: return sd_clock(x, y);
         case UICON_CHAT: return sd_chat(x, y);
         default: return sd_wrench(x, y);
     }
