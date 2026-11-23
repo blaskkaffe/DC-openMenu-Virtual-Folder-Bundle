@@ -1667,6 +1667,9 @@ fetch_note(char* out, size_t size) {
     return "Loading...";
 }
 
+static int lay_rows = ROWS;
+static float lay_row_h = ROW_H;
+
 /* One row's highlight bar over `w` pixels from x */
 static void
 row_bar(float x, float w, float y) {
@@ -1677,8 +1680,6 @@ row_bar(float x, float w, float y) {
 
 /* Where the lists draw: in the panel, or in a popup (draw_popup_frame moves them) */
 static float lay_x = PANE_X + PAD, lay_head = HEAD_Y, lay_list = LIST_Y, lay_right = PANE_X + PANE_W - PAD, lay_foot = PANE_Y + PANE_H - 34.0f;
-static int lay_rows = ROWS;
-static float lay_row_h = ROW_H;
 #define LAY_W (lay_right - lay_x - 12.0f)
 
 /* The Online page, players: who is online, the game they are in, the network. A starred player has a star. */
