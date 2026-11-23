@@ -1696,15 +1696,23 @@ uin_sync(void) {
         lb_layout();
     }
     if (lb_open >= 0) { /* the board of the sample: Vanishing Point's rankings */
-        static const char* const t[] = {"Top 100 Global Rankers", "Place  Racer  Points  Trophies  Rank  Era", "1  TruenoGT  1886  5  Expert  live",
-                                        "2  Sqigley  1866  9  Expert  live", "3  BlueShinobu  1788  2  Expert  live", "4  Vill22  1438  5  Expert  live",
-                                        "5  Tarnish  1262  0  Expert  live", "6  GRI@NT  1158  2  Expert  live", "7  Shuouma  1158  0  Expert  live",
-                                        "8  comic  1050  0  Expert  live", "9  Hynerich  1030  1  Expert  live", "10  Cobra!  968  0  Novice  live"};
-        nlb = 12;
+        static const char* const t[][6] = {{"Top 100 Global Rankers"}, {"Place", "Racer", "Points", "Trophies", "Rank", "Era"},
+                                           {"1", "TruenoGT", "1886", "5", "Expert", "live"}, {"2", "Sqigley", "1866", "9", "Expert", "live"},
+                                           {"3", "BlueShinobu", "1788", "2", "Expert", "live"}, {"4", "Vill22", "1438", "5", "Expert", "live"},
+                                           {"5", "Tarnish", "1262", "0", "Expert", "live"}, {"6", "GRI@NT", "1158", "2", "Expert", "live"},
+                                           {"7", "Shuouma", "1158", "0", "Expert", "live"}, {"8", "comic", "1050", "0", "Expert", "live"},
+                                           {"9", "Hynerich", "1030", "1", "Expert", "live"}, {"10", "Cobra!", "968", "0", "Novice", "live"},
+                                           {"11", "scanline99", "862", "2", "Novice", "live"}, {"12", "Xiden", "834", "0", "Novice", "live"}};
+        nlb = 14;
         for (int i = 0; i < nlb; i++) {
-            snprintf(lb_lines[i].text, LB_LINE_LEN, "%s", t[i]);
+            memset(&lb_lines[i], 0, sizeof(lb_lines[i]));
+            for (int c = 0; c < 6 && t[i][c]; c++) {
+                snprintf(lb_lines[i].cell[c], LB_CELL_LEN, "%s", t[i][c]);
+                lb_lines[i].ncell = (unsigned char)(c + 1);
+            }
             lb_lines[i].kind = i == 0 ? LB_HEAD : i == 1 ? LB_COLS : LB_ROW;
         }
+        lb_layout();
         lbst.state = LB_DONE;
         lbst.source = lb_open;
     }
