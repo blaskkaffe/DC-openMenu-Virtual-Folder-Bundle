@@ -1630,6 +1630,7 @@ uin_sync(void) {
     }
     dcnow_conn_poll(&conn);
     preview_fill();
+    if (!np_chat_nick()[0]) np_set_chat("Dreamer", "preview"); /* PREVIEW ONLY: signed in, to render the chat line */
     int online = conn.state == DCNOW_CONN_ONLINE;
     if (online && !was_online) {
         start_fetches(); /* just connected */
