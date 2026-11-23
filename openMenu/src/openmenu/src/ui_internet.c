@@ -2156,7 +2156,7 @@ draw_keyboard(const char* title) {
             if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
-            key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 7.0f) / OVAL_W : 0.68f /* a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, sel || key.kind == OSK_OK);
+            key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 7.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, sel || key.kind == OSK_OK);
             switch (key.kind) {
                 case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
                 case OSK_SHIFT: kb_label("SHIFT", kx, kw, ky, kb.layer == OSK_UPPER ? YELLOW : col); break;
