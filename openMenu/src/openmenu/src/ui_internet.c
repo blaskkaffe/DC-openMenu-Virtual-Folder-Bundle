@@ -3001,15 +3001,12 @@ uin_draw(void) {
     menu->scene.parts = BSCENE_PART_ALL;
     for (int i = 0; i < menu->vm.count; i++) {
         const bvm_obj* o = &menu->vm.objs[menu->vm.order[i]];
-        menu->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES);
+        if (o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES)) {
+            /* the glyph is the button's own picture (texture 0), so it sits in the model and moves with it */
+            gfx_decal_override(o->texlist, page_icon((int)(o->id - ID_BUTTON(0)), (int)(o->id - ID_BUTTON(0)) == page));
+        }
         bscene_draw_object(&menu->scene, o, sink);
     }
     menu->scene.no_decals = 0;
     menu->scene.ovr_n = 0;
-    for (int i = 0; i < PAGES; i++) {
-        float x, y;
-        blist_button_center_px(i, &x, &y);
-        gfx_image(page_icon(i, i == page), x - (float)UICON_DRAW / 2.0f, y - (float)UICON_DRAW / 2.0f, (float)UICON_DRAW, (float)UICON_DRAW,
-                  TEXT_Z);
-    }
 }
