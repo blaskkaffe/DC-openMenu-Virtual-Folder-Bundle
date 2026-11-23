@@ -2350,6 +2350,44 @@ draw_next_event(void) {
     }
 }
 
+static int page_icon(int i, int lit);
+
+/* The four rows as the BIOS Settings screen has them: an icon, the name centred between it and a coloured pill, the value in the pill, and
+ * under the pills a box that says what the row is. */
+static void
+draw_online_menu(void) {
+    static const char* const help[ON_ROWS] = {"Who is online now and the game they are in", "The games that have players online now",
+                                              "The event that is on now or comes next", "Open a browser for a game's leaderboard"};
+    static const int icon[ON_ROWS] = {PAGE_CHAT, PAGE_PLAY, PAGE_EVENTS, PAGE_ONLINE};
+    const float pitch = 50.0f, pill_h = 42.0f;
+    const float pill_x = PANE_X + 232.0f, pill_w = PANE_W - 232.0f - 14.0f;
+    for (int r = 0; r < ON_ROWS; r++) {
+        char val[40];
+        int is_sel = r == sel[LIST_ONLINE];
+        float cy = PANE_Y + 34.0f + (float)r * pitch;
+        float icon_x = PANE_X + 18.0f, icon_end = icon_x + (float)UICON_DRAW;
+        gfx_image(page_icon(icon[r], is_sel), icon_x, cy - (float)UICON_DRAW / 2.0f, (float)UICON_DRAW, (float)UICON_DRAW, TEXT_Z);
+        gfx_rrect(pill_x, cy - pill_h / 2.0f, pill_w, pill_h, 6.0f, 0.45f, is_sel ? 0xD0B88C6Cu : 0x80884E9Eu);
+        float lw = (float)gfx_text_width(online_names[r]);
+        gfx_text(online_names[r], (icon_end + pill_x) / 2.0f - lw / 2.0f, cy - 12.0f, TEXT_Z, WHITE, 1);
+        online_value(r, val, sizeof(val));
+        text_cut(val, (int)((pill_w - 20.0f) / CHAR_W), pill_x + 10.0f, cy - 12.0f, WHITE);
+    }
+    float hy = PANE_Y + 34.0f + (float)ON_ROWS * pitch - 6.0f;
+    gfx_rrect(pill_x, hy, pill_w, PANE_Y + PANE_H - 14.0f - hy, 6.0f, 0.45f, 0x60405088u);
+    const char* t = help[sel[LIST_ONLINE]];
+    for (int i = 0; i < 2; i++) {
+        const char* st = NULL;
+        int len = 0;
+        if (i < wrap_lines(t, 24, -1, NULL, NULL)) {
+            wrap_lines(t, 24, i, &st, &len);
+            char line[32];
+            snprintf(line, sizeof(line), "%.*s", len < 30 ? len : 30, st);
+            gfx_text(line, pill_x + 10.0f, hy + 6.0f + (float)i * 24.0f, TEXT_Z, WHITE, 1);
+        }
+    }
+}
+
 static void
 draw_online(void) {
     switch (view[PAGE_ONLINE]) {
@@ -2381,18 +2419,7 @@ draw_online(void) {
             gfx_text("A game's leaderboard is on its website.", lay_x, lay_foot - ROW_H, TEXT_Z, DIM, 1);
             break;
         default:
-            gfx_text("Online", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
-            for (int r = 0; r < ON_ROWS; r++) {
-                char val[40];
-                float y = LIST_Y + (float)r * ROW_H;
-                int is_sel = r == sel[LIST_ONLINE];
-                if (is_sel) {
-                    row_bar(PANE_X + PAD, PANE_W - PAD * 2.0f - 12.0f, y);
-                }
-                online_value(r, val, sizeof(val));
-                gfx_text(online_names[r], PANE_X + PAD, y, TEXT_Z, is_sel ? YELLOW : WHITE, 1);
-                gfx_text(val, PANE_X + PAD + 190.0f, y, TEXT_Z, is_sel ? YELLOW : GREY, 1);
-            }
+            draw_online_menu();
             break;
     }
     reset_layout();
@@ -2474,7 +2501,7 @@ draw_footer(void) {
         if (view[page] != ON_MENU) {
             return; /* a popup has its own hint */
         }
-        text = "A: open";
+        return; /* the help box says what the row is */
     } else if (page == PAGE_CHAT && view[page] == VIEW_A) {
         text = chat_st[DC99_CHAT_IRC].state == DC99_CHAT_ON ? "A: say  Y: login  START: KosNet  Up: back" : "A: join  Y: login  START: KosNet";
     } else if (page == PAGE_CHAT) {
