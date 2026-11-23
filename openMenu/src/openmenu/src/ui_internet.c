@@ -2300,7 +2300,9 @@ draw_popup_frame(const char* title, const char* hint) {
     if (title) {
         gfx_text(title, lay_x, lay_head, TEXT_Z, YELLOW, 1);
     }
-    if (hint) {
+    if (notice_frames > 0) { /* what just happened takes the hint's place for a moment */
+        text_cut(notice, 44, lay_x, lay_foot, WHITE);
+    } else if (hint) {
         text_cut(hint, 44, lay_x, lay_foot, DIM);
     }
 }
@@ -2376,7 +2378,7 @@ draw_online(void) {
                 }
                 text_cut(board_item(r)->name, 40, lay_x, y, is_sel ? YELLOW : WHITE);
             }
-            gfx_text("Leaderboards of the games are on their websites.", lay_x, lay_foot - ROW_H, TEXT_Z, DIM, 1);
+            gfx_text("A game's leaderboard is on its website.", lay_x, lay_foot - ROW_H, TEXT_Z, DIM, 1);
             break;
         default:
             gfx_text("Online", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
@@ -2459,7 +2461,7 @@ static void
 draw_footer(void) {
     const char* text = NULL;
     char line[96];
-    if (ed.active || page == PAGE_CHAT) { /* the chat page has its own bar down to the panel's edge */
+    if (ed.active || page == PAGE_CHAT || (page == PAGE_ONLINE && view[page] != ON_MENU)) { /* the chat page has its own bar down to the panel's edge, a popup its own hint */
         return;
     }
     if (notice_frames > 0) {
