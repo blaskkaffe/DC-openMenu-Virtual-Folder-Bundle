@@ -53,77 +53,86 @@ ring(float d, float t) { /* the outline of a shape, t thick */
 }
 
 static float
+sd_poly(float x, float y, const float* v, int n) { /* v: x,y pairs; signed distance to a closed polygon */
+    float d = (x - v[0]) * (x - v[0]) + (y - v[1]) * (y - v[1]);
+    float sgn = 1.0f;
+    for (int i = 0, j = n - 1; i < n; j = i, i++) {
+        float ex = v[j * 2] - v[i * 2], ey = v[j * 2 + 1] - v[i * 2 + 1];
+        float wx = x - v[i * 2], wy = y - v[i * 2 + 1];
+        float h = (wx * ex + wy * ey) / (ex * ex + ey * ey);
+        h = h < 0 ? 0 : (h > 1 ? 1 : h);
+        float bx = wx - ex * h, by = wy - ey * h;
+        float dd = bx * bx + by * by;
+        d = dd < d ? dd : d;
+        int c1 = y >= v[i * 2 + 1], c2 = y < v[j * 2 + 1], c3 = ex * wy > ey * wx;
+        if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) {
+            sgn = -sgn;
+        }
+    }
+    return sgn * sqrtf(d);
+}
+
+static void
+rot(float* x, float* y, float deg) { /* turn the picture about its middle: the glyphs sit a little crooked, like the main menu's */
+    float a = deg * 0.017453293f, c = cosf(a), s = sinf(a), dx = *x - 0.5f, dy = *y - 0.5f;
+    *x = 0.5f + dx * c + dy * s;
+    *y = 0.5f - dx * s + dy * c;
+}
+
+static float
 sd_globe(float x, float y) {
-    const float R = 0.42f, T = 0.055f;
-    float disc = sd_circle(x, y, 0.5f, 0.5f, R - T * 0.5f);
-    float ex = (x - 0.5f) / 0.19f, ey = (y - 0.5f) / R;
-    float meridian = ring((sqrtf(ex * ex + ey * ey) - 1.0f) * 0.19f, T);
+    const float R = 0.43f, T = 0.075f;
+    float disc = sd_circle(x, y, 0.5f, 0.5f, R - T * 0.25f);
+    float ex = (x - 0.5f) / 0.2f, ey = (y - 0.5f) / R;
+    float meridian = ring((sqrtf(ex * ex + ey * ey) - 1.0f) * 0.2f, T);
     float d = ring(sd_circle(x, y, 0.5f, 0.5f, R), T);
     d = u(d, fmaxf(meridian, disc));
     d = u(d, fmaxf(fabsf(x - 0.5f) - T * 0.5f, disc));
-    d = u(d, fmaxf(fabsf(y - 0.5f) - T * 0.5f, disc));
-    d = u(d, fmaxf(fabsf(y - 0.3f) - T * 0.5f, disc)); /* a parallel on each side of the equator, evenly spaced */
-    d = u(d, fmaxf(fabsf(y - 0.7f) - T * 0.5f, disc));
+    for (int i = -1; i <= 1; i++) { /* the equator and one line either side, evenly spaced */
+        d = u(d, fmaxf(fabsf(y - (0.5f + 0.2f * (float)i)) - T * 0.5f, disc));
+    }
     return d;
 }
 
-/* A polygon (points in the picture of the BIOS controller, see CT_X / CT_Y): signed distance */
-static float
-sd_poly(float x, float y, const float* pt, int n) {
-    float d = 1e9f;
-    int inside = 0;
-    for (int i = 0, j = n - 1; i < n; j = i++) {
-        float ax = pt[j * 2], ay = pt[j * 2 + 1], bx = pt[i * 2], by = pt[i * 2 + 1];
-        float e = sd_seg(x, y, ax, ay, bx, by, 0);
-        d = e < d ? e : d;
-        if (((ay > y) != (by > y)) && (x < (bx - ax) * (y - ay) / (by - ay) + ax)) {
-            inside = !inside;
-        }
-    }
-    return inside ? -d : d;
-}
-
-/* The controller of the main menu's Play icon, traced from its model seen from the front: x 28..275, y 28..245 in the trace, fitted into the square */
-#define CT_X(v) (0.04f + ((v) - 28.0f) * 0.003725f)
-#define CT_Y(v) (0.095f + ((v) - 28.0f) * 0.003725f)
-#define CT_R(v) ((v) * 0.003725f)
+/* The controller as the main menu's model has it, traced from a render of it: the outline, then the parts that are see-through. Picture
+ * coordinates of the render (285,330 is the middle, 535 px the width of the square). */
+#define PX(px) (((px) - 285.0f) / 535.0f + 0.5f)
+#define PY(py) (((py) - 330.0f) / 535.0f + 0.5f)
+#define PL(l) ((l) / 535.0f)
 
 static float
 sd_pad(float x, float y) {
-    static const float body[] = {110, 30, 150, 26, 192, 30, 196, 46, 215, 51, 245, 55, 262, 68, 271, 95, 276, 135, 275, 175, 270, 205, 258, 232, 247, 243, 236, 238,
-                                 226, 215, 222, 206, 190, 212, 150, 215, 110, 212, 78, 206, 72, 228, 66, 243, 54, 238, 40, 214, 31, 185, 28, 150, 31, 115,
-                                 40, 82, 55, 64, 76, 57, 96, 51, 108, 47};
-    static const float slot[] = {109, 40, 194, 40, 194, 105, 188, 125, 170, 138, 150, 141, 130, 138, 112, 125, 107, 105};
-    float p[sizeof(body) / sizeof(body[0])], q[sizeof(slot) / sizeof(slot[0])];
-    for (unsigned i = 0; i < sizeof(body) / sizeof(body[0]); i += 2) {
-        p[i] = CT_X(body[i]);
-        p[i + 1] = CT_Y(body[i + 1]);
+    static const float outline[][2] = {
+        {70, 185}, {160, 158}, {200, 130}, {285, 122}, {370, 130}, {410, 158}, {480, 175}, {520, 225}, {531, 330}, {520, 430},
+        {478, 540}, {440, 536}, {412, 495}, {350, 488}, {285, 486}, {220, 488}, {158, 495}, {130, 536}, {92, 540}, {55, 500},
+        {40, 400}, {40, 250}};
+    float v[22 * 2];
+    for (int i = 0; i < 22; i++) {
+        v[i * 2] = PX(outline[i][0]);
+        v[i * 2 + 1] = PY(outline[i][1]);
     }
-    for (unsigned i = 0; i < sizeof(slot) / sizeof(slot[0]); i += 2) {
-        q[i] = CT_X(slot[i]);
-        q[i + 1] = CT_Y(slot[i + 1]);
-    }
-    float d = sd_poly(x, y, p, (int)(sizeof(body) / sizeof(body[0]) / 2));
-    float h = sd_poly(x, y, q, (int)(sizeof(slot) / sizeof(slot[0]) / 2)); /* the slot for the memory card */
-    h = u(h, sd_box(x, y, CT_X(74), CT_Y(147), CT_R(24), CT_R(10), 0.0f)); /* d-pad */
-    h = u(h, sd_box(x, y, CT_X(74), CT_Y(147), CT_R(8), CT_R(23), 0.0f));
-    h = u(h, sd_circle(x, y, CT_X(73), CT_Y(92), CT_R(17))); /* the stick */
-    h = u(h, sd_circle(x, y, CT_X(230), CT_Y(93), CT_R(11))); /* the four buttons */
-    h = u(h, sd_circle(x, y, CT_X(211), CT_Y(112), CT_R(11)));
-    h = u(h, sd_circle(x, y, CT_X(250), CT_Y(112), CT_R(11)));
-    h = u(h, sd_circle(x, y, CT_X(231), CT_Y(127), CT_R(11)));
+    float d = sd_poly(x, y, v, 22) - 0.022f; /* chunkier, softened corners */
+    float h = sd_box(x, y, PX(285), PY(238), PL(70), PL(88), PL(46)); /* the VMU slot */
+    h = u(h, sd_circle(x, y, PX(128), PY(245), PL(30))); /* the stick */
+    h = u(h, sd_box(x, y, PX(128), PY(355), PL(46), PL(16), PL(4))); /* the d-pad */
+    h = u(h, sd_box(x, y, PX(128), PY(355), PL(16), PL(46), PL(4)));
+    h = u(h, sd_circle(x, y, PX(443), PY(240), PL(17))); /* the four buttons */
+    h = u(h, sd_circle(x, y, PX(400), PY(284), PL(17)));
+    h = u(h, sd_circle(x, y, PX(486), PY(284), PL(17)));
+    h = u(h, sd_circle(x, y, PX(443), PY(322), PL(17)));
+    h = u(h, sd_tri(x, y, PX(281), PY(392), PX(256), PY(436), PX(306), PY(436))); /* start */
     return cut(d, h);
 }
 
 static float
 sd_calendar(float x, float y) {
-    float d = sd_box(x, y, 0.5f, 0.56f, 0.4f, 0.34f, 0.07f);
-    d = u(d, sd_seg(x, y, 0.3f, 0.14f, 0.3f, 0.26f, 0.045f)); /* the binder rings */
-    d = u(d, sd_seg(x, y, 0.7f, 0.14f, 0.7f, 0.26f, 0.045f));
-    float h = sd_box(x, y, 0.5f, 0.395f, 0.4f, 0.016f, 0.0f); /* the header's line */
+    float d = sd_box(x, y, 0.5f, 0.56f, 0.43f, 0.36f, 0.16f);
+    d = u(d, sd_seg(x, y, 0.29f, 0.12f, 0.29f, 0.3f, 0.07f)); /* the binder rings, fat */
+    d = u(d, sd_seg(x, y, 0.71f, 0.12f, 0.71f, 0.3f, 0.07f));
+    float h = sd_box(x, y, 0.5f, 0.4f, 0.34f, 0.028f, 0.014f); /* the header's line */
     for (int r = 0; r < 2; r++) {
-        for (int c = 0; c < 3; c++) {
-            h = u(h, sd_box(x, y, 0.3f + 0.2f * (float)c, 0.55f + 0.17f * (float)r, 0.065f, 0.055f, 0.012f));
+        for (int c = 0; c < 2; c++) {
+            h = u(h, sd_box(x, y, 0.35f + 0.3f * (float)c, 0.56f + 0.2f * (float)r, 0.1f, 0.07f, 0.04f)); /* four big days */
         }
     }
     return cut(d, h);
@@ -131,11 +140,11 @@ sd_calendar(float x, float y) {
 
 static float
 sd_chat(float x, float y) {
-    float d = sd_box(x, y, 0.5f, 0.44f, 0.43f, 0.29f, 0.15f);
-    d = u(d, sd_tri(x, y, 0.22f, 0.62f, 0.2f, 0.92f, 0.5f, 0.68f));
-    float h = sd_circle(x, y, 0.3f, 0.44f, 0.06f);
-    h = u(h, sd_circle(x, y, 0.5f, 0.44f, 0.06f));
-    h = u(h, sd_circle(x, y, 0.7f, 0.44f, 0.06f));
+    float d = sd_box(x, y, 0.5f, 0.44f, 0.45f, 0.34f, 0.33f); /* an oval, not a box */
+    d = u(d, sd_tri(x, y, 0.2f, 0.58f, 0.16f, 0.94f, 0.52f, 0.72f) - 0.025f);
+    float h = sd_circle(x, y, 0.3f, 0.44f, 0.075f);
+    h = u(h, sd_circle(x, y, 0.5f, 0.44f, 0.075f));
+    h = u(h, sd_circle(x, y, 0.7f, 0.44f, 0.075f));
     return cut(d, h);
 }
 
@@ -144,15 +153,21 @@ sd_wrench(float x, float y) {
     float dx = x - 0.5f, dy = y - 0.5f;
     float uu = (dx - dy) * 0.70710678f; /* along the wrench, towards the head at the top right */
     float vv = (dx + dy) * 0.70710678f;
-    float d = sd_seg(uu, vv, -0.34f, 0.0f, 0.2f, 0.0f, 0.095f); /* the handle */
-    d = u(d, sd_circle(uu, vv, 0.28f, 0.0f, 0.17f)); /* the head */
-    float h = sd_box(uu, vv, 0.44f, 0.0f, 0.17f, 0.08f, 0.0f); /* the jaw */
-    h = u(h, sd_circle(uu, vv, -0.34f, 0.0f, 0.035f)); /* the hanging hole */
+    float d = sd_seg(uu, vv, -0.3f, 0.0f, 0.18f, 0.0f, 0.13f); /* the handle, fat */
+    d = u(d, sd_circle(uu, vv, -0.33f, 0.0f, 0.17f)); /* a bulb at the end */
+    d = u(d, sd_circle(uu, vv, 0.27f, 0.0f, 0.23f)); /* the head */
+    float h = sd_box(uu, vv, 0.5f, 0.0f, 0.2f, 0.095f, 0.03f); /* the jaw */
+    h = u(h, sd_circle(uu, vv, -0.33f, 0.0f, 0.055f)); /* the hanging hole */
     return cut(d, h);
 }
 
 static float
 shape(int id, float x, float y) {
+    /* a little crooked and wobbly, as the main menu's models are */
+    static const float tilt[UICON_COUNT] = {-4.0f, 0.0f, 6.0f, -3.0f, 0.0f};
+    rot(&x, &y, tilt[id]);
+    x += 0.009f * sinf(9.0f * y + (float)id);
+    y += 0.009f * sinf(8.0f * x + (float)id * 2.0f);
     switch (id) {
         case UICON_ONLINE: return sd_globe(x, y);
         case UICON_PLAY: return sd_pad(x, y);
