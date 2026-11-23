@@ -142,8 +142,8 @@ poly_img(float x, float y, const float (*pts)[2], int n) {
 
 static float
 sd_clock(float x, float y) {
-    static const float bell_l[][2] = {{38, 232}, {58, 150}, {130, 84}, {212, 62}, {252, 92}, {242, 128}, {150, 152}, {92, 200}, {58, 238}};
-    static const float bell_r[][2] = {{547, 228}, {527, 150}, {455, 84}, {373, 60}, {330, 72}, {336, 112}, {432, 152}, {497, 200}, {532, 234}};
+    static const float bell_l[][2] = {{38, 232}, {58, 150}, {130, 84}, {212, 62}, {252, 92}, {244, 140}, {150, 190}, {92, 232}, {58, 242}};
+    static const float bell_r[][2] = {{546, 232}, {526, 150}, {454, 84}, {372, 62}, {332, 92}, {340, 140}, {434, 190}, {492, 232}, {526, 242}};
     static const float hand_a[][2] = {{190, 215}, {238, 186}, {338, 308}, {296, 354}}; /* the long hand, up to the left */
     static const float hand_b[][2] = {{318, 298}, {402, 224}, {444, 270}, {346, 338}}; /* the short hand, up to the right */
     float body = sd_circle(x, y, CX(290), CY(355), CL(218)) - 0.012f;
