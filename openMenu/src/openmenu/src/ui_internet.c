@@ -2475,7 +2475,7 @@ draw_online_menu(void) {
 #define BOARD_W 476.0f /* the width of the lines in the popup */
 
 /* Where the columns of every table of the board start (x from the popup's left edge): each column as wide as its widest cell, the last takes
- * what is left; a column that is too wide is held to a share so that all fit. Run when a board has arrived. */
+ * what is left; when they do not fit, the widest are cut to one width. Run when a board has arrived. */
 static short lb_colx[LB_LINES_MAX][LB_CELLS];
 
 static void
@@ -2496,7 +2496,27 @@ lb_layout(void) {
             ncol = lb_lines[j].ncell > ncol ? lb_lines[j].ncell : ncol;
         }
         const float gap = 18.0f;
-        float cap = ncol > 1 ? (BOARD_W - 90.0f) / (float)(ncol - 1) : BOARD_W;
+        /* every column as wide as its widest cell; when they do not all fit, only the widest are cut, all to the same
+         * width (the largest that lets the line fit) */
+        float cap = BOARD_W, need = 0.0f;
+        for (int c = 0; c < ncol; c++) {
+            need += w[c] + gap;
+        }
+        if (need > BOARD_W + gap) {
+            float lo = 0.0f, hi = BOARD_W;
+            for (int it = 0; it < 24; it++) {
+                float mid = (lo + hi) / 2.0f, sum = 0.0f;
+                for (int c = 0; c < ncol; c++) {
+                    sum += w[c] + gap > mid ? mid : w[c] + gap;
+                }
+                if (sum <= BOARD_W + gap) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            cap = lo;
+        }
         float x = 0.0f;
         short at[LB_CELLS];
         for (int c = 0; c < ncol; c++) {
