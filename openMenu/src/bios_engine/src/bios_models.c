@@ -350,20 +350,31 @@ build_phone(builder* b) {
     bar(b, light, grip, 4, 0.42f, 0.42f);
 }
 
-/* A winners' stand: three blocks in the Dreamcast's colours, the winner (orange) in the middle, the second (light grey) on its left and the third
+/* A winners' stand: three blocks in the Dreamcast's colours, the winner (light grey) in the middle, the second (orange) on its left and the third
  * (blue) on its right, about 8 units wide and 6 tall, centred on the origin. The numbers come later: bmodel_podium_digits. */
 #define POD_W 2.8f
 #define POD_D 2.4f
 #define POD_BOTTOM (-3.2f)
-static const float pod_h[3] = {6.0f, 4.2f, 3.0f}; /* the winner, the second, the third */
+static const float pod_h[3] = {6.0f, 4.2f, 3.0f}; /* the winner (white, 1), the second (orange, 2), the third (blue, 3) */
 static const float pod_cx[3] = {0.0f, -POD_W, POD_W};
+
+#define POD_TAPER 0.95f /* the foot of a block is this much of its top's width and depth: the top is a tiny bit bigger */
 
 static void
 build_podium(builder* b) {
-    static const uint32_t col[3] = {0xFFE8681Cu, 0xFFE4E6EEu, 0xFF1E5AB4u}; /* Dreamcast orange, light grey, Dreamcast blue */
+    static const uint32_t col[3] = {0xFFE4E6EEu, 0xFFE8681Cu, 0xFF1E5AB4u}; /* light grey (the winner), Dreamcast orange, Dreamcast blue */
     for (int i = 0; i < 3; i++) {
         int poly = poly_new(b, -1, col[i], 0);
-        box(b, poly, pod_cx[i] - POD_W / 2.0f, POD_BOTTOM, -POD_D / 2.0f, pod_cx[i] + POD_W / 2.0f, POD_BOTTOM + pod_h[i], POD_D / 2.0f);
+        const float hw = POD_W / 2.0f, hd = POD_D / 2.0f, fw = hw * POD_TAPER, fd = hd * POD_TAPER;
+        const float y0 = POD_BOTTOM, y1 = POD_BOTTOM + pod_h[i], x = pod_cx[i];
+        v3 b00 = v3m(x - fw, y0, -fd), b10 = v3m(x + fw, y0, -fd), b11 = v3m(x + fw, y0, fd), b01 = v3m(x - fw, y0, fd);
+        v3 t00 = v3m(x - hw, y1, -hd), t10 = v3m(x + hw, y1, -hd), t11 = v3m(x + hw, y1, hd), t01 = v3m(x - hw, y1, hd);
+        quad(b, poly, t00, t01, t11, t10, NULL, v3m(0, 1, 0));  /* top */
+        quad(b, poly, b00, b10, b11, b01, NULL, v3m(0, -1, 0)); /* bottom */
+        quad(b, poly, b01, b11, t11, t01, NULL, v3m(0, 0, 1));  /* front */
+        quad(b, poly, b10, b00, t00, t10, NULL, v3m(0, 0, -1)); /* back */
+        quad(b, poly, b11, b10, t10, t11, NULL, v3m(1, 0, 0));  /* right */
+        quad(b, poly, b00, b01, t01, t00, NULL, v3m(-1, 0, 0)); /* left */
     }
 }
 
@@ -599,7 +610,7 @@ bmodel_build(int id, nj_object* out) {
 int
 bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
     static const int digit_model[3] = {22, 23, 24}; /* the CD player's 1, 2 and 3 (ROM models 21 + digit) */
-    static const uint32_t digit_col[3] = {0xFFFFFFFFu, 0xFF1E5AB4u, 0xFFFFFFFFu};
+    static const uint32_t digit_col[3] = {0xFF1E5AB4u, 0xFFFFFFFFu, 0xFFFFFFFFu};
     static const float digit_cx[3] = {-0.66f, 0.0f, 0.0f}; /* the 1 is off-centre in its model */
     const float s = 0.38f;
     if (!rom || !out || out->count != 1 || !out->nodes[0].mesh) {
@@ -647,7 +658,7 @@ bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
         n.scl.x = n.scl.y = n.scl.z = s;
         n.pos.x = pod_cx[i] - digit_cx[i] * s;
         n.pos.y = POD_BOTTOM + pod_h[i] * 0.5f;
-        n.pos.z = POD_D / 2.0f - 2.0f * s + 0.02f; /* the digit's back plane on the block's front face */
+        n.pos.z = POD_D / 2.0f * (1.0f + POD_TAPER) / 2.0f - 2.0f * s + 0.02f; /* the digit's back plane on the block's front face */
         nodes[2 + i] = n;
         free(d[i].nodes); /* the node's mesh now belongs to `nodes` */
     }
