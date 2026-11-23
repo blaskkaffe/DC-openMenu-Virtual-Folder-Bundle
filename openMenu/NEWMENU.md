@@ -447,3 +447,10 @@ X on the main menu switches the debug overlay on (it stays on in the other menus
 mode (`dbglog.c`); the first second after a change is dropped, the following ones replace each other and the lowest fps is
 kept. B on the main menu (overlay on) opens the log page: a table to photograph, then (B again) a QR code (`qr.c`, byte
 mode, level L) with the same numbers as text, then B closes. A on the table clears the log.
+
+## Popup frame colours (rule)
+
+Every popup, keyboard and window panel takes the colour of the main-screen icon label of the screen it belongs to,
+as the BIOS does: Play orange, File green, Internet (and Music) blue, Settings magenta/red. Never reuse another
+screen's colour. In code: `screen_accent()` in ui_bios.c, `BMENU_ACCENT_*` in bios_menu.h, and
+`scene.object_panel_accent` for popups built from the BIOS popup panel (script 5), as ui_internet.c does.

@@ -2764,7 +2764,7 @@ uin_draw(void) {
                 po->panel_w = po->var[0]; /* the script takes the size once, when it starts: the size of this frame's popup */
                 po->panel_h = po->var[1];
                 po->flags = (po->flags | BVM_F_PANEL) & ~(uint32_t)BVM_F_HIDE;
-                menu->scene.object_panel_accent = BMENU_ACCENT_FILE; /* the file screen's green frame */
+                menu->scene.object_panel_accent = BMENU_ACCENT_MUSIC; /* the Internet screen's blue frame: a popup takes the colour of its main-screen icon */
             } else {
                 po->flags |= BVM_F_HIDE;
             }
