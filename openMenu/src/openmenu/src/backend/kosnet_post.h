@@ -21,6 +21,9 @@ typedef struct kosnet_post_status {
 
 /* 1 when this build can do TLS at all. */
 int kosnet_tls_available(void);
+/* One HTTPS GET of a page (HTTP/1.0) into out: headers, then the body. Returns the status code, -1 on a failure (note says why) and -2 when
+ * *stop became 1. Port 443, the certificate is not checked (see above). */
+int https_get_page(const char* host, const char* path, char* out, size_t cap, volatile int* stop, const char** note);
 /* Signs in (on a worker thread). Ignored while busy. */
 void kosnet_login(const char* user, const char* pass);
 /* Posts one line (1-240 bytes); needs KOSNET_IN. Returns 0 when started, -1 when not signed in or busy. */

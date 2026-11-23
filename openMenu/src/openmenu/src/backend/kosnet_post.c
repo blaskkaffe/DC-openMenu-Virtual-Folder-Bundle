@@ -114,7 +114,7 @@ entropy(void* arg, unsigned char* out, size_t len) {
 
 /* One HTTPS request. The whole response (headers and body) goes into resp. Returns the status code, -1 on a failure (note set), -2 when stopped. */
 static int
-https_call(const char* method, const char* path, const char* bearer, const char* body, char* resp, size_t resp_size, const char** note) {
+https_core(const char* host, int port, volatile int* stop, int plain_get, const char* method, const char* path, const char* bearer, const char* body, char* resp, size_t resp_size, const char** note) {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_ctr_drbg_context drbg;
@@ -123,15 +123,15 @@ https_call(const char* method, const char* path, const char* bearer, const char*
     int rc, ret = -1;
     size_t used = 0;
     uint64_t deadline = timer_ms_gettime64() + KN_TIMEOUT_MS;
-    const char* sess_note = "KosNet did not answer";
+    const char* sess_note = "The server did not answer";
 
     *note = "Could not set up TLS";
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_ctr_drbg_init(&drbg);
-    net.fd = dc99_net_open(KN_API_HOST, KN_API_PORT, &stop_flag);
+    net.fd = dc99_net_open(host, port, stop);
     if (net.fd < 0) {
-        *note = net.fd == -2 ? "Stopped" : "Could not reach KosNet";
+        *note = net.fd == -2 ? "Stopped" : "Could not reach the server";
         ret = net.fd == -2 ? -2 : -1;
         goto done;
     }
@@ -142,7 +142,7 @@ https_call(const char* method, const char* path, const char* bearer, const char*
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE); /* see the top of the file */
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &drbg);
     mbedtls_ssl_conf_max_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2);
-    if (mbedtls_ssl_setup(&ssl, &conf) != 0 || mbedtls_ssl_set_hostname(&ssl, KN_API_HOST) != 0) {
+    if (mbedtls_ssl_setup(&ssl, &conf) != 0 || mbedtls_ssl_set_hostname(&ssl, host) != 0) {
         goto closed;
     }
     mbedtls_ssl_set_bio(&ssl, &net, net_send, net_recv, NULL);
@@ -152,25 +152,28 @@ https_call(const char* method, const char* path, const char* bearer, const char*
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) {
             goto closed;
         }
-        rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, &stop_flag);
+        rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, stop);
         if (rc <= 0) {
-            *note = rc < 0 ? "Stopped" : "KosNet did not answer";
+            *note = rc < 0 ? "Stopped" : "The server did not answer";
             ret = rc < 0 ? -2 : -1;
             goto closed;
         }
     }
 
+    if (plain_get) { /* a page: HTTP/1.0, so the answer is never chunked */
+        snprintf(req, sizeof(req), "GET %.600s HTTP/1.0\r\nHost: %.120s\r\nUser-Agent: openMenu\r\nAccept: text/html\r\nConnection: close\r\n\r\n", path, host);
+    } else
     snprintf(req, sizeof(req),
              "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: openMenu\r\nAccept: application/json\r\nConnection: close\r\n%s%s%s"
              "Content-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
-             method, path, KN_API_HOST, bearer ? "Authorization: Bearer " : "", bearer ? bearer : "", bearer ? "\r\n" : "",
+             method, path, host, bearer ? "Authorization: Bearer " : "", bearer ? bearer : "", bearer ? "\r\n" : "",
              body ? (int)strlen(body) : 0, body ? body : "");
     for (size_t sent = 0, total = strlen(req); sent < total;) {
         rc = mbedtls_ssl_write(&ssl, (const unsigned char*)req + sent, total - sent);
         if (rc > 0) {
             sent += (size_t)rc;
         } else if (rc == MBEDTLS_ERR_SSL_WANT_WRITE || rc == MBEDTLS_ERR_SSL_WANT_READ) {
-            rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, &stop_flag);
+            rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, stop);
             if (rc <= 0) {
                 *note = rc < 0 ? "Stopped" : sess_note;
                 ret = rc < 0 ? -2 : -1;
@@ -189,7 +192,7 @@ https_call(const char* method, const char* path, const char* bearer, const char*
                 break;
             }
         } else if (rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE) {
-            rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, &stop_flag);
+            rc = dc99_net_wait(net.fd, rc == MBEDTLS_ERR_SSL_WANT_READ ? POLLRDNORM : POLLWRNORM, deadline, stop);
             if (rc <= 0) {
                 if (used == 0) {
                     *note = rc < 0 ? "Stopped" : sess_note;
@@ -207,7 +210,7 @@ https_call(const char* method, const char* path, const char* bearer, const char*
         const char* b;
         ret = kn_http_status(resp, &b);
         if (ret < 0) {
-            *note = "KosNet gave an unexpected answer";
+            *note = "The server gave an unexpected answer";
         }
     }
 closed:
@@ -220,6 +223,16 @@ done:
     return ret;
 }
 
+static int
+https_call(const char* method, const char* path, const char* bearer, const char* body, char* resp, size_t resp_size, const char** note) {
+    return https_core(KN_API_HOST, KN_API_PORT, &stop_flag, 0, method, path, bearer, body, resp, resp_size, note);
+}
+
+int
+https_get_page(const char* host, const char* path, char* out, size_t cap, volatile int* stop, const char** note) {
+    return https_core(host, 443, stop, 1, "GET", path, NULL, NULL, out, cap, note);
+}
+
 int
 kosnet_tls_available(void) {
     return 1;
@@ -230,6 +243,13 @@ kosnet_tls_available(void) {
 static int
 https_call(const char* method, const char* path, const char* bearer, const char* body, char* resp, size_t resp_size, const char** note) {
     (void)method, (void)path, (void)bearer, (void)body, (void)resp, (void)resp_size;
+    *note = "TLS is not in this build";
+    return -1;
+}
+
+int
+https_get_page(const char* host, const char* path, char* out, size_t cap, volatile int* stop, const char** note) {
+    (void)host, (void)path, (void)out, (void)cap, (void)stop;
     *note = "TLS is not in this build";
     return -1;
 }
