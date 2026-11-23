@@ -21,3 +21,5 @@ void uin_sync(void);
 void uin_draw(void);
 /* The mouse over the bottom row selects a button (screen pixels). */
 void uin_hover(float x, float y);
+/* A left click at x, y (on the 640 px picture): the button to act on, which is the key of the popup button under it (A anywhere else). */
+button_t uin_click(float x, float y, button_t b);

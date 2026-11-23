@@ -2597,6 +2597,9 @@ ui_bios_run(const bios_rom* rom) {
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
         } else if (screen == SCREEN_INTERNET) {
+            if (b == BTN_A && pointer.clicked) {
+                b = uin_click(pointer_screen_x(), (float)pointer.y, b); /* a click on a popup's button: that button */
+            }
             if (uin_handle(b)) {
                 bmenu_show_main(&menu, ICON_MUSIC);
                 screen = SCREEN_MAIN;

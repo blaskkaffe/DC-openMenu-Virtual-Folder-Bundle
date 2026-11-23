@@ -1447,7 +1447,58 @@ uin_hover(float x, float y) {
         view[PAGE_ONLINE] = ON_MENU;
         sound_sfx(BAUDIO_SFX_CURSOR);
         cursor = page = bt;
+        return;
     }
+    if (detail) {
+        return;
+    }
+    if (page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU) { /* the four rows: the one under the pointer is the selected one */
+        for (int r = 0; r < ON_ROWS; r++) {
+            if (x >= 36.0f && x <= 624.0f && y >= bpage_rows_y_px(r) - 34.0f && y < bpage_rows_y_px(r) + 34.0f) {
+                if (sel[LIST_ONLINE] != r || cursor < 0) {
+                    sel[LIST_ONLINE] = r;
+                    cursor = page; /* off BACK */
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
+                return;
+            }
+        }
+        return;
+    }
+    const int l = page_list(page);
+    if (l < 0 || (page == PAGE_ONLINE && lb_open >= 0)) {
+        return;
+    }
+    /* a list: the row under the pointer (the popups' lists and the lists of the other pages, which sit in their own panes) */
+    const int popup = page == PAGE_ONLINE;
+    const float lx = popup ? 320.0f - POP_W / 2.0f + 8.0f : PANE_X, rx = popup ? 320.0f + POP_W / 2.0f - 8.0f : PANE_X + PANE_W;
+    const float y0 = popup ? 240.0f - POP_H / 2.0f + 40.0f : LIST_Y, h = popup ? POPUP_ROW_H : ROW_H;
+    if (l == LIST_EVENTS || l == LIST_NEWS || x < lx || x > rx || y < y0 - 2.0f) {
+        return;
+    }
+    int row = (int)((y - y0 + 2.0f) / h);
+    if (row >= list_visible(l) || top[l] + row >= list_rows(l)) {
+        return;
+    }
+    if (sel[l] != top[l] + row || cursor < 0) {
+        sel[l] = top[l] + row;
+        cursor = page; /* off BACK */
+        sound_sfx(BAUDIO_SFX_CURSOR);
+    }
+}
+
+/* A click: on the button of a popup it is what that button does (A, Y or B), anywhere else it is A. */
+button_t
+uin_click(float x, float y, button_t b) {
+    if (ed.active || b != BTN_A) {
+        return b;
+    }
+    for (int i = 0; i < npbtn; i++) {
+        if (x >= pbtn[i].x0 && x <= pbtn[i].x1 && y >= pbtn[i].y0 && y <= pbtn[i].y1) {
+            return pbtn[i].b;
+        }
+    }
+    return b;
 }
 
 /* ---- per frame ------------------------------------------------------------------------------------------------------- */
@@ -2368,8 +2419,24 @@ online_value(int i, char* out, size_t size) {
  * beside it. `words` are separated by '|'. A notice takes their place for a moment. */
 #define BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
 #define BTN_GAP 34.0f  /* from a word to the next oval */
+/* Where the buttons of the popup on the screen are (set when they are drawn): what a click on one does is what its button does. */
+static struct {
+    float x0, x1, y0, y1;
+    button_t b;
+} pbtn[4];
+static int npbtn;
+
+static button_t
+popup_button_for(const char* word) {
+    if (!strcmp(word, "Close") || !strcmp(word, "Back")) {
+        return BTN_B;
+    }
+    return !strcmp(word, "Star") ? BTN_Y : BTN_A; /* Refresh, Join, Open, Reload */
+}
+
 static void
 draw_popup_buttons(const char* words) {
+    npbtn = 0;
     if (notice_frames > 0) {
         text_cut(notice, 44, lay_x, lay_foot, WHITE);
         return;
@@ -2390,6 +2457,13 @@ draw_popup_buttons(const char* words) {
         snprintf(word, sizeof(word), "%.*s", n, p);
         gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
         key_oval(x - 6.0f, lay_foot + 14.0f, 0.68f, 0.68f, 1);
+        if (npbtn < 4) {
+            pbtn[npbtn].x0 = x - BTN_LEFT;
+            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + BTN_GAP / 2.0f;
+            pbtn[npbtn].y0 = lay_foot - 6.0f;
+            pbtn[npbtn].y1 = lay_foot + 32.0f;
+            pbtn[npbtn++].b = popup_button_for(word);
+        }
         x += (float)gfx_text_width(word) + BTN_GAP + BTN_LEFT;
         p += n + (bar ? 1 : 0);
     }
@@ -2736,6 +2810,7 @@ page_icon(int i, int lit) {
 
 void
 uin_draw(void) {
+    npbtn = 0; /* the popups that are drawn set their buttons again */
     const bscene_sink* sink = gfx_sink();
     if (!(page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU && !ed.active)) { /* the Online rows are bars of their own */
         gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
