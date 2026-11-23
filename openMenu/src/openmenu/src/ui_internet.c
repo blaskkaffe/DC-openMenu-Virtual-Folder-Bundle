@@ -2333,6 +2333,66 @@ pill(float x, float y, float w, float z, uint32_t argb) {
     gfx_image_tint(pill_id[PILL_RIGHT], x + w - PILL_CAP, y, PILL_CAP, PILL_H, z, argb);
 }
 
+/* the shape of a keyboard key as seen at 640x480 (42 x 35, one hex digit of coverage each): cut from the 3D oval it replaces */
+#define KEY_TEX_W 42
+#define KEY_TEX_H 35
+static const char* const key_shape[KEY_TEX_H] = {
+    "00000000000000000048BFFFFFFFFFB84000000000",
+    "00000000000000008BFFFFFFFFFFFFFFFB40000000",
+    "00000000000008FFFFFFFFFFFFFFFFFFFFFF400000",
+    "000000000004BFFFFFFFFFFFFFFFFFFFFFFFF40000",
+    "00000000004BFFFFFFFFFFFFFFFFFFFFFFFFFF4000",
+    "000000000BFFFFFFFFFFFFFFFFFFFFFFFFFFFFF400",
+    "00000004BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00",
+    "0000004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB0",
+    "000004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0",
+    "00000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8",
+    "0000BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8",
+    "0004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "00BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "08FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "0BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB",
+    "4FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF4",
+    "8FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0",
+    "8FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF80",
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF80",
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00",
+    "8FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000",
+    "8FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000",
+    "8FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB0000",
+    "4FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF40000",
+    "0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF400000",
+    "0BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000000",
+    "00BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF40000000",
+    "004BFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000000000",
+    "0000FFFFFFFFFFFFFFFFFFFFFFFFFFF40000000000",
+    "00000BFFFFFFFFFFFFFFFFFFFFFFFB000000000000",
+    "000004BFFFFFFFFFFFFFFFFFFFF880000000000000",
+    "00000000BFFFFFFFFFFFFFFFF80000000000000000",
+    "00000000004BFFFFFFFFFB40000000000000000000",
+};
+static int key_tex = -1;
+
+/* A flat key the same size and colour as the 3D oval (but a single picture): w wide (a wide key stretches the picture, as it stretched the oval). */
+static void
+key_flat(float cx, float cy, float w, uint32_t argb) {
+    if (!gfx_dyn_valid(key_tex)) {
+        unsigned short px[KEY_TEX_W * KEY_TEX_H];
+        for (int y = 0; y < KEY_TEX_H; y++) {
+            for (int x = 0; x < KEY_TEX_W; x++) {
+                char ch = key_shape[y][x];
+                unsigned a = ch <= '9' ? (unsigned)(ch - '0') : (unsigned)(ch - 'A' + 10);
+                px[y * KEY_TEX_W + x] = (unsigned short)((a << 12) | 0x0FFF);
+            }
+        }
+        gfx_dyn_free(key_tex);
+        key_tex = gfx_dyn_create(px, KEY_TEX_W, KEY_TEX_H);
+    }
+    gfx_image_tint(key_tex, cx - w / 2.0f, cy - (float)KEY_TEX_H / 2.0f, w, (float)KEY_TEX_H, 0.45f, argb);
+}
+
 static void
 key_oval(float cx, float cy, float sx, float sy, int lit) {
     bvm_obj* o = bvm_find(&menu->vm, ID_KEY(kb_slot));
@@ -2408,7 +2468,7 @@ draw_keyboard(const char* title) {
             if (sel) {
                 key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, 1);
             } else {
-                pill(kx + 3.5f, ky, kw - 7.0f, 0.45f, 0xFF1F5C3Cu); /* a flat dark key: only the one under the cursor is a 3D oval (the keyboard stays fast) */
+                key_flat(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? kw + 2.0f : 42.0f, 0xFF0A5421u); /* flat, the same look: only the one under the cursor is a 3D oval (the keyboard stays fast) */
             }
             switch (key.kind) {
                 case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
