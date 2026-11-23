@@ -24,6 +24,7 @@
 #include "backend/dcnow_net.h"
 #include "backend/events_fetch.h"
 #include "backend/kosnet_post.h"
+#include "backend/osk.h"
 #include "backend/net_test.h"
 #include "backend/netsel.h"
 #include "backend/news_fetch.h"
@@ -505,6 +506,7 @@ typedef struct {
     const char* set; /* the characters UP and DOWN go through */
 } editor_t;
 static editor_t ed;
+static osk_t kb; /* the on-screen keyboard of the text editors */
 
 #define DIAL_SET "0123456789*#,W"
 #define TEXT_SET " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!"
@@ -544,7 +546,10 @@ editor_open(int row) {
         snprintf(ed.text, sizeof(ed.text), "%s", isp_text_field(&cur, row));
         ed.len = (int)strlen(ed.text);
         ed.set = row == ISP_NUMBER ? DIAL_SET : TEXT_SET;
+        ed.len = (int)strlen(ed.text);
+        ed.pos = ed.len;
     }
+    osk_init(&kb);
 }
 
 /* The chat's texts: the nick and the password of the IRC login, or a line to say. */
@@ -558,24 +563,31 @@ editor_open_chat(int kind, const char* start) {
     snprintf(ed.text, sizeof(ed.text), "%s", start);
     ed.len = (int)strlen(ed.text);
     ed.pos = ed.len;
+    osk_init(&kb);
 }
 
-static void
-editor_step_char(int delta) {
-    const char* set = ed.set;
-    int n = (int)strlen(set);
-    if (ed.pos >= ed.len) { /* a new character at the end */
-        if (ed.len >= ed.max - 1) {
-            return;
-        }
-        ed.text[ed.len++] = set[delta > 0 ? 0 : n - 1];
-        ed.text[ed.len] = '\0';
-        return;
+/* A character typed at the cursor (when the editor's set allows it and there is room). */
+static int
+editor_type(char c) {
+    if (!osk_char_ok(ed.set, c) || ed.len >= ed.max - 1) {
+        return 0;
     }
-    const char* at = strchr(set, ed.text[ed.pos]);
-    int i = at ? (int)(at - set) : 0;
-    i = (i + delta + n) % n;
-    ed.text[ed.pos] = set[i];
+    memmove(ed.text + ed.pos + 1, ed.text + ed.pos, (size_t)(ed.len - ed.pos + 1));
+    ed.text[ed.pos++] = c;
+    ed.len++;
+    return 1;
+}
+
+/* The character before the cursor goes. */
+static int
+editor_backspace(void) {
+    if (ed.pos <= 0) {
+        return 0;
+    }
+    memmove(ed.text + ed.pos - 1, ed.text + ed.pos, (size_t)(ed.len - ed.pos + 1));
+    ed.pos--;
+    ed.len--;
+    return 1;
 }
 
 /* A or START in a chat text: the nick leads on to the password, the password starts the chat, a line goes out. */
@@ -654,32 +666,59 @@ chat_editor_done(void) {
     }
 }
 
+/* The text or address is done: saved (ISP rows) or handed on (the chats). */
+static void
+editor_finish(void) {
+    if (ed.kind != ED_ISP) {
+        chat_editor_done();
+        return;
+    }
+    np_isp_t cur = *np_isp();
+    if (ed.is_address) {
+        memcpy(isp_field(&cur, ed.row), ed.oct, 4);
+    } else {
+        while (ed.len > 0 && ed.text[ed.len - 1] == ' ') { /* trailing blanks are not part of a login */
+            ed.text[--ed.len] = '\0';
+        }
+        snprintf(isp_text_field(&cur, ed.row), NP_DIAL_LEN, "%s", ed.text);
+    }
+    isp_save(&cur);
+    ed.active = 0;
+    sound_sfx(BAUDIO_SFX_CONFIRM);
+    say("Saved. Used at the next connect");
+}
+
+/* A on the keyboard: the key under the cursor. */
+static void
+editor_press(void) {
+    osk_key_t key = osk_key(&kb);
+    int ok = 1;
+
+    switch (key.kind) {
+        case OSK_CHAR: ok = editor_type(key.ch); break;
+        case OSK_SPACE: ok = editor_type(' '); break;
+        case OSK_DEL: ok = editor_backspace(); break;
+        case OSK_SHIFT: osk_toggle_shift(&kb); break;
+        case OSK_SYM: osk_toggle_symbols(&kb); break;
+        case OSK_OK: editor_finish(); return;
+        default: break;
+    }
+    sound_sfx(ok ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+}
+
 /* A button while the editor is open */
 static void
 editor_handle(button_t b) {
     switch (b) {
         case BTN_B: ed.active = 0; sound_sfx(BAUDIO_SFX_CANCEL); return;
+        case BTN_START: editor_finish(); return;
         case BTN_A:
-        case BTN_START: {
-            if (ed.kind != ED_ISP) {
-                chat_editor_done();
-                return;
-            }
-            np_isp_t cur = *np_isp();
-            if (ed.is_address) {
-                memcpy(isp_field(&cur, ed.row), ed.oct, 4);
+            if (!ed.is_address) {
+                editor_press();
             } else {
-                while (ed.len > 0 && ed.text[ed.len - 1] == ' ') { /* trailing blanks are not part of a login */
-                    ed.text[--ed.len] = '\0';
-                }
-                snprintf(isp_text_field(&cur, ed.row), NP_DIAL_LEN, "%s", ed.text);
+                editor_finish();
             }
-            isp_save(&cur);
-            ed.active = 0;
-            sound_sfx(BAUDIO_SFX_CONFIRM);
-            say("Saved. Used at the next connect");
             return;
-        }
         default: break;
     }
     if (ed.is_address) {
@@ -696,17 +735,22 @@ editor_handle(button_t b) {
         }
     } else {
         switch (b) {
-            case BTN_LEFT: ed.pos = ed.pos > 0 ? ed.pos - 1 : 0; break;
-            case BTN_RIGHT: ed.pos = ed.pos < ed.len ? ed.pos + 1 : ed.len; break; /* one past the end: UP or DOWN adds a character there */
-            case BTN_UP: editor_step_char(1); break;
-            case BTN_DOWN: editor_step_char(-1); break;
-            case BTN_PAGE_UP:
-            case BTN_X: editor_step_char(10); break; /* ten characters on in the set */
-            case BTN_PAGE_DOWN: editor_step_char(-10); break;
-            case BTN_Y: /* delete the character at the cursor */
-                if (ed.pos < ed.len) {
-                    memmove(ed.text + ed.pos, ed.text + ed.pos + 1, (size_t)(ed.len - ed.pos));
-                    ed.len--;
+            case BTN_LEFT: osk_move(&kb, 0, -1); break;
+            case BTN_RIGHT: osk_move(&kb, 0, 1); break;
+            case BTN_UP: osk_move(&kb, -1, 0); break;
+            case BTN_DOWN: osk_move(&kb, 1, 0); break;
+            case BTN_PAGE_UP: ed.pos = ed.pos > 0 ? ed.pos - 1 : 0; break; /* the cursor in the text */
+            case BTN_PAGE_DOWN: ed.pos = ed.pos < ed.len ? ed.pos + 1 : ed.len; break;
+            case BTN_X: /* a space */
+                if (!editor_type(' ')) {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    return;
+                }
+                break;
+            case BTN_Y: /* delete the character before the cursor */
+                if (!editor_backspace()) {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    return;
                 }
                 break;
             default: return;
@@ -1815,6 +1859,76 @@ draw_chat(int w) {
     }
 }
 
+/* The on-screen keyboard: a popup with a coloured border, the text with its cursor, and a grid of keys. */
+#define KB_X (PANE_X + 22.0f)
+#define KB_Y (PANE_Y + 4.0f)
+#define KB_W 492.0f
+#define KB_H 292.0f
+#define KB_CELL_W 42.0f
+#define KB_CELL_H 26.0f
+#define KB_GAP 4.0f
+#define KB_BORDER 0xFFE8A030u
+#define KB_FILL 0xFF101A38u
+#define KB_KEY 0x50FFFFFFu
+#define KB_KEY_SEL 0xFFB08040u
+#define KB_KEY_OK 0x7030A050u
+#define KB_SHOWN 38
+
+static void
+kb_label(const char* t, float x, float w, float y, uint32_t col) {
+    gfx_text(t, x + (w - (float)(strlen(t) * CHAR_W)) / 2.0f, y, TEXT_Z, col, 1);
+}
+
+static void
+draw_keyboard(const char* title) {
+    const float gx = KB_X + 18.0f;
+    const float gy = KB_Y + 76.0f;
+    const osk_key_t cur = osk_key(&kb);
+    const int hide = ed.kind == ED_KN_PASS || ed.kind == ED_CHAT_PASS;
+    int from = ed.pos > KB_SHOWN - 2 ? ed.pos - (KB_SHOWN - 2) : 0; /* the text scrolls along with the cursor */
+
+    gfx_rect(KB_X, KB_Y, KB_W, KB_H, 0.43f, KB_BORDER);
+    gfx_rect(KB_X + 3.0f, KB_Y + 3.0f, KB_W - 6.0f, KB_H - 6.0f, 0.44f, KB_FILL);
+    gfx_text(title, KB_X + 14.0f, KB_Y + 6.0f, TEXT_Z, YELLOW, 1);
+
+    /* the text */
+    gfx_rect(gx, KB_Y + 36.0f, KB_W - 36.0f, 30.0f, 0.45f, 0xFF050810u);
+    for (int i = from; i < ed.len && i < from + KB_SHOWN; i++) {
+        char c[2] = {hide && i != ed.pos - 1 ? '*' : ed.text[i], 0}; /* a password shows only the character just typed */
+        gfx_text(c, gx + 8.0f + (float)(i - from) * CHAR_W, KB_Y + 37.0f, TEXT_Z, WHITE, 1);
+    }
+    gfx_rect(gx + 6.0f + (float)(ed.pos - from) * CHAR_W, KB_Y + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
+
+    /* the keys */
+    for (int r = 0; r < OSK_ROWS; r++) {
+        for (int c = 0; c < OSK_COLS;) {
+            osk_key_t key = osk_key_at(kb.layer, r, c);
+            float kx = gx + (float)key.col * (KB_CELL_W + KB_GAP);
+            float ky = gy + (float)r * (KB_CELL_H + KB_GAP);
+            float kw = (float)key.span * KB_CELL_W + (float)(key.span - 1) * KB_GAP;
+            int sel = r == kb.row && key.col == cur.col;
+            uint32_t col = WHITE;
+            char t[2] = {key.ch, 0};
+
+            if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
+                col = 0xFF606878u; /* this editor does not take it */
+            }
+            gfx_rect(kx, ky, kw, KB_CELL_H, 0.45f, sel ? KB_KEY_SEL : key.kind == OSK_OK ? KB_KEY_OK : KB_KEY);
+            switch (key.kind) {
+                case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
+                case OSK_SHIFT: kb_label("SHIFT", kx, kw, ky, kb.layer == OSK_UPPER ? YELLOW : col); break;
+                case OSK_SYM: kb_label(kb.layer == OSK_SYMBOLS ? "ABC" : "#+=", kx, kw, ky, kb.layer == OSK_SYMBOLS ? YELLOW : col); break;
+                case OSK_SPACE: kb_label("SPACE", kx, kw, ky, col); break;
+                case OSK_DEL: kb_label("DEL", kx, kw, ky, col); break;
+                default: kb_label("OK", kx, kw, ky, GREEN); break;
+            }
+            c = key.col + key.span;
+        }
+    }
+    gfx_text("A: key  X: space  Y: delete", KB_X + 18.0f, KB_Y + KB_H - 56.0f, TEXT_Z, DIM, 1);
+    gfx_text("L/R: cursor  START: done  B: cancel", KB_X + 18.0f, KB_Y + KB_H - 32.0f, TEXT_Z, DIM, 1);
+}
+
 /* The editor over the panel: the value, the cursor, the keys. */
 static void
 draw_editor(void) {
@@ -1829,32 +1943,24 @@ draw_editor(void) {
     } else {
         snprintf(line, sizeof(line), "Edit: %s", names[ed.row - ISP_IP]);
     }
-    gfx_text(line, x, HEAD_Y, TEXT_Z, WHITE, 1);
-    if (ed.is_address) {
-        for (int i = 0; i < 4; i++) {
-            float ox = x + 40.0f + (float)i * 110.0f;
-            snprintf(line, sizeof(line), "%3d", ed.oct[i]);
-            gfx_text(line, ox, LIST_Y + 20.0f, TEXT_Z, i == ed.octi ? YELLOW : WHITE, 1);
-            if (i == ed.octi) {
-                gfx_text("^^^", ox, LIST_Y + 46.0f, TEXT_Z, YELLOW, 1);
-            }
-            if (i < 3) {
-                gfx_text(".", ox + 52.0f, LIST_Y + 20.0f, TEXT_Z, GREY, 1);
-            }
-        }
-        gfx_text("Left/Right: part   Up/Down: +-1   X/Y: +-16", x, LIST_Y + 110.0f, TEXT_Z, DIM, 1);
-    } else {
-        int from = ed.pos > ED_SHOWN - 4 ? ed.pos - (ED_SHOWN - 4) : 0; /* the text scrolls along with the cursor */
-        for (int i = from; i < ed.len && i < from + ED_SHOWN; i++) {
-            char c[2] = {ed.kind == ED_KN_PASS && i != ed.pos ? '*' : ed.row == ISP_PASS || ed.text[i] != ' ' ? ed.text[i] : '_', 0};
-            gfx_text(c, x + 40.0f + (float)(i - from) * CHAR_W, LIST_Y + 20.0f, TEXT_Z, i == ed.pos ? YELLOW : WHITE, 1);
-        }
-        gfx_text("^", x + 40.0f + (float)(ed.pos - from) * CHAR_W, LIST_Y + 46.0f, TEXT_Z, YELLOW, 1);
-        gfx_text("Up/Down: character   X: ten on", x, LIST_Y + 110.0f, TEXT_Z, DIM, 1);
-        gfx_text("Left/Right: move   Y: delete", x, LIST_Y + 136.0f, TEXT_Z, DIM, 1);
-        gfx_text("past the end: Up adds one", x, LIST_Y + 162.0f, TEXT_Z, DIM, 1);
+    if (!ed.is_address) {
+        draw_keyboard(line);
+        return;
     }
-    gfx_text(ed.kind == ED_CHAT_MSG || ed.kind == ED_KN_MSG ? "A: send   B: cancel" : ed.kind == ED_CHAT_NICK || ed.kind == ED_KN_USER ? "A: next   B: cancel" : ed.kind == ED_KN_PASS ? "A: sign in   B: cancel" : "A: save   B: cancel", x, PANE_Y + PANE_H - 34.0f, TEXT_Z, DIM, 1);
+    gfx_text(line, x, HEAD_Y, TEXT_Z, WHITE, 1);
+    for (int i = 0; i < 4; i++) {
+        float ox = x + 40.0f + (float)i * 110.0f;
+        snprintf(line, sizeof(line), "%3d", ed.oct[i]);
+        gfx_text(line, ox, LIST_Y + 20.0f, TEXT_Z, i == ed.octi ? YELLOW : WHITE, 1);
+        if (i == ed.octi) {
+            gfx_text("^^^", ox, LIST_Y + 46.0f, TEXT_Z, YELLOW, 1);
+        }
+        if (i < 3) {
+            gfx_text(".", ox + 52.0f, LIST_Y + 20.0f, TEXT_Z, GREY, 1);
+        }
+    }
+    gfx_text("Left/Right: part   Up/Down: +-1   X/Y: +-16", x, LIST_Y + 110.0f, TEXT_Z, DIM, 1);
+    gfx_text("A: save   B: cancel", x, PANE_Y + PANE_H - 34.0f, TEXT_Z, DIM, 1);
 }
 
 static void

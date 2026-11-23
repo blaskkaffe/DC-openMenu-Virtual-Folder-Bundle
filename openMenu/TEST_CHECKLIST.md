@@ -240,3 +240,10 @@ I
 
 ## Lists refresh on their own
 - [ ] Online: players and games follow the "Player list refresh" setting; Events and News refresh every minute while the Events button is open (a failed fetch is tried again then) and every ten minutes in the background; not while an event or news item is open
+
+## On-screen keyboard (every text editor: ISP login, chat nick/password/lines, KosNet login)
+- [ ] A popup with a coloured border: the text with its cursor on top, a grid of keys below (digits, letters, SHIFT, #+= for symbols, SPACE, DEL, OK)
+- [ ] D-pad moves over the keys, A types the key, X a space, Y deletes the character before the cursor, L/R move the cursor in the text, START is done, B cancels
+- [ ] Keys the editor does not allow (a nick has no spaces, a dial number has no letters) are dimmed and give the error sound
+- [ ] SHIFT toggles upper case, #+= shows the symbols (ABC goes back); a password shows only the last typed character
+- [ ] The IP address editor (four numbers) is unchanged

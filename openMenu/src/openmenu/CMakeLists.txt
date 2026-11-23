@@ -45,6 +45,7 @@ set(OPENMENU_SOURCES
         src/backend/dc99_chat.c
         src/backend/dc99_chat_parse.c
         src/backend/kosnet_json.c
+        src/backend/osk.c
         src/backend/kosnet_post.c
         src/backend/dcnet_parse.c
         src/backend/dcnow_fetch.c
