@@ -11,13 +11,13 @@
 
 #include "backend/lb_parse.h"
 
-#define CELL_LEN 40
+#define CELL_LEN LB_CELL_LEN
 #define COLS_MAX 12
 
 typedef struct {
     lb_line_t* out;
     int max, count;
-    char text[LB_LINE_LEN * 2]; /* the text being collected (a heading, a cell or a list item) */
+    char text[LB_CELL_LEN * 4]; /* the text being collected (a heading, a cell or a list item) */
     size_t tn;
     int collecting;             /* 0 none, 1 heading, 2 cell, 3 list item */
     int is_th;
@@ -26,6 +26,7 @@ typedef struct {
     char cols[COLS_MAX][CELL_LEN]; /* the column titles of the table */
     int ncols;
     int in_row;
+    int in_ol, ol_n; /* inside an ordered list: its items are numbered (the number is not in the text) */
 } parser;
 
 /* src into dst[cap], cut when too long */
@@ -56,13 +57,17 @@ put(parser* ps, char c) {
     }
 }
 
+/* A line of one cell */
 static void
 emit(parser* ps, const char* text, int kind) {
     if (ps->count >= ps->max || !text[0]) {
         return;
     }
-    copy(ps->out[ps->count].text, LB_LINE_LEN, text);
-    ps->out[ps->count++].kind = (unsigned char)kind;
+    lb_line_t* l = &ps->out[ps->count++];
+    memset(l, 0, sizeof(*l));
+    copy(l->cell[0], LB_CELL_LEN, text);
+    l->ncell = 1;
+    l->kind = (unsigned char)kind;
 }
 
 static void
@@ -91,38 +96,65 @@ end_cell(parser* ps) {
     }
 }
 
+/* The text collected so far in a list item is a cell of it (a label such as "Team: " is left off: the column title would say it). */
+static void
+item_cell(parser* ps) {
+    static const char* const labels[] = {"Team: ", "Date: ", "Difficulty: "};
+    trim(ps);
+    const char* t = ps->text;
+    for (unsigned i = 0; i < sizeof(labels) / sizeof(labels[0]); i++) {
+        if (!strncmp(t, labels[i], strlen(labels[i]))) {
+            t += strlen(labels[i]);
+        }
+    }
+    if (t[0] && ps->ncells < COLS_MAX) {
+        copy(ps->cells[ps->ncells++], CELL_LEN, t);
+    }
+}
+
+/* A list item is over: its cells are one line. */
+static void
+end_item(parser* ps) {
+    if (ps->collecting != 3) {
+        return;
+    }
+    item_cell(ps);
+    ps->collecting = 0;
+    if (ps->count < ps->max && ps->ncells > 0) {
+        lb_line_t* l = &ps->out[ps->count++];
+        memset(l, 0, sizeof(*l));
+        for (int i = 0; i < ps->ncells && l->ncell < LB_CELLS; i++) {
+            copy(l->cell[l->ncell++], LB_CELL_LEN, ps->cells[i]);
+        }
+        l->kind = LB_ROW;
+    }
+    ps->ncells = 0;
+}
+
 /* A row is over: its cells (without the "Flag" column) are one line. */
 static void
 end_row(parser* ps) {
     end_cell(ps);
-    char line[LB_LINE_LEN * 2];
-    size_t n = 0;
-    line[0] = '\0';
-    for (int i = 0; i < ps->ncells; i++) {
-        if (ps->is_th) {
-            copy(ps->cols[i], CELL_LEN, ps->cells[i]);
-        } else if (i < ps->ncols && !strcasecmp(ps->cols[i], "Flag")) {
-            continue;
-        }
-        if (ps->is_th && !strcasecmp(ps->cells[i], "Flag")) {
-            continue;
-        }
-        size_t cl = strlen(ps->cells[i]);
-        if (n + cl + 3 >= sizeof(line)) {
-            break;
-        }
-        if (n) {
-            line[n++] = ' ';
-            line[n++] = ' ';
-        }
-        memcpy(line + n, ps->cells[i], cl);
-        n += cl;
-        line[n] = '\0';
-    }
     if (ps->is_th) {
+        for (int i = 0; i < ps->ncells; i++) {
+            copy(ps->cols[i], CELL_LEN, ps->cells[i]);
+        }
         ps->ncols = ps->ncells;
     }
-    emit(ps, line, ps->is_th ? LB_COLS : LB_ROW);
+    if (ps->count < ps->max && ps->ncells > 0) {
+        lb_line_t* l = &ps->out[ps->count];
+        memset(l, 0, sizeof(*l));
+        for (int i = 0; i < ps->ncells && l->ncell < LB_CELLS; i++) {
+            if (!strcasecmp(ps->is_th ? ps->cells[i] : i < ps->ncols ? ps->cols[i] : "", "Flag")) {
+                continue;
+            }
+            copy(l->cell[l->ncell++], LB_CELL_LEN, ps->cells[i]);
+        }
+        if (l->ncell > 0) {
+            l->kind = ps->is_th ? LB_COLS : LB_ROW;
+            ps->count++;
+        }
+    }
     ps->ncells = 0;
     ps->in_row = 0;
 }
@@ -268,16 +300,29 @@ lb_parse_html(const char* html, lb_line_t* out, int max) {
                     ps.is_th = name[1] == 'h';
                     start(&ps, 2);
                 }
+            } else if (!strcmp(name, "ol")) {
+                ps.in_ol = !closing;
+                ps.ol_n = 0;
             } else if (!strcmp(name, "li")) {
-                if (closing && ps.collecting == 3) {
-                    trim(&ps);
-                    emit(&ps, ps.text, LB_ROW);
-                    ps.collecting = 0;
-                } else if (!closing) {
+                if (closing) {
+                    end_item(&ps);
+                } else {
+                    end_item(&ps);
+                    ps.ncells = 0;
+                    if (ps.in_ol) {
+                        char num[12];
+                        snprintf(num, sizeof(num), "%d", ++ps.ol_n);
+                        copy(ps.cells[ps.ncells++], CELL_LEN, num);
+                    }
                     start(&ps, 3);
                 }
             } else if (!strcmp(name, "br") || (!strcmp(name, "p") && ps.collecting == 3)) {
-                put(&ps, ' ');
+                if (ps.collecting == 3) { /* a line of a list item is a cell of its own */
+                    item_cell(&ps);
+                    start(&ps, 3);
+                } else {
+                    put(&ps, ' ');
+                }
             }
             p = gt + 1;
             continue;

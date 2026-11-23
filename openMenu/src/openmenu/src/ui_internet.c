@@ -71,6 +71,8 @@
 #define ROWS 8 /* LIST_Y + 8 rows ends above the footer line */
 #define ITEM_H 46.0f /* events and news: two lines per item */
 #define ITEM_ROWS 4
+#define POPUP_ROWS 10 /* rows of a list in a popup */
+#define POPUP_ROW_H 24.0f
 #define STATUS_Y 10.0f /* the connection status, above the panel */
 #define CHAR_W 11 /* the BIOS font's advance */
 
@@ -150,6 +152,7 @@ static lb_line_t lb_lines[LB_LINES_MAX];
 static int nlb;
 static int lb_open = -1; /* the board shown (an index of lb_source), -1: the list of boards */
 static int lb_top;      /* its first line shown */
+static void lb_layout(void);
 static int news_gen = -1;
 static news_item_t news[NEWS_MAX];
 static int nnews;
@@ -423,7 +426,7 @@ list_rows(int l) {
 /* How many rows of a list fit on its page */
 static int
 list_visible(int l) {
-    return l == LIST_EVENTS || l == LIST_NEWS ? ITEM_ROWS : ROWS;
+    return l == LIST_EVENTS || l == LIST_NEWS ? ITEM_ROWS : l == LIST_PLAYERS || l == LIST_OGAMES || l == LIST_BOARD ? POPUP_ROWS : ROWS;
 }
 
 static void
@@ -1224,8 +1227,8 @@ uin_handle(button_t b) {
                 break;
             }
             if (page == PAGE_ONLINE && view[page] == ON_BOARD && lb_open >= 0) { /* a board: scroll its lines */
-                int step = b == BTN_UP ? -1 : b == BTN_DOWN ? 1 : b == BTN_PAGE_UP ? -ROWS : ROWS;
-                int most = nlb > ROWS ? nlb - ROWS : 0;
+                int step = b == BTN_UP ? -1 : b == BTN_DOWN ? 1 : b == BTN_PAGE_UP ? -POPUP_ROWS : POPUP_ROWS;
+                int most = nlb > POPUP_ROWS ? nlb - POPUP_ROWS : 0;
                 lb_top = lb_top + step < 0 ? 0 : lb_top + step > most ? most : lb_top + step;
                 break;
             }
@@ -1543,6 +1546,7 @@ uin_sync(void) {
     if (lbst.generation != lb_gen) {
         lb_gen = lbst.generation;
         nlb = lb_fetch_copy(lb_lines, LB_LINES_MAX);
+        lb_layout();
     }
     events_fetch_poll(&estat);
     if (estat.generation != events_gen) {
@@ -1666,13 +1670,15 @@ fetch_note(char* out, size_t size) {
 /* One row's highlight bar over `w` pixels from x */
 static void
 row_bar(float x, float w, float y) {
-    gfx_rect(x - 8.0f, y - 2.0f, w + 8.0f, ROW_H, 0.45f, 0x40FFFFFFu);
+    gfx_rect(x - 8.0f, y - 2.0f, w + 8.0f, lay_row_h, 0.45f, 0x40FFFFFFu);
 }
 
 #define STAR_W 22.0f /* the column of the star mark */
 
 /* Where the lists draw: in the panel, or in a popup (draw_popup_frame moves them) */
 static float lay_x = PANE_X + PAD, lay_head = HEAD_Y, lay_list = LIST_Y, lay_right = PANE_X + PANE_W - PAD, lay_foot = PANE_Y + PANE_H - 34.0f;
+static int lay_rows = ROWS;
+static float lay_row_h = ROW_H;
 #define LAY_W (lay_right - lay_x - 12.0f)
 
 /* The Online page, players: who is online, the game they are in, the network. A starred player has a star. */
@@ -1692,9 +1698,9 @@ draw_players(void) {
         char note[DCNOW_STATUS_WIDTH + 16];
         text_cut(!online ? "Connect to see who is online" : pstat.list_valid ? "Nobody is online" : fetch_note(note, sizeof(note)), 44, x, lay_list, GREY);
     }
-    for (int r = 0; r < ROWS && top[LIST_PLAYERS] + r < nplayers; r++) {
+    for (int r = 0; r < lay_rows && top[LIST_PLAYERS] + r < nplayers; r++) {
         int i = top[LIST_PLAYERS] + r;
-        float y = lay_list + (float)r * ROW_H;
+        float y = lay_list + (float)r * lay_row_h;
         int is_sel = i == sel[LIST_PLAYERS];
         if (is_sel) {
             row_bar(x, LAY_W, y);
@@ -1714,7 +1720,7 @@ static void
 draw_arrows(int l) {
     int n = list_rows(l);
     int vis = list_visible(l);
-    float last = l == LIST_EVENTS || l == LIST_NEWS ? (float)(vis - 1) * ITEM_H : (float)(vis - 1) * ROW_H;
+    float last = l == LIST_EVENTS || l == LIST_NEWS ? (float)(vis - 1) * ITEM_H : (float)(vis - 1) * lay_row_h;
     if (top[l] > 0) {
         gfx_text("^", lay_right - 11.0f, lay_list - 4.0f, TEXT_Z, GREY, 1);
     }
@@ -1751,9 +1757,9 @@ draw_ogames(void) {
     if (nogames == 0) {
         text_cut(conn.state != DCNOW_CONN_ONLINE ? "Connect to see what is being played" : "Nobody is playing right now", 44, x, lay_list, GREY);
     }
-    for (int r = 0; r < ROWS && top[LIST_OGAMES] + r < nogames; r++) {
+    for (int r = 0; r < lay_rows && top[LIST_OGAMES] + r < nogames; r++) {
         int i = top[LIST_OGAMES] + r;
-        float y = lay_list + (float)r * ROW_H;
+        float y = lay_list + (float)r * lay_row_h;
         int is_sel = i == sel[LIST_OGAMES];
         const ogame_row* g = &ogames[i];
         if (is_sel) {
@@ -2343,25 +2349,44 @@ online_value(int i, char* out, size_t size) {
 
 /* A popup in the middle of the screen, as the keyboard's: coloured border, dark fill. The lists draw inside it. */
 #define POP_W 520.0f
-#define POP_H 300.0f
+#define POP_H 330.0f
+/* The buttons of a popup, the way the Say button is: a green oval of the clock screen under the first letter of the word, the rest of it
+ * beside it. `words` are separated by '|'. A notice takes their place for a moment. */
 static void
-draw_popup_frame(const char* title, const char* hint) {
+draw_popup_buttons(const char* words) {
+    if (notice_frames > 0) {
+        text_cut(notice, 44, lay_x, lay_foot, WHITE);
+        return;
+    }
+    float x = lay_x + 22.0f;
+    char word[24];
+    for (const char* p = words; p && *p;) {
+        const char* bar = strchr(p, '|');
+        int n = bar ? (int)(bar - p) : (int)strlen(p);
+        snprintf(word, sizeof(word), "%.*s", n, p);
+        gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
+        key_oval(x - 9.0f, lay_foot + 15.0f, 1.0f, 1.0f, 1);
+        x += (float)gfx_text_width(word) + 56.0f;
+        p += n + (bar ? 1 : 0);
+    }
+}
+
+static void
+draw_popup_frame(const char* title, const char* buttons) {
     const float px = 320.0f - POP_W / 2.0f, py = 240.0f - POP_H / 2.0f;
     gfx_rect(px, py, POP_W, POP_H, KB_Z, KB_BORDER);
     gfx_rect(px + 3.0f, py + 3.0f, POP_W - 6.0f, POP_H - 6.0f, KB_Z + 0.00002f, KB_FILL);
     lay_x = px + 16.0f;
-    lay_head = py + 10.0f;
-    lay_list = py + 44.0f;
+    lay_head = py + 8.0f;
+    lay_list = py + 40.0f;
     lay_right = px + POP_W - 14.0f;
-    lay_foot = py + POP_H - 34.0f;
+    lay_foot = py + POP_H - 42.0f;
+    lay_rows = POPUP_ROWS;
+    lay_row_h = POPUP_ROW_H;
     if (title) {
         gfx_text(title, lay_x, lay_head, TEXT_Z, YELLOW, 1);
     }
-    if (notice_frames > 0) { /* what just happened takes the hint's place for a moment */
-        text_cut(notice, 44, lay_x, lay_foot, WHITE);
-    } else if (hint) {
-        text_cut(hint, 44, lay_x, lay_foot, DIM);
-    }
+    draw_popup_buttons(buttons);
 }
 
 static void
@@ -2371,6 +2396,8 @@ reset_layout(void) {
     lay_list = LIST_Y;
     lay_right = PANE_X + PANE_W - PAD;
     lay_foot = PANE_Y + PANE_H - 34.0f;
+    lay_rows = ROWS;
+    lay_row_h = ROW_H;
 }
 
 /* Next event popup: the one that is on or next, with what is known, then the ones after it */
@@ -2422,50 +2449,99 @@ draw_online_menu(void) {
 }
 
 /* Leaderboards popup: the boards (and the card's browsers after them), then the lines of the one opened. */
+#define BOARD_W 476.0f /* the width of the lines in the popup */
+
+/* Where the columns of every table of the board start (x from the popup's left edge): each column as wide as its widest cell, the last takes
+ * what is left; a column that is too wide is held to a share so that all fit. Run when a board has arrived. */
+static short lb_colx[LB_LINES_MAX][LB_CELLS];
+
+static void
+lb_layout(void) {
+    for (int i = 0; i < nlb;) {
+        if (lb_lines[i].kind == LB_HEAD) {
+            lb_colx[i][0] = 0;
+            i++;
+            continue;
+        }
+        int j = i, ncol = 0;
+        float w[LB_CELLS] = {0};
+        for (; j < nlb && lb_lines[j].kind != LB_HEAD; j++) {
+            for (int c = 0; c < lb_lines[j].ncell; c++) {
+                float tw = (float)gfx_text_width(lb_lines[j].cell[c]);
+                w[c] = tw > w[c] ? tw : w[c];
+            }
+            ncol = lb_lines[j].ncell > ncol ? lb_lines[j].ncell : ncol;
+        }
+        const float gap = 18.0f;
+        float cap = ncol > 1 ? (BOARD_W - 90.0f) / (float)(ncol - 1) : BOARD_W;
+        float x = 0.0f;
+        short at[LB_CELLS];
+        for (int c = 0; c < ncol; c++) {
+            at[c] = (short)x;
+            x += (w[c] + gap > cap ? cap : w[c] + gap);
+        }
+        for (int k = i; k < j; k++) {
+            for (int c = 0; c < LB_CELLS; c++) {
+                lb_colx[k][c] = c < ncol ? at[c] : 0;
+            }
+        }
+        i = j;
+    }
+}
+
 static void
 draw_board(void) {
     char line[96];
     if (lb_open < 0) {
-        draw_popup_frame("Leaderboards", "A: open  B: close");
+        draw_popup_frame("Leaderboards", "Open|Close");
         int n = lb_source_count() + board_count();
-        for (int r = 0; r < ROWS && top[LIST_BOARD] + r < n; r++) {
+        for (int r = 0; r < lay_rows && top[LIST_BOARD] + r < n; r++) {
             int i = top[LIST_BOARD] + r;
-            float y = lay_list + (float)r * ROW_H;
+            float y = lay_list + (float)r * lay_row_h;
             int is_sel = i == sel[LIST_BOARD];
             if (is_sel) {
                 row_bar(lay_x, LAY_W, y);
             }
             if (i < lb_source_count()) {
-                snprintf(line, sizeof(line), "%s: %s", lb_source(i)->game, lb_source(i)->label);
+                snprintf(line, sizeof(line), "%s", lb_source(i)->game);
+                text_cut(line, 24, lay_x, y, is_sel ? YELLOW : WHITE);
+                text_cut(lb_source(i)->label, 22, lay_x + 270.0f, y, is_sel ? YELLOW : GREY);
             } else {
-                snprintf(line, sizeof(line), "Browser: %s", board_item(i - lb_source_count())->name);
+                text_cut(board_item(i - lb_source_count())->name, 24, lay_x, y, is_sel ? YELLOW : WHITE);
+                text_cut("browser", 22, lay_x + 270.0f, y, DIM);
             }
-            text_cut(line, 42, lay_x, y, is_sel ? YELLOW : WHITE);
         }
         draw_arrows(LIST_BOARD);
         return;
     }
     snprintf(line, sizeof(line), "%s: %s", lb_source(lb_open)->game, lb_source(lb_open)->label);
-    draw_popup_frame(NULL, "Up/Down: scroll  A: reload  B: back");
+    draw_popup_frame(NULL, "Reload|Back");
     text_cut(line, 42, lay_x, lay_head, YELLOW);
-    if (lbst.state == LB_RUNNING || lbst.source != lb_open || (lbst.state != LB_DONE && lbst.state != LB_FAILED)) {
+    if (lbst.source != lb_open || (lbst.state != LB_DONE && lbst.state != LB_FAILED)) {
         text_cut(lbst.state == LB_RUNNING ? lbst.line : "Loading...", 42, lay_x, lay_list, GREY);
         return;
     }
     if (lbst.state == LB_FAILED || nlb == 0) {
         text_cut(lbst.state == LB_FAILED ? lbst.line : "No scores on the page", 42, lay_x, lay_list, RED);
-        text_cut("A: try again", 42, lay_x, lay_list + ROW_H, DIM);
+        text_cut("Reload to try again", 42, lay_x, lay_list + lay_row_h, DIM);
         return;
     }
-    for (int r = 0; r < ROWS && lb_top + r < nlb; r++) {
+    for (int r = 0; r < POPUP_ROWS && lb_top + r < nlb; r++) {
         const lb_line_t* l = &lb_lines[lb_top + r];
-        text_cut(l->text, 42, lay_x, lay_list + (float)r * ROW_H, l->kind == LB_HEAD ? YELLOW : l->kind == LB_COLS ? DIM : WHITE);
+        float y = lay_list + (float)r * lay_row_h;
+        uint32_t col = l->kind == LB_HEAD ? YELLOW : l->kind == LB_COLS ? DIM : WHITE;
+        for (int c = 0; c < l->ncell; c++) {
+            int last = c == l->ncell - 1 || l->kind == LB_HEAD;
+            float x0 = (float)lb_colx[lb_top + r][c];
+            float x1 = last ? BOARD_W : (float)lb_colx[lb_top + r][c + 1];
+            text_cut(l->cell[c], (int)((x1 - x0 - (last ? 0.0f : 6.0f)) / CHAR_W), lay_x + x0, y, col);
+        }
     }
     if (lb_top > 0) {
         gfx_text("^", lay_right - 11.0f, lay_list - 4.0f, TEXT_Z, GREY, 1);
     }
-    if (lb_top + ROWS < nlb) {
-        gfx_text("v", lay_right - 11.0f, lay_list + (float)(ROWS - 1) * ROW_H, TEXT_Z, GREY, 1);
+    if (lb_top + POPUP_ROWS < nlb) {
+        gfx_text("v", lay_right - 11.0f, lay_list + (float)(POPUP_ROWS - 1) * lay_row_h, TEXT_Z, GREY, 1);
     }
 }
 
@@ -2473,15 +2549,15 @@ static void
 draw_online(void) {
     switch (view[PAGE_ONLINE]) {
         case ON_PLAYERS:
-            draw_popup_frame(NULL, "A: refresh  Y: star  B: close");
+            draw_popup_frame(NULL, "Refresh|Star|Close");
             draw_players();
             break;
         case ON_GAMES:
-            draw_popup_frame(NULL, "A: join or start  Y: star  B: close");
+            draw_popup_frame(NULL, "Join|Star|Close");
             draw_ogames();
             break;
         case ON_EVENT:
-            draw_popup_frame("Next event", "B: close");
+            draw_popup_frame("Next event", "Close");
             draw_next_event();
             break;
         case ON_BOARD:
