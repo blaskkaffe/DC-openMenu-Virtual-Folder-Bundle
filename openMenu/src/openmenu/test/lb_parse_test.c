@@ -56,6 +56,11 @@ main(void) {
     assert(lb_parse_html(vp, l, 3) == 3);
     assert(lb_parse_html("", l, 3) == 0);
     assert(lb_parse_html("<table><tr><td>a<td>b</table><script>var x='<h1>no</h1>';</script>1 < 2", l, 3) == 1);
+    /* a text file (Toy Racer's lap records) and a <pre> block */
+    n = lb_parse_html("Track\tName\tTime\r\n\r\nBeach\tKiko\t1:02.33\nCity | Rex | 0:58.10\n", l, LB_LINES_MAX);
+    assert(n == 3 && l[0].ncell == 3 && !strcmp(J(&l[1]), "Beach  Kiko  1:02.33") && !strcmp(J(&l[2]), "City  Rex  0:58.10"));
+    n = lb_parse_html("<h3>Top</h3><pre>1  <b>Anna</b>   9100\n2  Bob     8800</pre><p>x</p>", l, LB_LINES_MAX);
+    assert(n == 3 && l[0].kind == LB_HEAD && !strcmp(J(&l[1]), "1  Anna  9100") && !strcmp(J(&l[2]), "2  Bob  8800"));
     puts("lb_parse ok");
     return 0;
 }

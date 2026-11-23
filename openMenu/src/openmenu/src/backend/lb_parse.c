@@ -227,12 +227,64 @@ utf8(parser* ps, const unsigned char* p) {
     return n;
 }
 
+/* Plain text (a .txt board, or a <pre> block): a row per line, its cells apart by a tab, a '|', a ',' or two spaces or more */
+static void
+text_rows(parser* ps, const char* t, const char* end) {
+    while (t < end && ps->count < ps->max) {
+        const char* nl = memchr(t, '\n', (size_t)(end - t));
+        const char* le = nl ? nl : end;
+        lb_line_t l;
+        memset(&l, 0, sizeof(l));
+        char cell[LB_CELL_LEN];
+        size_t cn = 0;
+        for (const char* c = t;; c++) {
+            int sep = c >= le || *c == '\t' || *c == '|' || *c == ',' || *c == '\r' || (*c == ' ' && c + 1 < le && c[1] == ' ');
+            if (sep) {
+                while (cn > 0 && cell[cn - 1] == ' ') {
+                    cn--;
+                }
+                if (cn > 0 && l.ncell < LB_CELLS) {
+                    cell[cn] = '\0';
+                    copy(l.cell[l.ncell++], LB_CELL_LEN, cell);
+                }
+                cn = 0;
+                if (c >= le) {
+                    break;
+                }
+                continue;
+            }
+            if (*c == '<' && (isalpha((unsigned char)c[1]) || c[1] == '/')) { /* a tag inside a <pre>: left out */
+                const char* g = memchr(c, '>', (size_t)(le - c));
+                if (g) {
+                    c = g;
+                    continue;
+                }
+            }
+            if ((*c == ' ' && cn == 0) || (unsigned char)*c < 32 || (unsigned char)*c >= 127) {
+                continue;
+            }
+            if (cn + 1 < sizeof(cell)) {
+                cell[cn++] = *c;
+            }
+        }
+        if (l.ncell > 0) {
+            l.kind = LB_ROW;
+            ps->out[ps->count++] = l;
+        }
+        t = nl ? nl + 1 : end;
+    }
+}
+
 int
 lb_parse_html(const char* html, lb_line_t* out, int max) {
     parser ps;
     memset(&ps, 0, sizeof(ps));
     ps.out = out;
     ps.max = max;
+    if (!strchr(html, '<')) { /* not HTML at all: a text file */
+        text_rows(&ps, html, html + strlen(html));
+        return ps.count;
+    }
     for (const char* p = html; *p;) {
         if (*p == '<') {
             if (!strncmp(p, "<!--", 4)) {
@@ -258,6 +310,14 @@ lb_parse_html(const char* html, lb_line_t* out, int max) {
             const char* gt = strchr(p, '>');
             if (!gt) {
                 break;
+            }
+            if (!closing && !strcmp(name, "pre")) { /* preformatted: lines and columns of plain text */
+                const char* e = ci_find(gt, "</pre");
+                const char* stop = e ? e : gt + strlen(gt);
+                text_rows(&ps, gt + 1, stop);
+                const char* eg = e ? strchr(e, '>') : NULL;
+                p = eg ? eg + 1 : stop;
+                continue;
             }
             if (!closing && (!strcmp(name, "script") || !strcmp(name, "style"))) {
                 const char* e = ci_find(gt, closing ? "" : (name[1] == 'c' ? "</script" : "</style"));

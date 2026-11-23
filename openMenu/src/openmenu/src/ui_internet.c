@@ -2741,7 +2741,10 @@ uin_draw(void) {
                 po->var[1] = (int)(panel_h / PANEL_PX + 0.5f);
                 po->var[2] = po->var[3] = 256;
                 po->text_w = po->text_h = 0; /* no text of its own: the popup's text is drawn over it */
-                po->flags &= ~(uint32_t)BVM_F_HIDE;
+                po->panel_w = po->var[0]; /* the script takes the size once, when it starts: the size of this frame's popup */
+                po->panel_h = po->var[1];
+                po->flags = (po->flags | BVM_F_PANEL) & ~(uint32_t)BVM_F_HIDE;
+                menu->scene.object_panel_accent = BMENU_ACCENT_FILE; /* the file screen's green frame */
             } else {
                 po->flags |= BVM_F_HIDE;
             }

@@ -24,13 +24,35 @@
 
 /* The boards: DreamcastLive's page of PSO, and the boards of Vanishing Point and Quake III that its pages show in frames. The hosts are asked
  * on plain HTTP (the console has no TLS here): a site that sends the console to https is reported as that. */
+/* The boards dreamcastlive.net/leaderboards/ links to, one page per game (read 2026-11-23), fetched over plain HTTP */
 static const lb_source_t sources[] = {
+    {"Alien Front Online", "High scores", "shumania.ddns.net", "/AFO_HIGHSCORE.html"},
+    {"ChuChu Rocket!", "High scores", "shumania.ddns.net", "/ChuHighScore.html"},
+    {"Culdcept II", "Rankings", "shumania.ddns.net", "/culdcept2.html"},
+    {"Daytona USA", "Records", "shumania.ddns.net", "/daytona.html"},
+    {"Golf Shiyouyo 2", "High scores", "shumania.ddns.net", "/GOLF_SHIYOUYO_2_HIGHSCORE.html"},
+    {"Gundam: Federation vs Zeon", "High scores", "shumania.ddns.net", "/GDXSV_HIGHSCORE.html"},
+    {"Internet Game Pack", "High scores", "shumania.ddns.net", "/IGP_HIGHSCORE.html"},
+    {"Monaco Grand Prix Online", "High scores", "shumania.ddns.net", "/MONACO_HIGHSCORE.html"},
+    {"NBA 2K2", "High scores", "shumania.ddns.net", "/NBA2K2_HIGHSCORE.html"},
+    {"NCAA College Football 2K2", "High scores", "shumania.ddns.net", "/NCAA2K2_HIGHSCORE.html"},
+    {"NFL 2K2", "High scores", "shumania.ddns.net", "/NFL2K2_HIGHSCORE.html"},
+    {"The Next Tetris", "High scores", "shumania.ddns.net", "/TNT_HIGHSCORE.html"},
+    {"Ooga Booga", "High scores", "shumania.ddns.net", "/OB_HIGHSCORE.html"},
     {"Phantasy Star Online", "Challenge and Attack", "dreamcastlive.net", "/pso-arena/"},
+    {"Planet Ring", "High scores", "shumania.ddns.net", "/PR_HIGHSCORE.html"},
+    {"POD SpeedZone", "High scores", "shumania.ddns.net", "/POD_HIGHSCORE.html"},
+    {"Power Smash Tennis", "High scores", "shumania.ddns.net", "/POWERSMASH_HIGHSCORE.html"},
+    {"Propeller Arena", "Leaderboards", "www.uefa.dreampipe.net", "/propeller/leaderboards.php"},
+    {"Quake III Arena", "Player Rankings", "www.uefa.dreampipe.net", "/Quake3/rankings.php"},
+    {"Sega Swirl", "Top scores", "shumania.ddns.net", "/top_scores.htm"},
+    {"Sega Tetris", "High scores", "shumania.ddns.net", "/SEGATETRIS_HIGHSCORE.html"},
+    {"Toy Racer", "Lap records", "dreamcastlive.net", "/ToyServer/ToyHighScores.txt"},
     {"Vanishing Point", "Weekly Challenge", "shumania.ddns.net", "/vp_challenges.html"},
     {"Vanishing Point", "Track Records", "shumania.ddns.net", "/vp_track_board.html"},
     {"Vanishing Point", "Rankings 2026-now", "shumania.ddns.net", "/vp_top100.html"},
     {"Vanishing Point", "Rankings 2003-now", "shumania.ddns.net", "/vp_combined_top100.html"},
-    {"Quake III Arena", "Player Rankings", "www.uefa.dreampipe.net", "/Quake3/rankings.php"},
+    {"World Series Baseball 2K2", "High scores", "shumania.ddns.net", "/WSB2K2_HIGHSCORE.html"},
 };
 #define SOURCES ((int)(sizeof(sources) / sizeof(sources[0])))
 
