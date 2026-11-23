@@ -356,7 +356,7 @@ build_phone(builder* b) {
 #define POD_D 2.4f
 #define POD_BOTTOM (-3.2f)
 static const float pod_h[3] = {6.0f, 4.2f, 3.0f}; /* the winner (white, 1), the second (orange, 2), the third (blue, 3) */
-static const float pod_cx[3] = {0.0f, -POD_W, POD_W};
+static const float pod_cx[3] = {0.0f, -POD_W * 1.04f, POD_W * 1.04f}; /* side by side, with a hair between */
 
 #define POD_TAPER 0.95f /* the foot of a block is this much of its top's width and depth: the top is a tiny bit bigger */
 
@@ -640,7 +640,6 @@ bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
     nodes[0].scl.x = nodes[0].scl.y = nodes[0].scl.z = 1.0f;
     nodes[0].parent = -1;
     nodes[0].ang[0] = 0x08E4;  /* about 12 degrees: the tops lean toward the viewer */
-    nodes[0].ang[1] = -0x038E; /* about -5 degrees: turned, so the side of the stand shows */
     nodes[1] = out->nodes[0];
     nodes[1].parent = 0;
     nodes[1].eval = 0;
