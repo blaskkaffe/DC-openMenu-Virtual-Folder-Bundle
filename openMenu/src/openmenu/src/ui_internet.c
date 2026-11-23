@@ -2366,7 +2366,7 @@ draw_popup_buttons(const char* words) {
         int n = bar ? (int)(bar - p) : (int)strlen(p);
         snprintf(word, sizeof(word), "%.*s", n, p);
         gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
-        key_oval(x - 9.0f, lay_foot + 15.0f, 1.0f, 1.0f, 1);
+        key_oval(x - 6.0f, lay_foot + 14.0f, 0.68f, 0.68f, 1);
         x += (float)gfx_text_width(word) + 56.0f;
         p += n + (bar ? 1 : 0);
     }
@@ -2374,7 +2374,7 @@ draw_popup_buttons(const char* words) {
 
 static void
 draw_popup_frame(const char* title, const char* buttons) {
-    const float px = 320.0f - POP_W / 2.0f, py = 240.0f - POP_H / 2.0f;
+    const float px = 320.0f - POP_W / 2.0f, py = 232.0f - POP_H / 2.0f;
     gfx_rect(px, py, POP_W, POP_H, KB_Z, KB_BORDER);
     gfx_rect(px + 3.0f, py + 3.0f, POP_W - 6.0f, POP_H - 6.0f, KB_Z + 0.00002f, KB_FILL);
     lay_x = px + 16.0f;
