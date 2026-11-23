@@ -25,6 +25,7 @@
 #include "backend/dcnow_net.h"
 #include "backend/events_fetch.h"
 #include "backend/kosnet_post.h"
+#include "backend/lb_fetch.h"
 #include "backend/osk.h"
 #include "backend/picolink.h"
 #include "backend/uicons.h"
@@ -143,6 +144,12 @@ static int nev_rows;
 static unsigned ev_built = ~0u; /* frame of the last rebuild (the clock moves on) */
 
 static news_status_t nstat;
+static lb_status_t lbst; /* the leaderboard being read */
+static int lb_gen = -1;
+static lb_line_t lb_lines[LB_LINES_MAX];
+static int nlb;
+static int lb_open = -1; /* the board shown (an index of lb_source), -1: the list of boards */
+static int lb_top;      /* its first line shown */
 static int news_gen = -1;
 static news_item_t news[NEWS_MAX];
 static int nnews;
@@ -402,7 +409,7 @@ list_rows(int l) {
         case LIST_PLAYERS: return nplayers;
         case LIST_OGAMES: return nogames;
         case LIST_ONLINE: return ON_ROWS;
-        case LIST_BOARD: return board_count();
+        case LIST_BOARD: return lb_source_count() + board_count();
         case LIST_PLAY: return ngames;
         case LIST_EVENTS: return nev_rows;
         case LIST_NEWS: return nnews;
@@ -1131,6 +1138,7 @@ static void
 leave_screen(void) {
     events_fetch_abort();
     news_fetch_abort();
+    lb_fetch_abort();
     dc99_chat_stop();
     kosnet_post_stop();
     picolink_stop();
@@ -1215,6 +1223,12 @@ uin_handle(button_t b) {
                 chat_back[w] = to < 0 ? 0 : to > most ? most : to;
                 break;
             }
+            if (page == PAGE_ONLINE && view[page] == ON_BOARD && lb_open >= 0) { /* a board: scroll its lines */
+                int step = b == BTN_UP ? -1 : b == BTN_DOWN ? 1 : b == BTN_PAGE_UP ? -ROWS : ROWS;
+                int most = nlb > ROWS ? nlb - ROWS : 0;
+                lb_top = lb_top + step < 0 ? 0 : lb_top + step > most ? most : lb_top + step;
+                break;
+            }
             if (l < 0) {
                 break;
             }
@@ -1254,9 +1268,27 @@ uin_handle(button_t b) {
                 case PAGE_ONLINE:
                     if (view[page] == ON_MENU) { /* a row: its popup */
                         view[page] = sel[LIST_ONLINE] + 1;
+                        lb_open = -1;
                         sound_sfx(BAUDIO_SFX_ENTER);
-                    } else if (view[page] == ON_BOARD) { /* start a browser */
-                        launch_row(board_item(sel[LIST_BOARD]));
+                    } else if (view[page] == ON_BOARD) { /* open a board, read it again, or start a browser */
+                        int row = sel[LIST_BOARD];
+                        if (lb_open >= 0) {
+                            lb_fetch_start(lb_open);
+                            sound_sfx(BAUDIO_SFX_CONFIRM);
+                        } else if (row < lb_source_count()) {
+                            if (!online) {
+                                sound_sfx(BAUDIO_SFX_ERROR);
+                                say("Not connected: Settings, Connection");
+                            } else {
+                                lb_open = row;
+                                lb_top = 0;
+                                nlb = 0;
+                                lb_fetch_start(row);
+                                sound_sfx(BAUDIO_SFX_ENTER);
+                            }
+                        } else {
+                            launch_row(board_item(row - lb_source_count()));
+                        }
                     } else if (view[page] == ON_EVENT) {
                         sound_sfx(BAUDIO_SFX_CANCEL);
                         view[page] = ON_MENU;
@@ -1364,6 +1396,11 @@ uin_handle(button_t b) {
                 detail = 0;
                 break;
             }
+            if (page == PAGE_ONLINE && view[page] == ON_BOARD && lb_open >= 0) { /* a board back to the list of boards */
+                lb_open = -1;
+                lb_fetch_abort();
+                break;
+            }
             if (page == PAGE_ONLINE && view[page] != ON_MENU) { /* a popup closes */
                 view[page] = ON_MENU;
                 break;
@@ -1376,6 +1413,7 @@ uin_handle(button_t b) {
                 uint64_t t0 = timer_ms_gettime64();
                 printf("OM B: Internet screen leaves, stopping the fetches\n");
                 events_fetch_abort();
+                lb_fetch_abort();
                 uint64_t t1 = timer_ms_gettime64();
                 news_fetch_abort();
                 dc99_chat_stop();
@@ -1500,6 +1538,11 @@ uin_sync(void) {
     if (nstat.generation != news_gen) {
         news_gen = nstat.generation;
         nnews = news_fetch_copy(news, NEWS_MAX);
+    }
+    lb_fetch_poll(&lbst);
+    if (lbst.generation != lb_gen) {
+        lb_gen = lbst.generation;
+        nlb = lb_fetch_copy(lb_lines, LB_LINES_MAX);
     }
     events_fetch_poll(&estat);
     if (estat.generation != events_gen) {
@@ -2294,7 +2337,7 @@ online_value(int i, char* out, size_t size) {
             snprintf(out, size, "%s", !online ? "not connected" : estat.state == EVENTS_RUNNING ? "loading..." : "none coming");
         }
     } else {
-        snprintf(out, size, "%s", board_count() ? "open a browser" : "no browser");
+        snprintf(out, size, "%d boards", lb_source_count());
     }
 }
 
@@ -2378,6 +2421,54 @@ draw_online_menu(void) {
     }
 }
 
+/* Leaderboards popup: the boards (and the card's browsers after them), then the lines of the one opened. */
+static void
+draw_board(void) {
+    char line[96];
+    if (lb_open < 0) {
+        draw_popup_frame("Leaderboards", "A: open  B: close");
+        int n = lb_source_count() + board_count();
+        for (int r = 0; r < ROWS && top[LIST_BOARD] + r < n; r++) {
+            int i = top[LIST_BOARD] + r;
+            float y = lay_list + (float)r * ROW_H;
+            int is_sel = i == sel[LIST_BOARD];
+            if (is_sel) {
+                row_bar(lay_x, LAY_W, y);
+            }
+            if (i < lb_source_count()) {
+                snprintf(line, sizeof(line), "%s: %s", lb_source(i)->game, lb_source(i)->label);
+            } else {
+                snprintf(line, sizeof(line), "Browser: %s", board_item(i - lb_source_count())->name);
+            }
+            text_cut(line, 42, lay_x, y, is_sel ? YELLOW : WHITE);
+        }
+        draw_arrows(LIST_BOARD);
+        return;
+    }
+    snprintf(line, sizeof(line), "%s: %s", lb_source(lb_open)->game, lb_source(lb_open)->label);
+    draw_popup_frame(NULL, "Up/Down: scroll  A: reload  B: back");
+    text_cut(line, 42, lay_x, lay_head, YELLOW);
+    if (lbst.state == LB_RUNNING || lbst.source != lb_open || (lbst.state != LB_DONE && lbst.state != LB_FAILED)) {
+        text_cut(lbst.state == LB_RUNNING ? lbst.line : "Loading...", 42, lay_x, lay_list, GREY);
+        return;
+    }
+    if (lbst.state == LB_FAILED || nlb == 0) {
+        text_cut(lbst.state == LB_FAILED ? lbst.line : "No scores on the page", 42, lay_x, lay_list, RED);
+        text_cut("A: try again", 42, lay_x, lay_list + ROW_H, DIM);
+        return;
+    }
+    for (int r = 0; r < ROWS && lb_top + r < nlb; r++) {
+        const lb_line_t* l = &lb_lines[lb_top + r];
+        text_cut(l->text, 42, lay_x, lay_list + (float)r * ROW_H, l->kind == LB_HEAD ? YELLOW : l->kind == LB_COLS ? DIM : WHITE);
+    }
+    if (lb_top > 0) {
+        gfx_text("^", lay_right - 11.0f, lay_list - 4.0f, TEXT_Z, GREY, 1);
+    }
+    if (lb_top + ROWS < nlb) {
+        gfx_text("v", lay_right - 11.0f, lay_list + (float)(ROWS - 1) * ROW_H, TEXT_Z, GREY, 1);
+    }
+}
+
 static void
 draw_online(void) {
     switch (view[PAGE_ONLINE]) {
@@ -2394,19 +2485,7 @@ draw_online(void) {
             draw_next_event();
             break;
         case ON_BOARD:
-            draw_popup_frame("Leaderboards: open a browser", board_count() ? "A: start the browser  B: close" : "B: close");
-            if (board_count() == 0) {
-                text_cut("No web browser on this card", 44, lay_x, lay_list, GREY);
-            }
-            for (int r = 0; r < board_count() && r < ROWS; r++) {
-                float y = lay_list + (float)r * ROW_H;
-                int is_sel = r == sel[LIST_BOARD];
-                if (is_sel) {
-                    row_bar(lay_x, LAY_W, y);
-                }
-                text_cut(board_item(r)->name, 40, lay_x, y, is_sel ? YELLOW : WHITE);
-            }
-            gfx_text("A game's leaderboard is on its website.", lay_x, lay_foot - ROW_H, TEXT_Z, DIM, 1);
+            draw_board();
             break;
         default:
             draw_online_menu();

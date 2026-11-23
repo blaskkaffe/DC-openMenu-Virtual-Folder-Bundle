@@ -56,6 +56,8 @@ set(OPENMENU_SOURCES
         src/backend/events_fetch.c
         src/backend/news_fetch.c
         src/backend/news_parse.c
+        src/backend/lb_fetch.c
+        src/backend/lb_parse.c
         src/backend/online_games.c
         src/backend/online_time_sync.c
         src/bench.c
