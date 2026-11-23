@@ -45,6 +45,8 @@
 /* The bottom row, as the game list has it: the CD player's BACK marker and buttons (scripts 6, 0x17..0x1A) */
 #define PRIO 0x1000
 #define ID_BACK 0x1110
+#define ID_KEY(i) ((uint16_t)(0x1200 + (i))) /* the keyboard's keys: the same oval as the Say button */
+#define KEYS_MAX 48
 #define ID_SAY 0x1120 /* the oval of the chat bar: script 0x3f, the Select button of the BIOS clock screen */
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
 #define BACK_X (-19.53125f)
@@ -476,6 +478,9 @@ uin_open(bmenu* m, int pal) {
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 6, ID_BACK, PRIO);
     bvm_create(&m->vm, 0x3f, ID_SAY, PRIO);
+    for (int i = 0; i < KEYS_MAX; i++) {
+        bvm_create(&m->vm, 0x3f, ID_KEY(i), PRIO);
+    }
     for (int i = 0; i < PAGES; i++) {
         bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* left to right, as bios_list */
     }
@@ -2066,19 +2071,38 @@ draw_chat(int w) {
 }
 
 /* The on-screen keyboard: a popup with a coloured border, the text with its cursor, and a grid of keys. */
-#define KB_X (PANE_X + 22.0f)
-#define KB_Y (PANE_Y + 4.0f)
 #define KB_W 492.0f
 #define KB_H 292.0f
+#define KB_X (320.0f - KB_W / 2.0f) /* popups are in the middle of the screen */
+#define KB_Y (240.0f - KB_H / 2.0f)
 #define KB_CELL_W 42.0f
 #define KB_CELL_H 26.0f
 #define KB_GAP 4.0f
+#define KB_Z 0.00288f
 #define KB_BORDER 0xFFE8A030u
 #define KB_FILL 0xFF101A38u
 #define KB_KEY 0x7030804Cu
 #define KB_KEY_SEL 0xFF48C860u
 #define KB_KEY_OK 0xB02E9A4Au
 #define KB_SHOWN 38
+
+/* A key: the Say button's oval (script 0x3f of the BIOS clock screen, 45 x 38 px at scale 1) placed under the key, lit when selected. */
+#define OVAL_W 45.5f
+static int kb_slot;
+static void
+key_oval(float cx, float cy, float sx, float sy, int lit) {
+    bvm_obj* o = bvm_find(&menu->vm, ID_KEY(kb_slot));
+    if (!o || kb_slot >= KEYS_MAX) {
+        return;
+    }
+    kb_slot++;
+    place(o, (cx - 320.0f) / 11.9f, (240.0f - cy) / 11.9f, -335.9375f + 0.39f);
+    o->scale_tw[0].cur = sx;
+    o->scale_tw[1].cur = sy;
+    o->scale_tw[2].cur = 1.0f;
+    o->var[1] = lit;
+    o->flags &= ~(uint32_t)BVM_F_HIDE;
+}
 
 static void
 kb_label(const char* t, float x, float w, float y, uint32_t col) {
@@ -2094,15 +2118,15 @@ draw_keyboard(const char* title) {
     int from = ed.pos > KB_SHOWN - 2 ? ed.pos - (KB_SHOWN - 2) : 0; /* the text scrolls along with the cursor */
 
     const int grid = !input_keyboard_present(); /* a plugged-in keyboard types the text: only the field */
-    const float top = grid ? KB_Y : KB_Y + 92.0f;
     const float h = grid ? KB_H : 118.0f;
+    const float top = 240.0f - h / 2.0f;
 
-    gfx_rect(KB_X, top, KB_W, h, 0.43f, KB_BORDER);
-    gfx_rect(KB_X + 3.0f, top + 3.0f, KB_W - 6.0f, h - 6.0f, 0.44f, KB_FILL);
+    gfx_rect(KB_X, top, KB_W, h, KB_Z, KB_BORDER); /* behind the ovals, in front of the panel */
+    gfx_rect(KB_X + 3.0f, top + 3.0f, KB_W - 6.0f, h - 6.0f, KB_Z + 0.00002f, KB_FILL);
     gfx_text(title, KB_X + 14.0f, top + 6.0f, TEXT_Z, YELLOW, 1);
 
     /* the text */
-    gfx_rect(gx, top + 36.0f, KB_W - 36.0f, 30.0f, 0.45f, 0xFF050810u);
+    gfx_rect(gx, top + 36.0f, KB_W - 36.0f, 30.0f, KB_Z + 0.00004f, 0xFF050810u);
     {
         char shown[KB_SHOWN + 1];
         char before[KB_SHOWN + 1];
@@ -2135,7 +2159,7 @@ draw_keyboard(const char* title) {
             if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
-            gfx_rrect(kx, ky, kw, KB_CELL_H, KB_CELL_H / 2.0f, 0.45f, sel ? KB_KEY_SEL : key.kind == OSK_OK ? KB_KEY_OK : KB_KEY); /* ovals, as the BIOS buttons */
+            key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? kw * 0.85f / OVAL_W : 0.68f, 0.68f, sel || key.kind == OSK_OK);
             switch (key.kind) {
                 case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
                 case OSK_SHIFT: kb_label("SHIFT", kx, kw, ky, kb.layer == OSK_UPPER ? YELLOW : col); break;
@@ -2318,6 +2342,13 @@ uin_draw(void) {
     gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
     draw_status();
     say_on = 0;
+    kb_slot = 0;
+    for (int i = 0; i < KEYS_MAX; i++) {
+        bvm_obj* k = bvm_find(&menu->vm, ID_KEY(i));
+        if (k) {
+            k->flags |= BVM_F_HIDE;
+        }
+    }
     draw_page();
     draw_footer();
     {
