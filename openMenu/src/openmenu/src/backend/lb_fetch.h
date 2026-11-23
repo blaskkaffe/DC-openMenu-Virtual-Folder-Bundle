@@ -21,7 +21,7 @@ typedef struct lb_status {
     int generation; /* grows by one for every board that arrived */
     int count;      /* lines of the board in the store */
     int source;     /* the board they belong to */
-    char line[48];  /* what is going on, or why it failed */
+    char line[64];  /* what is going on, or why it failed */
 } lb_status_t;
 
 int lb_source_count(void);

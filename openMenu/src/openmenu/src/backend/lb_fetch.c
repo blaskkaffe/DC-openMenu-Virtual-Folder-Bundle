@@ -8,6 +8,7 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <arch/timer.h>
@@ -17,6 +18,7 @@
 #include <sys/socket.h>
 
 #include "backend/dcnow_net.h"
+#include "backend/kosnet_post.h"
 #include "backend/lb_fetch.h"
 
 #define BODY_MAX       (128 * 1024)
@@ -168,27 +170,85 @@ http_get(const struct sockaddr_in* addr, const char* host, const char* path, uin
     return code;
 }
 
+/* The Location of a redirect in the headers of body[], as a host and a path (the host stays when the address is only a path). 1 when found. */
+static int
+redirect_target(char* host, size_t host_size, char* path, size_t path_size) {
+    const char* end = strstr(body, "\r\n\r\n");
+    for (const char* p = body; p && (!end || p < end); p = strchr(p, '\n'), p = p ? p + 1 : NULL) {
+        if (strncasecmp(p, "Location:", 9) != 0) {
+            continue;
+        }
+        p += 9;
+        while (*p == ' ') {
+            p++;
+        }
+        size_t n = strcspn(p, "\r\n");
+        char loc[300];
+        snprintf(loc, sizeof(loc), "%.*s", (int)(n < sizeof(loc) - 1 ? n : sizeof(loc) - 1), p);
+        const char* rest = loc;
+        if (!strncasecmp(loc, "https://", 8) || !strncasecmp(loc, "http://", 7)) {
+            rest = loc + (loc[4] == 's' || loc[4] == 'S' ? 8 : 7);
+            size_t hl = strcspn(rest, "/");
+            if (hl == 0 || hl >= host_size) {
+                return 0;
+            }
+            snprintf(host, host_size, "%.*s", (int)hl, rest);
+            rest += hl;
+        }
+        snprintf(path, path_size, "%s", *rest ? rest : "/");
+        return path[0] == '/';
+    }
+    return 0;
+}
+
 static void
 run_fetch(int src) {
     struct sockaddr_in addr;
-    size_t used;
-    char line[48];
+    size_t used = 0;
+    char line[64], host[64], path[200];
+    const char* note = NULL;
     const lb_source_t* s = &sources[src];
+    int code = -1;
 
-    snprintf(line, sizeof(line), "Reading %.30s...", s->host);
+    snprintf(host, sizeof(host), "%s", s->host);
+    snprintf(path, sizeof(path), "%s", s->path);
+    snprintf(line, sizeof(line), "Reading %.30s...", host);
     set_line(LB_RUNNING, line);
-    if (!dcnow_resolve(s->host, 80, &addr)) {
-        snprintf(line, sizeof(line), "%.30s could not be found", s->host);
-        set_line(LB_FAILED, line);
-        return;
-    }
-    int code = http_get(&addr, s->host, s->path, WEB_TIMEOUT_MS, &used);
-    if (code == -2 || abort_requested) {
-        set_line(LB_IDLE, "");
-        return;
+    for (int hop = 0; hop < 4; hop++) { /* a few redirects (to another page, or from http to https) are followed */
+        code = -1;
+        note = NULL;
+        if (kosnet_tls_available()) { /* HTTPS first: most of the boards are only on it */
+            code = https_get_page(host, path, body, BODY_MAX + 1, &abort_requested, &note);
+        }
+        if (code == -2 || abort_requested) {
+            set_line(LB_IDLE, "");
+            return;
+        }
+        if (code == -1) { /* no TLS, or the host does not speak it: plain HTTP */
+            if (!dcnow_resolve(host, 80, &addr)) {
+                snprintf(line, sizeof(line), "%.40s could not be found", host);
+                set_line(LB_FAILED, line);
+                return;
+            }
+            code = http_get(&addr, host, path, WEB_TIMEOUT_MS, &used);
+            if (code == -2 || abort_requested) {
+                set_line(LB_IDLE, "");
+                return;
+            }
+        }
+        if (code >= 300 && code < 400 && redirect_target(host, sizeof(host), path, sizeof(path))) {
+            continue;
+        }
+        break;
     }
     if (code != 200) {
-        snprintf(line, sizeof(line), code >= 300 && code < 400 ? "%.30s wants https" : "%.30s did not answer", s->host);
+        if (code >= 300 && code < 400) {
+            snprintf(line, sizeof(line), "%.40s sends us elsewhere", host);
+        } else if (code > 0) {
+            snprintf(line, sizeof(line), "%.36s says %d", host, code);
+        } else {
+            snprintf(line, sizeof(line), "%.40s did not answer%s%.14s", host, note ? ": " : "", note ? note : "");
+        }
         set_line(LB_FAILED, line);
         return;
     }
