@@ -46,7 +46,6 @@
 #define PRIO 0x1000
 #define ID_BACK 0x1110
 #define ID_SAY 0x1120 /* the oval of the chat bar: script 0x3f, the Select button of the BIOS clock screen */
-#define SAY_W 112.0f
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
@@ -116,7 +115,7 @@ static char notice[64];
 static int notice_frames;
 
 static int say_on, say_dead; /* the chat bar has its oval button this frame, and it cannot be used now */
-static float say_cy;
+static float say_cx, say_cy;
 static picolink_status_t gw; /* the gateway (DC-PicoLink): what it said last */
 static uint64_t last_gw_ask;
 static int wifi_pick; /* the scan result whose password is being typed */
@@ -2046,7 +2045,7 @@ draw_chat(int w) {
             btn = "SAY";
         }
         {
-            float bw = SAY_W;
+            float bw = (float)gfx_text_width(btn) + 44.0f; /* the word, and the oval under its first letter */
             gfx_rect(x, CHAT_BAR_Y, right - x - bw - 8.0f, CHAT_BAR_H, 0.45f, 0x30FFFFFFu);
             const int dead = w == DC99_CHAT_KOSNET && (!kosnet_tls_available() || kn_st.state == KOSNET_BUSY);
             if (notice_frames > 0) { /* what just happened takes the bar's place for a moment */
@@ -2056,8 +2055,9 @@ draw_chat(int w) {
             text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
             say_on = 1;
             say_dead = dead;
-            say_cy = CHAT_BAR_Y + CHAT_BAR_H / 2.0f;
-            gfx_text(btn, right - bw / 2.0f - (float)gfx_text_width(btn) / 2.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+            say_cx = right - (float)gfx_text_width(btn) - 9.0f; /* as the BIOS: the oval's middle is 9 px left of where the word starts */
+            say_cy = CHAT_BAR_Y + 15.0f;
+            gfx_text(btn, right - (float)gfx_text_width(btn), CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
         }
     }
     if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
@@ -2325,10 +2325,7 @@ uin_draw(void) {
         if (so) {
             if (say_on && !ed.active) {
                 const float px = 11.9f, z = -335.9375f + 0.39f; /* pixels per unit and depth of the clock screen's buttons */
-                place(so, (PANE_X + PANE_W - PAD - SAY_W / 2.0f - 320.0f) / px, (240.0f - say_cy) / px, z);
-                so->scale_tw[0].cur = 1.75f; /* the clock screen's oval, wider for the word */
-                so->scale_tw[1].cur = 0.95f;
-                so->scale_tw[2].cur = 1.0f;
+                place(so, (say_cx - 320.0f) / px, (240.0f - say_cy) / px, z);
                 so->var[1] = !say_dead; /* green when it can be used, as the selected button of the clock screen */
                 so->flags &= ~(uint32_t)BVM_F_HIDE;
             } else {
