@@ -78,7 +78,7 @@ static const char* const page_names[PAGES] = {"Online", "Play", "Events", "Chat"
 enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2, VIEW_SET_WIFI = 3 }; /* Chat: A = the DC99 IRC chat, B = the KosNet chat */
 
 /* The lists behind the pages */
-enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LIST_WIFI, LIST_ONLINE, LISTS };
+enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LIST_WIFI, LIST_ONLINE, LIST_BOARD, LISTS };
 /* The Online page is four rows like the BIOS settings; A opens a popup with the content (view[PAGE_ONLINE]: 0 = the rows, else the row + 1) */
 enum { ON_MENU = 0, ON_PLAYERS, ON_GAMES, ON_EVENT, ON_BOARD, ON_ROWS = 4 };
 /* Settings page rows; the Internet rows of ui_settings.c follow (uis_net_first) */
@@ -365,7 +365,7 @@ build_events(void) {
 static int
 page_list(int p) {
     switch (p) {
-        case PAGE_ONLINE: return view[p] == ON_MENU ? LIST_ONLINE : view[p] == ON_PLAYERS ? LIST_PLAYERS : view[p] == ON_GAMES ? LIST_OGAMES : -1;
+        case PAGE_ONLINE: return view[p] == ON_MENU ? LIST_ONLINE : view[p] == ON_PLAYERS ? LIST_PLAYERS : view[p] == ON_GAMES ? LIST_OGAMES : view[p] == ON_BOARD ? LIST_BOARD : -1;
         case PAGE_CHAT: return -1; /* the chats scroll on their own */
         case PAGE_PLAY: return LIST_PLAY;
         case PAGE_EVENTS: return view[p] == VIEW_A ? LIST_EVENTS : LIST_NEWS;
@@ -374,12 +374,33 @@ page_list(int p) {
     }
 }
 
+/* The browsers on the card: the way to a game's online leaderboard */
+static int
+board_count(void) {
+    int n = 0;
+    for (int i = 0; i < ngames; i++) {
+        n += games[i].browser;
+    }
+    return n;
+}
+
+static const gd_item*
+board_item(int k) {
+    for (int i = 0; i < ngames; i++) {
+        if (games[i].browser && k-- == 0) {
+            return games[i].item;
+        }
+    }
+    return NULL;
+}
+
 static int
 list_rows(int l) {
     switch (l) {
         case LIST_PLAYERS: return nplayers;
         case LIST_OGAMES: return nogames;
         case LIST_ONLINE: return ON_ROWS;
+        case LIST_BOARD: return board_count();
         case LIST_PLAY: return ngames;
         case LIST_EVENTS: return nev_rows;
         case LIST_NEWS: return nnews;
@@ -1231,7 +1252,9 @@ uin_handle(button_t b) {
                     if (view[page] == ON_MENU) { /* a row: its popup */
                         view[page] = sel[LIST_ONLINE] + 1;
                         sound_sfx(BAUDIO_SFX_ENTER);
-                    } else if (view[page] == ON_EVENT || view[page] == ON_BOARD) {
+                    } else if (view[page] == ON_BOARD) { /* start a browser */
+                        launch_row(board_item(sel[LIST_BOARD]));
+                    } else if (view[page] == ON_EVENT) {
                         sound_sfx(BAUDIO_SFX_CANCEL);
                         view[page] = ON_MENU;
                     } else if (view[page] == ON_PLAYERS) { /* the player list: refresh it */
@@ -2257,17 +2280,8 @@ online_value(int i, char* out, size_t size) {
             snprintf(out, size, "%s", !online ? "not connected" : estat.state == EVENTS_RUNNING ? "loading..." : "none coming");
         }
     } else {
-        snprintf(out, size, "coming soon");
+        snprintf(out, size, "%s", board_count() ? "open a browser" : "no browser");
     }
-}
-
-static const char*
-online_row(int i, char* out, size_t size, uint32_t* colour) {
-    char val[40];
-    (void)colour;
-    online_value(i, val, sizeof(val));
-    snprintf(out, size, "%-14s%s", online_names[i], val);
-    return out;
 }
 
 /* A popup in the middle of the screen, as the keyboard's: coloured border, dark fill. The lists draw inside it. */
@@ -2350,13 +2364,33 @@ draw_online(void) {
             draw_next_event();
             break;
         case ON_BOARD:
-            draw_popup_frame("Leaderboards", "B: close");
-            text_cut("No leaderboard source is connected yet.", 44, lay_x, lay_list, GREY);
-            text_cut("Scores will be listed here per game.", 44, lay_x, lay_list + ROW_H, DIM);
+            draw_popup_frame("Leaderboards: open a browser", board_count() ? "A: start the browser  B: close" : "B: close");
+            if (board_count() == 0) {
+                text_cut("No web browser on this card", 44, lay_x, lay_list, GREY);
+            }
+            for (int r = 0; r < board_count() && r < ROWS; r++) {
+                float y = lay_list + (float)r * ROW_H;
+                int is_sel = r == sel[LIST_BOARD];
+                if (is_sel) {
+                    row_bar(lay_x, LAY_W, y);
+                }
+                text_cut(board_item(r)->name, 40, lay_x, y, is_sel ? YELLOW : WHITE);
+            }
+            gfx_text("Leaderboards of the games are on their websites.", lay_x, lay_foot - ROW_H, TEXT_Z, DIM, 1);
             break;
         default:
             gfx_text("Online", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
-            draw_list(LIST_ONLINE, online_row);
+            for (int r = 0; r < ON_ROWS; r++) {
+                char val[40];
+                float y = LIST_Y + (float)r * ROW_H;
+                int is_sel = r == sel[LIST_ONLINE];
+                if (is_sel) {
+                    row_bar(PANE_X + PAD, PANE_W - PAD * 2.0f - 12.0f, y);
+                }
+                online_value(r, val, sizeof(val));
+                gfx_text(online_names[r], PANE_X + PAD, y, TEXT_Z, is_sel ? YELLOW : WHITE, 1);
+                gfx_text(val, PANE_X + PAD + 190.0f, y, TEXT_Z, is_sel ? YELLOW : GREY, 1);
+            }
             break;
     }
     reset_layout();
