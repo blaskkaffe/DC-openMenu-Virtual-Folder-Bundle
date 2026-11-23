@@ -34,6 +34,8 @@
 #define MAX_DEVICES 8 /* enumerated devices of one kind (a hub or a combined device can show more than four) */
 
 static int typed_char;
+static int typed_ascii; /* a printable character (8 = backspace) typed this frame, shift applied */
+static int from_keyboard; /* the button of this frame came from a keyboard */
 static mouse_t mouse = {0, 0, 320, 240, 0, 0, 0, 0};
 static int mouse_idle;
 static uint32_t mouse_prev_buttons[PORTS];
@@ -171,6 +173,28 @@ mouse_poll(void) {
     return out;
 }
 
+/* US layout: HID usage code (and shift) to ASCII, 0 if it is not a printable key */
+static int
+key_to_ascii(int key, int shift) {
+    static const char plain[] = "-=[]\\#;'`,./";
+    static const char shifted[] = "_+{}|~:\"~<>?";
+    static const char nums[] = "!@#$%^&*()";
+    if (key >= KEY_A && key <= KEY_Z) {
+        return (shift ? 'A' : 'a') + (key - KEY_A);
+    }
+    if (key >= KEY_1 && key <= KEY_0) {
+        int i = key - KEY_1;
+        return shift ? nums[i] : (key == KEY_0 ? '0' : '1' + i);
+    }
+    if (key == KEY_SPACE) {
+        return ' ';
+    }
+    if (key >= 0x2D && key <= 0x38) {
+        return shift ? shifted[key - 0x2D] : plain[key - 0x2D];
+    }
+    return 0;
+}
+
 static button_t
 key_to_button(int key) {
     if (key >= KEY_A && key <= KEY_Z) {
@@ -209,8 +233,12 @@ keyboard_poll(void) {
         if (key < 0) {
             continue;
         }
+        kbd_state_t* ks = (kbd_state_t*)maple_dev_status(dev);
+        int shift = ks && (ks->shift_keys & (KBD_MOD_LSHIFT | KBD_MOD_RSHIFT));
+        typed_ascii = key == KEY_BACKSPACE ? 8 : key_to_ascii(key, shift);
         button_t b = key_to_button(key);
-        if (b != BTN_NONE || typed_char) {
+        if (b != BTN_NONE || typed_char || typed_ascii) {
+            from_keyboard = 1;
             return b;
         }
     }
@@ -219,6 +247,8 @@ keyboard_poll(void) {
 
 button_t
 input_poll(void) {
+    typed_ascii = 0;
+    from_keyboard = 0;
     button_t out = pad_poll();
     button_t m = mouse_poll(); /* always run: it keeps the pointer position */
     if (out == BTN_NONE) {
@@ -231,6 +261,21 @@ input_poll(void) {
         out = keyboard_poll();
     }
     return out;
+}
+
+int
+input_keyboard_present(void) {
+    return maple_enum_type(0, MAPLE_FUNC_KEYBOARD) != NULL;
+}
+
+int
+input_typed_ascii(void) {
+    return typed_ascii;
+}
+
+int
+input_from_keyboard(void) {
+    return from_keyboard;
 }
 
 int

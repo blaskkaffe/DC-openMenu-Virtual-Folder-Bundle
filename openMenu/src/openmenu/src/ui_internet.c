@@ -32,6 +32,7 @@
 #include "clock.h"
 #include "event_phase.h"
 #include "gfx.h"
+#include "input.h"
 #include "launch.h"
 #include "netprefs.h"
 #include "online.h"
@@ -706,9 +707,48 @@ editor_press(void) {
     sound_sfx(ok ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
 }
 
+/* A keyboard is plugged in: no key grid, the text is typed. Enter is done, Escape cancels, Backspace deletes. A controller still has START, B, X (space) and Y (delete). */
+static void
+editor_handle_typing(button_t b) {
+    int c = input_typed_ascii();
+    int kbd = input_from_keyboard();
+
+    if (c == 8) {
+        sound_sfx(editor_backspace() ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+        return;
+    }
+    if (c) {
+        sound_sfx(editor_type((char)c) ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+        return;
+    }
+    switch (b) {
+        case BTN_A:
+        case BTN_START: editor_finish(); return;
+        case BTN_B: ed.active = 0; sound_sfx(BAUDIO_SFX_CANCEL); return;
+        case BTN_LEFT: ed.pos = ed.pos > 0 ? ed.pos - 1 : 0; break;
+        case BTN_RIGHT: ed.pos = ed.pos < ed.len ? ed.pos + 1 : ed.len; break;
+        case BTN_X:
+            if (!kbd) {
+                sound_sfx(editor_type(' ') ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+            }
+            return;
+        case BTN_Y:
+            if (!kbd) {
+                sound_sfx(editor_backspace() ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+            }
+            return;
+        default: return;
+    }
+    sound_sfx(BAUDIO_SFX_CURSOR);
+}
+
 /* A button while the editor is open */
 static void
 editor_handle(button_t b) {
+    if (!ed.is_address && input_keyboard_present()) {
+        editor_handle_typing(b);
+        return;
+    }
     switch (b) {
         case BTN_B: ed.active = 0; sound_sfx(BAUDIO_SFX_CANCEL); return;
         case BTN_START: editor_finish(); return;
@@ -1887,12 +1927,16 @@ draw_keyboard(const char* title) {
     const int hide = ed.kind == ED_KN_PASS || ed.kind == ED_CHAT_PASS;
     int from = ed.pos > KB_SHOWN - 2 ? ed.pos - (KB_SHOWN - 2) : 0; /* the text scrolls along with the cursor */
 
-    gfx_rect(KB_X, KB_Y, KB_W, KB_H, 0.43f, KB_BORDER);
-    gfx_rect(KB_X + 3.0f, KB_Y + 3.0f, KB_W - 6.0f, KB_H - 6.0f, 0.44f, KB_FILL);
-    gfx_text(title, KB_X + 14.0f, KB_Y + 6.0f, TEXT_Z, YELLOW, 1);
+    const int grid = !input_keyboard_present(); /* a plugged-in keyboard types the text: only the field */
+    const float top = grid ? KB_Y : KB_Y + 92.0f;
+    const float h = grid ? KB_H : 118.0f;
+
+    gfx_rect(KB_X, top, KB_W, h, 0.43f, KB_BORDER);
+    gfx_rect(KB_X + 3.0f, top + 3.0f, KB_W - 6.0f, h - 6.0f, 0.44f, KB_FILL);
+    gfx_text(title, KB_X + 14.0f, top + 6.0f, TEXT_Z, YELLOW, 1);
 
     /* the text */
-    gfx_rect(gx, KB_Y + 36.0f, KB_W - 36.0f, 30.0f, 0.45f, 0xFF050810u);
+    gfx_rect(gx, top + 36.0f, KB_W - 36.0f, 30.0f, 0.45f, 0xFF050810u);
     {
         char shown[KB_SHOWN + 1];
         char before[KB_SHOWN + 1];
@@ -1902,8 +1946,13 @@ draw_keyboard(const char* title) {
         }
         shown[n] = '\0';
         snprintf(before, sizeof(before), "%.*s", ed.pos - from, shown);
-        gfx_text(shown, gx + 8.0f, KB_Y + 37.0f, TEXT_Z, WHITE, 1);
-        gfx_rect(gx + 8.0f + (float)gfx_text_width(before), KB_Y + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
+        gfx_text(shown, gx + 8.0f, top + 37.0f, TEXT_Z, WHITE, 1);
+        gfx_rect(gx + 8.0f + (float)gfx_text_width(before), top + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
+    }
+
+    if (!grid) {
+        gfx_text("Enter: done   Esc: cancel", KB_X + 18.0f, top + h - 34.0f, TEXT_Z, DIM, 1);
+        return;
     }
 
     /* the keys */
@@ -2075,6 +2124,24 @@ draw_footer(void) {
     }
 }
 
+/* The glyph of a page button, drawn once: dark navy like the CD player's marks, a little lighter when not selected. */
+static int
+page_icon(int i, int lit) {
+    static int ids[2][PAGES];
+    static int made;
+    if (!made) {
+        for (int k = 0; k < PAGES; k++) {
+            uint16_t px[UICON_SIZE * UICON_SIZE];
+            for (int l = 0; l < 2; l++) {
+                uicon_render(k, l ? 0xFF0C1430u : 0xFF1C2850u, px);
+                ids[l][k] = gfx_dyn_create(px, UICON_SIZE, UICON_SIZE);
+            }
+        }
+        made = 1;
+    }
+    return ids[lit][i];
+}
+
 void
 uin_draw(void) {
     const bscene_sink* sink = gfx_sink();
@@ -2096,7 +2163,7 @@ uin_draw(void) {
     for (int i = 0; i < PAGES; i++) {
         float x, y;
         blist_button_center_px(i, &x, &y);
-        gfx_text(page_names[i], x - (float)gfx_text_width(page_names[i]) / 2.0f, y - (float)GFX_LINE_H / 2.0f, TEXT_Z,
-                 i == page ? WHITE : GREY, 1);
+        gfx_image(page_icon(i, i == page), x - (float)UICON_SIZE / 2.0f, y - (float)UICON_SIZE / 2.0f, (float)UICON_SIZE, (float)UICON_SIZE,
+                  TEXT_Z);
     }
 }

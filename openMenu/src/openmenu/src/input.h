@@ -48,3 +48,12 @@ typedef struct {
 } mouse_t;
 
 void input_mouse(mouse_t* out);
+
+/* A keyboard is plugged in (the on-screen keyboard is then not needed). */
+int input_keyboard_present(void);
+
+/* The printable ASCII character typed this frame with shift applied (US layout), 8 for backspace, 0 if none. Valid after input_poll(), until the next one. */
+int input_typed_ascii(void);
+
+/* The button input_poll() returned this frame came from a keyboard (Enter = A, Escape = B, ...), not a controller. */
+int input_from_keyboard(void);

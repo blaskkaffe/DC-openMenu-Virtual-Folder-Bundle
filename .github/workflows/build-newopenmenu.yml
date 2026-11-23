@@ -81,6 +81,12 @@ jobs:
             openMenu/src/openmenu/test/osk_test.c openMenu/src/openmenu/src/backend/osk.c -o osk_test
           ./osk_test
 
+      - name: button glyph test
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined openMenu/src/openmenu/test/uicons_test.c \
+            openMenu/src/openmenu/src/backend/uicons.c -lm -o uicons_test
+          ./uicons_test
+
       # The PVR backend against stand-ins for KOS: a compile error in gfx.c shows here, before the long KOS build.
       - name: gfx host test
         working-directory: openMenu/src
