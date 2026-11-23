@@ -2405,7 +2405,7 @@ draw_keyboard(const char* title) {
             if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
-            if (sel || key.kind == OSK_OK) {
+            if (sel) {
                 key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, 1);
             } else {
                 pill(kx + 3.5f, ky, kw - 7.0f, 0.45f, 0xFF1F5C3Cu); /* a flat dark key: only the one under the cursor is a 3D oval (the keyboard stays fast) */
