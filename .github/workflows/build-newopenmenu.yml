@@ -81,6 +81,12 @@ jobs:
             openMenu/src/openmenu/test/osk_test.c openMenu/src/openmenu/src/backend/osk.c -o osk_test
           ./osk_test
 
+      - name: gateway (dc1) parser test
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/picolink_parse_test.c openMenu/src/openmenu/src/backend/picolink_parse.c -o picolink_parse_test
+          ./picolink_parse_test
+
       - name: button glyph test
         run: |
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined openMenu/src/openmenu/test/uicons_test.c \

@@ -46,6 +46,8 @@ set(OPENMENU_SOURCES
         src/backend/dc99_chat_parse.c
         src/backend/kosnet_json.c
         src/backend/osk.c
+        src/backend/picolink.c
+        src/backend/picolink_parse.c
         src/backend/uicons.c
         src/backend/kosnet_post.c
         src/backend/dcnet_parse.c

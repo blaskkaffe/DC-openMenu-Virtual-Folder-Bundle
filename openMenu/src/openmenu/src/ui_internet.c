@@ -25,6 +25,7 @@
 #include "backend/events_fetch.h"
 #include "backend/kosnet_post.h"
 #include "backend/osk.h"
+#include "backend/picolink.h"
 #include "backend/uicons.h"
 #include "backend/net_test.h"
 #include "backend/netsel.h"
@@ -44,6 +45,8 @@
 /* The bottom row, as the game list has it: the CD player's BACK marker and buttons (scripts 6, 0x17..0x1A) */
 #define PRIO 0x1000
 #define ID_BACK 0x1110
+#define ID_SAY 0x1120 /* the oval of the chat bar: script 0x3f, the Select button of the BIOS clock screen */
+#define SAY_W 112.0f
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
@@ -71,12 +74,12 @@
 enum { PAGE_ONLINE, PAGE_PLAY, PAGE_EVENTS, PAGE_CHAT, PAGE_SETTINGS };
 static const char* const page_names[PAGES] = {"Online", "Play", "Events", "Chat", "Settings"};
 /* A page can show more than one list: START switches (Online: players / games, Events: events / news) */
-enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2 }; /* Chat: A = the DC99 IRC chat, B = the KosNet chat */
+enum { VIEW_A = 0, VIEW_B = 1, VIEW_SET_ISP = 1, VIEW_SET_TEST = 2, VIEW_SET_WIFI = 3 }; /* Chat: A = the DC99 IRC chat, B = the KosNet chat */
 
 /* The lists behind the pages */
-enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LISTS };
+enum { LIST_PLAYERS, LIST_OGAMES, LIST_PLAY, LIST_EVENTS, LIST_NEWS, LIST_SETTINGS, LIST_ISP, LIST_TEST, LIST_WIFI, LISTS };
 /* Settings page rows; the Internet rows of ui_settings.c follow (uis_net_first) */
-enum { SET_STATUS, SET_WAY, SET_ISP, SET_TEST, SET_SOURCES, SET_ROWS };
+enum { SET_STATUS, SET_WAY, SET_ISP, SET_TEST, SET_GW_NET, SET_GW_WIFI, SET_SOURCES, SET_ROWS };
 /* ISP view rows */
 enum { ISP_PRESET, ISP_ADDR, ISP_IP, ISP_MASK, ISP_GW, ISP_DNS, ISP_NUMBER, ISP_LOGIN, ISP_PASS, ISP_RESET, ISP_ROWS };
 
@@ -111,6 +114,12 @@ static int was_online;
 static uint64_t last_players_fetch, last_events_fetch, last_news_fetch;
 static char notice[64];
 static int notice_frames;
+
+static int say_on, say_dead; /* the chat bar has its oval button this frame, and it cannot be used now */
+static float say_cy;
+static picolink_status_t gw; /* the gateway (DC-PicoLink): what it said last */
+static uint64_t last_gw_ask;
+static int wifi_pick; /* the scan result whose password is being typed */
 
 static dcnow_fetch_status_t pstat;
 static int players_gen = -1;
@@ -357,7 +366,7 @@ page_list(int p) {
         case PAGE_CHAT: return -1; /* the chats scroll on their own */
         case PAGE_PLAY: return LIST_PLAY;
         case PAGE_EVENTS: return view[p] == VIEW_A ? LIST_EVENTS : LIST_NEWS;
-        case PAGE_SETTINGS: return view[p] == VIEW_A ? LIST_SETTINGS : view[p] == VIEW_SET_ISP ? LIST_ISP : LIST_TEST;
+        case PAGE_SETTINGS: return view[p] == VIEW_A ? LIST_SETTINGS : view[p] == VIEW_SET_ISP ? LIST_ISP : view[p] == VIEW_SET_WIFI ? LIST_WIFI : LIST_TEST;
         default: return -1;
     }
 }
@@ -372,6 +381,7 @@ list_rows(int l) {
         case LIST_NEWS: return nnews;
         case LIST_ISP: return ISP_ROWS;
         case LIST_TEST: return ntest;
+        case LIST_WIFI: return gw.info.scan_have;
         default: return SET_ROWS + uis_net_count();
     }
 }
@@ -466,6 +476,7 @@ uin_open(bmenu* m, int pal) {
     console_pal = pal;
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 6, ID_BACK, PRIO);
+    bvm_create(&m->vm, 0x3f, ID_SAY, PRIO);
     for (int i = 0; i < PAGES; i++) {
         bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* left to right, as bios_list */
     }
@@ -488,7 +499,7 @@ uin_open(bmenu* m, int pal) {
 
 /* ---- the editor for an address or a short text (the ISP settings) ------------------------------------------------------- */
 
-enum { ED_ISP = 0, ED_CHAT_NICK, ED_CHAT_PASS, ED_CHAT_MSG, ED_KN_USER, ED_KN_PASS, ED_KN_MSG };
+enum { ED_ISP = 0, ED_CHAT_NICK, ED_CHAT_PASS, ED_CHAT_MSG, ED_KN_USER, ED_KN_PASS, ED_KN_MSG, ED_WIFI_PASS };
 static char kn_user[48]; /* the KosNet login typed this visit (nothing is saved) */
 static kosnet_post_status_t kn_st;
 static int kn_gen = -1;
@@ -560,8 +571,8 @@ editor_open_chat(int kind, const char* start) {
     memset(&ed, 0, sizeof(ed));
     ed.active = 1;
     ed.kind = kind;
-    ed.max = kind == ED_CHAT_MSG || kind == ED_KN_MSG ? ED_MAX : kind == ED_KN_USER || kind == ED_KN_PASS ? 41 : NP_CHAT_LEN;
-    ed.set = kind == ED_CHAT_NICK ? NICK_SET : kind == ED_CHAT_PASS ? PASS_SET : kind == ED_KN_PASS ? KN_PASS_SET : kind == ED_KN_USER ? PASS_SET : CHAT_SET;
+    ed.max = kind == ED_CHAT_MSG || kind == ED_KN_MSG ? ED_MAX : kind == ED_KN_USER || kind == ED_KN_PASS ? 41 : kind == ED_WIFI_PASS ? 64 : NP_CHAT_LEN;
+    ed.set = kind == ED_CHAT_NICK ? NICK_SET : kind == ED_CHAT_PASS ? PASS_SET : kind == ED_KN_PASS || kind == ED_WIFI_PASS ? KN_PASS_SET : kind == ED_KN_USER ? PASS_SET : CHAT_SET;
     snprintf(ed.text, sizeof(ed.text), "%s", start);
     ed.len = (int)strlen(ed.text);
     ed.pos = ed.len;
@@ -601,6 +612,21 @@ chat_editor_done(void) {
     snprintf(text, sizeof(text), "%s", ed.text);
     for (int n = (int)strlen(text); n > 0 && text[n - 1] == ' '; n--) {
         text[n - 1] = '\0';
+    }
+    if (kind == ED_WIFI_PASS) {
+        if (text[0] == '\0' || !pl_pass_ok(text)) { /* the box takes 8 to 63 characters with no blank at either end */
+            sound_sfx(BAUDIO_SFX_ERROR);
+            say("8 to 63 characters, no blank at either end");
+            return;
+        }
+        ed.active = 0;
+        sound_sfx(BAUDIO_SFX_CONFIRM);
+        picolink_join(wifi_pick, gw.info.scan[wifi_pick].name, ed.text); /* ed.text, not the trimmed copy: the box trims on its own */
+        memset(ed.text, 0, sizeof(ed.text));
+        memset(text, 0, sizeof(text));
+        say("Joining the network...");
+        last_gw_ask = timer_ms_gettime64();
+        return;
     }
     if (kind == ED_KN_MSG) {
         ed.active = 0;
@@ -916,6 +942,22 @@ setting_text(int row, char* out, size_t size) {
             break;
         case SET_ISP: snprintf(out, size, "ISP settings  %s >", isp_preset_name(np_isp())); break;
         case SET_TEST: snprintf(out, size, "Network test >"); break;
+        case SET_GW_NET:
+            if (gw.reached && gw.info.has_net) {
+                snprintf(out, size, "%s  %s%s", gw.info.name[0] ? gw.info.name : "Gateway", gw.info.dcnet == 1 ? "DCNet" : "DCNow!", gw.busy ? " ..." : " (A: switch)");
+            } else {
+                snprintf(out, size, "Gateway  %s", gw.busy ? "looking..." : online ? (gw.reached ? "has no network switch" : "none found (A: look again)") : "connect first");
+            }
+            break;
+        case SET_GW_WIFI:
+            if (gw.reached && gw.info.has_wifi) {
+                const char* state = gw.info.wifi_state;
+                snprintf(out, size, "Gateway Wi-Fi  %s%s%s >", !strcmp(state, "connected") ? "" : state[0] && strcmp(state, "none") ? state : "not set up",
+                         gw.info.wifi_ssid[0] ? "  " : "", gw.info.wifi_ssid);
+            } else {
+                snprintf(out, size, "Gateway Wi-Fi  %s", gw.reached ? "not on this gateway" : "needs the gateway");
+            }
+            break;
         default: snprintf(out, size, "Players  %s", pstat.multi_network ? "DCNow! and DCNET" : "DCNow!"); break;
     }
     return out;
@@ -948,7 +990,57 @@ settings_activate(int row) {
             net_test_start(conn.state == DCNOW_CONN_CONNECTING || conn.state == DCNOW_CONN_ONLINE, conn.state == DCNOW_CONN_ONLINE);
             sound_sfx(BAUDIO_SFX_ENTER);
             break;
+        case SET_GW_NET:
+            if (conn.state != DCNOW_CONN_ONLINE) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                say("Not connected: X connects");
+            } else if (gw.busy) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+            } else if (gw.reached && gw.info.has_net) {
+                picolink_select(gw.info.dcnet != 1); /* the other one, from the gateway's next call */
+                last_gw_ask = timer_ms_gettime64();
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+            } else {
+                picolink_probe();
+                last_gw_ask = timer_ms_gettime64();
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                say("Looking for the gateway");
+            }
+            break;
+        case SET_GW_WIFI:
+            if (gw.reached && gw.info.has_wifi && !gw.busy) {
+                view[PAGE_SETTINGS] = VIEW_SET_WIFI;
+                picolink_scan();
+                last_gw_ask = timer_ms_gettime64();
+                sound_sfx(BAUDIO_SFX_ENTER);
+            } else {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                say(gw.busy ? "Wait a moment" : "Only a DC-PicoLink gateway has Wi-Fi to set up");
+            }
+            break;
         default: sound_sfx(BAUDIO_SFX_CURSOR); say("Nothing to change here"); break;
+    }
+}
+
+/* A on a network of the Wi-Fi view: an open one is joined at once, a locked one asks for its password first. */
+static void
+wifi_activate(int i) {
+    if (gw.busy) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        say("Wait a moment");
+    } else if (i >= gw.info.scan_have) {
+        picolink_scan(); /* nothing listed: look again */
+        last_gw_ask = timer_ms_gettime64();
+        sound_sfx(BAUDIO_SFX_CONFIRM);
+    } else if (gw.info.scan[i].open) {
+        picolink_join(i, gw.info.scan[i].name, "");
+        last_gw_ask = timer_ms_gettime64();
+        sound_sfx(BAUDIO_SFX_CONFIRM);
+        say("Joining the network...");
+    } else {
+        wifi_pick = i;
+        editor_open_chat(ED_WIFI_PASS, "");
+        sound_sfx(BAUDIO_SFX_ENTER);
     }
 }
 
@@ -1010,6 +1102,7 @@ leave_screen(void) {
     news_fetch_abort();
     dc99_chat_stop();
     kosnet_post_stop();
+    picolink_stop();
 }
 
 /* A in the IRC view: sets the login up, connects, or opens the line to say. */
@@ -1172,6 +1265,8 @@ uin_handle(button_t b) {
                         settings_activate(sel[LIST_SETTINGS]);
                     } else if (view[page] == VIEW_SET_ISP) {
                         isp_activate(sel[LIST_ISP]);
+                    } else if (view[page] == VIEW_SET_WIFI) {
+                        wifi_activate(sel[LIST_WIFI]);
                     } else { /* the test view: run it again */
                         net_test_start(conn.state == DCNOW_CONN_CONNECTING || conn.state == DCNOW_CONN_ONLINE, conn.state == DCNOW_CONN_ONLINE);
                         sound_sfx(BAUDIO_SFX_CONFIRM);
@@ -1208,6 +1303,14 @@ uin_handle(button_t b) {
                 } else {
                     sound_sfx(BAUDIO_SFX_ERROR);
                 }
+            } else if (page == PAGE_SETTINGS && view[page] == VIEW_SET_WIFI) { /* search again */
+                if (gw.busy) {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                } else {
+                    picolink_scan();
+                    last_gw_ask = timer_ms_gettime64();
+                    sound_sfx(BAUDIO_SFX_CONFIRM);
+                }
             } else if (detail && page == PAGE_EVENTS && page_list(page) == LIST_EVENTS) {
                 star_selected();
             } else if (!detail && !star_selected()) {
@@ -1233,6 +1336,7 @@ uin_handle(button_t b) {
                 news_fetch_abort();
                 dc99_chat_stop();
                 kosnet_post_stop();
+                picolink_stop();
                 printf("OM B: events stopped in %u ms, news in %u ms\n", (unsigned)(t1 - t0), (unsigned)(timer_ms_gettime64() - t1));
             }
             return 1;
@@ -1300,6 +1404,7 @@ uin_sync(void) {
     if (!online && was_online) {
         dc99_chat_stop(); /* the sockets went with the connection */
         kosnet_post_stop();
+        picolink_stop();
     }
     if (online && page == PAGE_CHAT && view[page] == VIEW_B) {
         dc99_kosnet_start(); /* reading starts when the view is looked at; stays until the screen is left */
@@ -1352,6 +1457,24 @@ uin_sync(void) {
         build_events();
     }
     ntest = net_test_lines(test_lines, NT_LINES);
+    /* The gateway: asked about when the Settings page is open and the console is online (again every half minute, or every 15 seconds while
+     * none answered), and every two seconds while it joins a Wi-Fi network */
+    if (online && page == PAGE_SETTINGS && !ed.active) {
+        picolink_status_t g;
+        uint64_t now = timer_ms_gettime64();
+        picolink_status(&g);
+        gw = g;
+        {
+            int joining = !strcmp(gw.info.wifi_state, "connecting");
+            uint64_t every = joining ? 2000u : gw.reached ? 30000u : 15000u;
+            if (!gw.busy && now - last_gw_ask >= every) {
+                last_gw_ask = now;
+                picolink_probe();
+            }
+        }
+    } else if (page == PAGE_SETTINGS) {
+        picolink_status(&gw);
+    }
     /* Auto-Refresh of the player list (the VMU screen refreshes on its own while it is on), as the main branch */
     if (online && sf_dcnow_vmu[0] != DCNOW_VMU_ON && pstat.state != DCNOW_FETCH_RUNNING && dcnow_refresh_seconds(sf_dcnow_refresh[0]) > 0
         && timer_ms_gettime64() - last_players_fetch >= (uint64_t)dcnow_refresh_seconds(sf_dcnow_refresh[0]) * 1000u) {
@@ -1737,6 +1860,46 @@ isp_row(int i, char* out, size_t size, uint32_t* colour) {
     return isp_row_text(i, out, size, colour);
 }
 
+/* The Wi-Fi view: the networks the gateway found, strongest first, with their signal and a lock. */
+static void
+draw_wifi(void) {
+    float x = PANE_X + PAD;
+    char line[96];
+    int n = gw.info.scan_have;
+    const char* state = gw.info.wifi_state;
+
+    if (!strcmp(state, "connected")) {
+        snprintf(line, sizeof(line), "Wi-Fi: %.20s  %s", gw.info.wifi_ssid, gw.info.wifi_ip);
+    } else if (!strcmp(state, "connecting")) {
+        snprintf(line, sizeof(line), "Wi-Fi: joining %.20s ...", gw.info.wifi_ssid);
+    } else if (!strcmp(state, "failed")) {
+        snprintf(line, sizeof(line), "Wi-Fi: %s", gw.info.wifi_error[0] ? gw.info.wifi_error : "could not join");
+    } else {
+        snprintf(line, sizeof(line), "Wi-Fi: %s", gw.busy ? "searching..." : "not set up");
+    }
+    text_cut(line, 44, x, HEAD_Y, !strcmp(state, "failed") ? RED : !strcmp(state, "connected") ? GREEN : WHITE);
+    if (n == 0) {
+        text_cut(gw.busy ? "Searching for networks..." : gw.note[0] ? gw.note : "No networks found  Y: search again", 44, x, LIST_Y, GREY);
+    }
+    for (int r = 0; r < ROWS && top[LIST_WIFI] + r < n; r++) {
+        int i = top[LIST_WIFI] + r;
+        float y = LIST_Y + (float)r * ROW_H;
+        int is_sel = i == sel[LIST_WIFI];
+        const pl_net_t* w = &gw.info.scan[i];
+        float bx = PANE_X + PANE_W - PAD - 92.0f;
+        if (is_sel) {
+            row_bar(x, PANE_W - PAD * 2.0f - 12.0f, y);
+        }
+        text_cut(w->name, 30, x, y, is_sel ? YELLOW : WHITE);
+        for (int b = 0; b < 4; b++) { /* the signal: four bars, the strong ones lit */
+            float bh = 6.0f + (float)b * 4.0f;
+            gfx_rect(bx + (float)b * 7.0f, y + 18.0f - bh, 5.0f, bh, 0.46f, b < pl_bars(w->rssi) ? (is_sel ? YELLOW : WHITE) : 0x40FFFFFFu);
+        }
+        gfx_text(w->open ? "open" : "lock", bx + 36.0f, y, TEXT_Z, w->open ? GREEN : DIM, 1);
+    }
+    draw_arrows(LIST_WIFI);
+}
+
 /* The network test: its lines, coloured by how it went. */
 static void
 draw_test(void) {
@@ -1883,7 +2046,7 @@ draw_chat(int w) {
             btn = "SAY";
         }
         {
-            float bw = (float)(strlen(btn) * CHAR_W) + 20.0f;
+            float bw = SAY_W;
             gfx_rect(x, CHAT_BAR_Y, right - x - bw - 8.0f, CHAT_BAR_H, 0.45f, 0x30FFFFFFu);
             const int dead = w == DC99_CHAT_KOSNET && (!kosnet_tls_available() || kn_st.state == KOSNET_BUSY);
             if (notice_frames > 0) { /* what just happened takes the bar's place for a moment */
@@ -1891,8 +2054,10 @@ draw_chat(int w) {
                 hcol = WHITE;
             }
             text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
-            gfx_rect(right - bw, CHAT_BAR_Y, bw, CHAT_BAR_H, 0.45f, dead ? 0x30FFFFFFu : 0x70F0C040u);
-            gfx_text(btn, right - bw + 10.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+            say_on = 1;
+            say_dead = dead;
+            say_cy = CHAT_BAR_Y + CHAT_BAR_H / 2.0f;
+            gfx_text(btn, right - bw / 2.0f - (float)gfx_text_width(btn) / 2.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
         }
     }
     if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
@@ -1994,6 +2159,8 @@ draw_editor(void) {
     char line[64];
     if (ed.kind == ED_KN_USER || ed.kind == ED_KN_PASS || ed.kind == ED_KN_MSG) {
         snprintf(line, sizeof(line), "%s", ed.kind == ED_KN_USER ? "KosNet username" : ed.kind == ED_KN_PASS ? "KosNet password" : "Say in the KosNet chat");
+    } else if (ed.kind == ED_WIFI_PASS) {
+        snprintf(line, sizeof(line), "Wi-Fi password for %.24s", gw.info.scan[wifi_pick].name);
     } else if (ed.kind != ED_ISP) {
         snprintf(line, sizeof(line), "%s", ed.kind == ED_CHAT_NICK ? "Chat nick (1-20 characters)"
                                            : ed.kind == ED_CHAT_PASS ? "Chat password (sent as typed)" : "Say in #dc99");
@@ -2074,6 +2241,8 @@ draw_page(void) {
             } else if (view[page] == VIEW_SET_ISP) {
                 gfx_text("ISP settings", PANE_X + PAD, HEAD_Y, TEXT_Z, WHITE, 1);
                 draw_list(LIST_ISP, isp_row);
+            } else if (view[page] == VIEW_SET_WIFI) {
+                draw_wifi();
             } else {
                 draw_test();
             }
@@ -2118,7 +2287,7 @@ draw_footer(void) {
     } else if (page == PAGE_EVENTS) {
         text = view[page] == VIEW_A ? (nev_rows > 0 ? "A: open  Y: star  START: news" : "START: news") : (nnews > 0 ? "A: read  START: events" : "START: events");
     } else if (page == PAGE_SETTINGS) {
-        text = view[page] == VIEW_A ? "A: change or open" : view[page] == VIEW_SET_ISP ? "A: change  B: back" : "A: run again  B: back";
+        text = view[page] == VIEW_A ? "A: change or open" : view[page] == VIEW_SET_ISP ? "A: change  B: back" : view[page] == VIEW_SET_WIFI ? "A: join  Y: search again  B: back" : "A: run again  B: back";
     }
     if (text) {
         text_cut(text, 44, PANE_X + PAD, PANE_Y + PANE_H - 34.0f, DIM);
@@ -2148,15 +2317,29 @@ uin_draw(void) {
     const bscene_sink* sink = gfx_sink();
     gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
     draw_status();
+    say_on = 0;
     draw_page();
     draw_footer();
+    {
+        bvm_obj* so = bvm_find(&menu->vm, ID_SAY);
+        if (so) {
+            if (say_on && !ed.active) {
+                const float px = 11.9f, z = -335.9375f + 0.39f; /* pixels per unit and depth of the clock screen's buttons */
+                place(so, (PANE_X + PANE_W - PAD - SAY_W / 2.0f - 320.0f) / px, (240.0f - say_cy) / px, z);
+                so->var[1] = !say_dead; /* green when it can be used, as the selected button of the clock screen */
+                so->flags &= ~(uint32_t)BVM_F_HIDE;
+            } else {
+                so->flags |= BVM_F_HIDE;
+            }
+        }
+    }
 
     /* BACK and the buttons: BACK lit with its frame blinking while it is selected, the buttons without their pictures */
     bmenu_back_style(menu, cursor == CUR_BACK, (int)anim, console_pal);
     menu->scene.parts = BSCENE_PART_ALL;
     for (int i = 0; i < menu->vm.count; i++) {
         const bvm_obj* o = &menu->vm.objs[menu->vm.order[i]];
-        menu->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES);
+        menu->scene.no_decals = (o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES)) || o->id == ID_SAY;
         bscene_draw_object(&menu->scene, o, sink);
     }
     menu->scene.no_decals = 0;
