@@ -17,6 +17,7 @@
 #include <backend/gd_list.h>
 #include <bios_audio.h>
 #include <bios_list.h>
+#include <bios_page.h>
 #include <openmenu_settings.h>
 
 #include "backend/dc99_chat.h"
@@ -118,6 +119,7 @@ static uint64_t last_players_fetch, last_events_fetch, last_news_fetch;
 static char notice[64];
 static int notice_frames;
 
+static bpage orows; /* the Online page's four rows: the BIOS Settings screen's own bars, pills and 3D icons */
 static int say_on, say_dead; /* the chat bar has its oval button this frame, and it cannot be used now */
 static float say_cx, say_cy;
 static picolink_status_t gw; /* the gateway (DC-PicoLink): what it said last */
@@ -508,6 +510,7 @@ uin_open(bmenu* m, int pal) {
     for (int i = 0; i < PAGES; i++) {
         bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* left to right, as bios_list */
     }
+    bpage_open_rows(&orows, m, 1); /* with the buttons of this screen; its BACK marker stays */
     cursor = page;
     anim = 0;
     probed = 0;
@@ -1415,6 +1418,14 @@ place(bvm_obj* o, float x, float y, float z) {
     o->pos_tw[0].step = o->pos_tw[1].step = o->pos_tw[2].step = 0;
 }
 
+/* The icon of an Online row: the same models as the main menu's (controller, clock, globe) and a person, at the BIOS icons' size */
+static void
+online_icon(void* user, int index, bpage_row* out) {
+    static const int icon[ON_ROWS] = {BPAGE_ICON_PERSON, BPAGE_ICON_MAIN_PAD, BPAGE_ICON_MAIN_CLOCK, BPAGE_ICON_GLOBE};
+    (void)user;
+    out->icon = icon[index < 0 || index >= ON_ROWS ? 0 : index];
+}
+
 void
 uin_sync(void) {
     anim++;
@@ -1545,6 +1556,9 @@ uin_sync(void) {
     if (back) {
         place(back, BACK_X, BACK_Y, BACK_Z);
     }
+    bpage_rows_show(&orows, page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU && !ed.active);
+    orows.cursor = sel[LIST_ONLINE];
+    bpage_sync(&orows, online_icon, NULL);
     for (int i = 0; i < PAGES; i++) {
         bvm_obj* o = bvm_find(&menu->vm, ID_BUTTON(i));
         if (o) {
@@ -2350,42 +2364,17 @@ draw_next_event(void) {
     }
 }
 
-static int page_icon(int i, int lit);
-
-/* The four rows as the BIOS Settings screen has them: an icon, the name centred between it and a coloured pill, the value in the pill, and
- * under the pills a box that says what the row is. */
+/* The text of the four rows: the bars, pills and icons are objects of the scene (bpage rows mode), placed as the BIOS Settings screen has
+ * them. The name is centred between the icon and the pill, the value starts 10 px inside the pill, both centred on the row's height. */
 static void
 draw_online_menu(void) {
-    static const char* const help[ON_ROWS] = {"Who is online now and the game they are in", "The games that have players online now",
-                                              "The event that is on now or comes next", "Open a browser for a game's leaderboard"};
-    static const int icon[ON_ROWS] = {PAGE_CHAT, PAGE_PLAY, PAGE_EVENTS, PAGE_ONLINE};
-    const float pitch = 62.0f, bar_h = 54.0f, pill_h = 40.0f; /* each row is a bar of its own */
-    const float pill_x = PANE_X + 232.0f, pill_w = PANE_W - 232.0f - 14.0f;
     for (int r = 0; r < ON_ROWS; r++) {
         char val[40];
-        int is_sel = r == sel[LIST_ONLINE];
-        float cy = PANE_Y + bar_h / 2.0f + (float)r * pitch;
-        gfx_pane(PANE_X, cy - bar_h / 2.0f, PANE_W, bar_h, PANE_Z, BSCENE_PANE_ARGB);
-        float icon_x = PANE_X + 18.0f, icon_end = icon_x + (float)UICON_DRAW;
-        gfx_image(page_icon(icon[r], is_sel), icon_x, cy - (float)UICON_DRAW / 2.0f, (float)UICON_DRAW, (float)UICON_DRAW, TEXT_Z);
-        gfx_rrect(pill_x, cy - pill_h / 2.0f, pill_w, pill_h, 6.0f, 0.45f, is_sel ? 0xD0B88C6Cu : 0x80884E9Eu);
+        float cy = bpage_rows_y_px(r);
         float lw = (float)gfx_text_width(online_names[r]);
-        gfx_text(online_names[r], (icon_end + pill_x) / 2.0f - lw / 2.0f, cy - 12.0f, TEXT_Z, WHITE, 1);
+        gfx_text(online_names[r], BPAGE_ROWS_LABEL_CX_PX - lw / 2.0f, cy - 12.0f, TEXT_Z, WHITE, 1);
         online_value(r, val, sizeof(val));
-        text_cut(val, (int)((pill_w - 20.0f) / CHAR_W), pill_x + 10.0f, cy - 12.0f, WHITE);
-    }
-    float hy = PANE_Y + (float)ON_ROWS * pitch;
-    gfx_pane(PANE_X, hy, PANE_W, PANE_Y + PANE_H - hy, PANE_Z, BSCENE_PANE_ARGB); /* and the information under them in one of its own */
-    const char* t = help[sel[LIST_ONLINE]];
-    for (int i = 0; i < 2; i++) {
-        const char* st = NULL;
-        int len = 0;
-        if (i < wrap_lines(t, 24, -1, NULL, NULL)) {
-            wrap_lines(t, 24, i, &st, &len);
-            char line[32];
-            snprintf(line, sizeof(line), "%.*s", len < 30 ? len : 30, st);
-            gfx_text(line, pill_x + 10.0f, hy + 4.0f + (float)i * 24.0f, TEXT_Z, WHITE, 1);
-        }
+        text_cut(val, 30, BPAGE_ROWS_VALUE_X_PX, cy - 12.0f, WHITE);
     }
 }
 

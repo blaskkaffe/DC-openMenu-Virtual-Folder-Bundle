@@ -25,6 +25,7 @@ enum {
     BMODEL_GLOBE,                /* low poly earth in green and blue on a small stand */
     BMODEL_CASE_WHITE,           /* CD jewel case with a white spine */
     BMODEL_CASE_PAL,             /* CD jewel case in the blue style of the PAL Dreamcast cases */
+    BMODEL_PERSON,               /* low poly head and shoulders, for the player rows */
     BMODEL_END
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)

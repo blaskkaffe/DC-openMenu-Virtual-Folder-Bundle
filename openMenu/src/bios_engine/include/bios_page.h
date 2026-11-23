@@ -28,6 +28,9 @@ extern "C" {
 #define BPAGE_ICON_PHONE 23            /* the telephone (built in) */
 #define BPAGE_ICON_CASE 24             /* the CD jewel case (built in) */
 #define BPAGE_ICON_DISC 25             /* the GD-ROM disc (ROM model 61) */
+#define BPAGE_ICON_MAIN_PAD 26         /* the main menu's controller (ROM model 4), with its motion */
+#define BPAGE_ICON_MAIN_CLOCK 27       /* the main menu's alarm clock (ROM model 3), with its motion */
+#define BPAGE_ICON_PERSON 28           /* a person (built in) */
 
 /* Where the text goes (pixels), copied from the original Settings screen (photo of the console): the label is centred between the icon
  * (which ends at x 100) and the value pill, the value starts 10 px inside the pill, left aligned, both centred on the row's height. */
@@ -47,6 +50,8 @@ typedef struct bpage {
     int back_selected; /* the cursor is on the BACK marker, one step down from the last row */
     int anim;   /* frames since the page opened, for the BACK marker's blink */
     int pal;    /* PAL console: the BACK arrow colour */
+    int rows;   /* the original's four separate rows (bpage_open_rows) instead of the box of rows */
+    int shown;  /* rows mode: the rows are visible */
 } bpage;
 
 typedef struct bpage_row {
@@ -57,6 +62,19 @@ typedef void (*bpage_row_fn)(void* user, int index, bpage_row* out);
 
 /* Replace the scene by the settings page with `count` rows. */
 void bpage_open(bpage* p, bmenu* m, int count);
+
+/* The Settings screen as the original draws it: BPAGE_ROWS rows of its own bar, 78 px apart, icon, name centred left of the pill, the pill
+ * of the value, no box and no help text. With keep_scene the objects join those already in the scene (a screen with other buttons; no BACK
+ * marker is made, the caller has its own); the rows show only while bpage_rows_show(p, 1). Text is the caller's: the name is centred on
+ * BPAGE_ROWS_LABEL_CX_PX, the value starts at BPAGE_ROWS_VALUE_X_PX, both at bpage_rows_y_px(slot). */
+#define BPAGE_ROWS 4
+#define BPAGE_ROWS_PITCH_PX 78.0f
+#define BPAGE_ROWS_PILL_LEFT_PX 256.6f
+#define BPAGE_ROWS_LABEL_CX_PX ((100.0f + BPAGE_ROWS_PILL_LEFT_PX) * 0.5f)
+#define BPAGE_ROWS_VALUE_X_PX (BPAGE_ROWS_PILL_LEFT_PX + 10.0f)
+void bpage_open_rows(bpage* p, bmenu* m, int keep_scene);
+void bpage_rows_show(bpage* p, int show);
+float bpage_rows_y_px(int slot); /* the middle of a row */
 
 /* Move the selection by `delta` rows (clamped). Returns 1 if it moved. */
 int bpage_move(bpage* p, int delta);

@@ -695,6 +695,10 @@ main(int argc, char** argv) {
         for (int i = 0; i < selected; i++) {
             bpage_move(&page, 1);
         }
+    } else if (script == -20) { /* the original's four rows (the Online page): `selected` = cursor row, icons from BIOS_PREVIEW_ICONS */
+        bpage_open_rows(&page, &menu, 0);
+        bpage_rows_show(&page, 1);
+        page.cursor = selected;
     } else if (script == -3 || script == -4) { /* game list demo: 7 rows as the console (BLIST_SLOTS=n) */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
@@ -805,7 +809,7 @@ main(int argc, char** argv) {
     }
     for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -11 || script == -8 || script == -9 || script == -14 ? 0 : frames); i++) {
         bmenu_update(&menu);
-        if (script == -2) {
+        if (script == -2 || script == -20) {
             bpage_sync(&page, demo_row, NULL);
         }
         if (script == -6) {
@@ -821,6 +825,12 @@ main(int argc, char** argv) {
     }
     if (menu.vm.error) {
         fprintf(stderr, "script error %d at %#x\n", menu.vm.error, menu.vm.error_pc);
+    }
+    if (getenv("BIOS_PREVIEW_MODELS")) { /* the model and motion of every object of the scene */
+        for (int i = 0; i < menu.vm.count; i++) {
+            const bvm_obj* o = &menu.vm.objs[menu.vm.order[i]];
+            fprintf(stderr, "object %#x: model %d motion %d scale %.3f\n", o->id, o->model, o->motion, o->scale_tw[0].cur);
+        }
     }
 
     if (getenv("BIOS_PREVIEW_BENCH")) { /* time the scene building of the main menu: no pixels, for gprof */
@@ -1045,7 +1055,7 @@ main(int argc, char** argv) {
             bscene_sink nears = {&sink, near_tri, NULL, NULL}; /* as ui_bios: the case is brought in front of the pane */
             bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &nears);
         }
-    } else if (script == -2) {
+    } else if (script == -2 || script == -20) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
         {   /* the scroll bar's thumb, as ui_bios draws it */

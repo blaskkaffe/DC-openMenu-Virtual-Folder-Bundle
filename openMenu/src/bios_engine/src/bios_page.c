@@ -54,6 +54,8 @@
 #define ID_PILL(s) ((uint16_t)(0x1720 + (s)))
 #define ID_ICON(s) ((uint16_t)(0x1740 + (s)))
 #define ID_UP 0x1760
+#define ID_BAR(s) ((uint16_t)(0x1780 + (s)))
+#define ROWS_FIRST_PX 78.4f /* the original's first row, its middle */
 #define ID_DOWN 0x1761
 
 static float
@@ -89,6 +91,9 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
         case BPAGE_ICON_PAD: *model = 17; *scale = 0.55f; return;
         case BPAGE_ICON_GLOBE: *model = BMODEL_GLOBE; *scale = 0.4f; return;
         case BPAGE_ICON_PHONE: *model = BMODEL_PHONE; *scale = 0.42f; return;
+        case BPAGE_ICON_PERSON: *model = BMODEL_PERSON; *scale = 0.5f; return;
+        case BPAGE_ICON_MAIN_PAD: *model = 4; *motion = 7; *scale = 0.34f; return;
+        case BPAGE_ICON_MAIN_CLOCK: *model = 3; *motion = 5; *scale = 0.40f; return;
         case BPAGE_ICON_CASE: *model = BMODEL_CASE_WHITE; *scale = 0.38f; return;
         default: break;
     }
@@ -102,12 +107,23 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
  * icon column. It moves with the scale, so a shrinking icon shrinks about its own middle. */
 static float
 icon_dy(int icon) {
-    return icon == BPAGE_ICON_VMU ? -7.5f : 0.0f;
+    switch (icon) {
+        case BPAGE_ICON_VMU: return -7.5f;
+        case BPAGE_ICON_GLOBE: return -5.0f; /* the globe stands on its origin: its middle is 5 units up */
+        case BPAGE_ICON_MAIN_PAD: return -8.1f; /* the main menu's models are placed by their root node (and tilted): back to the middle */
+        case BPAGE_ICON_MAIN_CLOCK: return 8.0f;
+        default: return 0.0f;
+    }
 }
 
 static float
 icon_dx(int icon) {
-    return icon == BPAGE_ICON_VMU ? -7.1f : 0.0f;
+    switch (icon) {
+        case BPAGE_ICON_VMU: return -7.1f;
+        case BPAGE_ICON_MAIN_PAD: return 10.5f;
+        case BPAGE_ICON_MAIN_CLOCK: return -7.9f;
+        default: return 0.0f;
+    }
 }
 
 /* Frames each slot's row has been selected (0: not selected): the icons animate only while their row is selected, as in the BIOS. */
@@ -143,6 +159,7 @@ bpage_open(bpage* p, bmenu* m, int count) {
     p->top = 0;
     p->back_selected = 0;
     p->anim = 0;
+    p->rows = 0;
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 0x49, ID_BOX, PRIO);  /* the box of the rows: the row bar, made taller in bpage_draw */
     bvm_create(&m->vm, 0x49, ID_INFO, PRIO); /* the box of the information under it */
@@ -206,8 +223,127 @@ bpage_row_in_slot(const bpage* p, int slot) {
     return slot >= 0 && slot < BPAGE_SLOTS && row < p->count ? row : -1;
 }
 
+static void
+sync_icon(bvm_obj* icon, int s, int row, int on, int sel, float y, bpage_row_fn row_fn, void* user) {
+    if (icon) {
+        icon->var[0] = sel;
+        set_hidden(icon, !on);
+        if (!on) {
+            icon_age[s] = 0;
+        }
+        if (on) {
+            set_pos(icon, ICON_X, y, ICON_Z);
+            if (row_fn) {
+                bpage_row r = {0};
+                float scale;
+                row_fn(user, row, &r);
+                icon_model(r.icon, &icon->model, &icon->motion, &scale);
+                icon->texlist = icon->model;
+                /* only the selected row's icon animates */
+                icon_age[s] = sel ? icon_age[s] + 1 : 0;
+                const float f = !icon->motion && sel ? icon_shrink(icon_age[s] - 1) : 1.0f;
+                set_pos(icon, ICON_X + icon_dx(r.icon) * scale * f, y + icon_dy(r.icon) * scale * f, ICON_Z);
+                for (int a = 0; a < 3; a++) {
+                    icon->scale_tw[a].cur = scale * f; /* the BIOS icons at the original's size */
+                    icon->rot_tw[a].step = 0;
+                    icon->rot_tw[a].frames = 0;
+                    icon->rot_tw[a].cur = 0;
+                }
+                if (!icon->motion) {
+                    icon->flags &= ~(uint32_t)BVM_F_MOTION;
+                } else {
+                    icon->flags |= BVM_F_MOTION; /* a row that showed a model without motion before */
+                    if (sel) {
+                        if (icon_age[s] == 1) {
+                            icon->motion_tw.cur = 0.5f; /* starts from the beginning each time */
+                        }
+                        icon->motion_tw.step = 0.5f;
+                    } else {
+                        icon->motion_tw.cur = 0.0f;
+                        icon->motion_tw.step = 0.0f;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ---- the original's four rows ---- */
+
+float
+bpage_rows_y_px(int slot) {
+    return ROWS_FIRST_PX + (float)slot * BPAGE_ROWS_PITCH_PX;
+}
+
+void
+bpage_open_rows(bpage* p, bmenu* m, int keep_scene) {
+    p->m = m;
+    p->count = BPAGE_ROWS;
+    p->cursor = 0;
+    p->top = 0;
+    p->back_selected = 0;
+    p->anim = 0;
+    p->rows = 1;
+    p->shown = 0;
+    if (!keep_scene) {
+        bvm_kill_all(&m->vm);
+    }
+    for (int s = 0; s < BPAGE_ROWS; s++) {
+        bvm_create(&m->vm, 0x49, ID_BAR(s), PRIO);
+    }
+    for (int s = 0; s < BPAGE_ROWS; s++) {
+        bvm_create(&m->vm, 0x1d, ID_PILL(s), PRIO);
+    }
+    for (int s = 0; s < BPAGE_ROWS; s++) {
+        bvm_create(&m->vm, 0x4d, ID_ICON(s), PRIO);
+    }
+    if (!keep_scene) {
+        bvm_create(&m->vm, 6, 0x1110, PRIO);
+        bvm_obj* back = bvm_find(&m->vm, 0x1110);
+        if (back) {
+            back->pos_tw[0].cur = -17.57812f;
+            back->pos_tw[1].cur = -14.25781f;
+        }
+    }
+}
+
+void
+bpage_rows_show(bpage* p, int show) {
+    p->shown = show;
+}
+
+static void
+sync_rows(bpage* p, bpage_row_fn row_fn, void* user) {
+    bvm* vm = &p->m->vm;
+    p->anim++;
+    for (int s = 0; s < BPAGE_ROWS; s++) {
+        float y = (240.0f - bpage_rows_y_px(s)) / PX_PER_UNIT;
+        int on = p->shown && s < p->count;
+        int sel = on && s == p->cursor && !p->back_selected;
+        bvm_obj* bar = bvm_find(vm, ID_BAR(s));
+        bvm_obj* pill = bvm_find(vm, ID_PILL(s));
+        bvm_obj* icon = bvm_find(vm, ID_ICON(s));
+        if (bar) {
+            set_pos(bar, ANCHOR_X, y, ROW_Z);
+            bar->scale_tw[0].cur = bar->scale_tw[1].cur = bar->scale_tw[2].cur = BAR_SCALE;
+            set_hidden(bar, !on);
+        }
+        if (pill) {
+            set_pos(pill, (BPAGE_ROWS_PILL_LEFT_PX - 320.0f) / PX_PER_UNIT - PILL_LEFT_UNIT * PILL_SCALE, y, ROW_Z + 0.78f);
+            pill->scale_tw[0].cur = pill->scale_tw[1].cur = pill->scale_tw[2].cur = PILL_SCALE;
+            pill->var[1] = sel;
+            set_hidden(pill, !on);
+        }
+        sync_icon(icon, s, s, on, sel, y, row_fn, user);
+    }
+}
+
 void
 bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
+    if (p->rows) {
+        sync_rows(p, row_fn, user);
+        return;
+    }
     bvm* vm = &p->m->vm;
     p->anim++;
     float box_y = (240.0f - (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f) / PX_PER_UNIT;
@@ -241,47 +377,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
             pill->var[1] = sel;
             set_hidden(pill, !on);
         }
-        if (icon) {
-            icon->var[0] = sel;
-            set_hidden(icon, !on);
-            if (!on) {
-                icon_age[s] = 0;
-            }
-            if (on) {
-                set_pos(icon, ICON_X, y, ICON_Z);
-                if (row_fn) {
-                    bpage_row r = {0};
-                    float scale;
-                    row_fn(user, row, &r);
-                    icon_model(r.icon, &icon->model, &icon->motion, &scale);
-                    icon->texlist = icon->model;
-                    /* only the selected row's icon animates */
-                    icon_age[s] = sel ? icon_age[s] + 1 : 0;
-                    const float f = !icon->motion && sel ? icon_shrink(icon_age[s] - 1) : 1.0f;
-                    set_pos(icon, ICON_X + icon_dx(r.icon) * scale * f, y + icon_dy(r.icon) * scale * f, ICON_Z);
-                    for (int a = 0; a < 3; a++) {
-                        icon->scale_tw[a].cur = scale * f; /* the BIOS icons at the original's size */
-                        icon->rot_tw[a].step = 0;
-                        icon->rot_tw[a].frames = 0;
-                        icon->rot_tw[a].cur = 0;
-                    }
-                    if (!icon->motion) {
-                        icon->flags &= ~(uint32_t)BVM_F_MOTION;
-                    } else {
-                        icon->flags |= BVM_F_MOTION; /* a row that showed a model without motion before */
-                        if (sel) {
-                            if (icon_age[s] == 1) {
-                                icon->motion_tw.cur = 0.5f; /* starts from the beginning each time */
-                            }
-                            icon->motion_tw.step = 0.5f;
-                        } else {
-                            icon->motion_tw.cur = 0.0f;
-                            icon->motion_tw.step = 0.0f;
-                        }
-                    }
-                }
-            }
-        }
+        sync_icon(icon, s, row, on, sel, y, row_fn, user);
         if (text) {
             text->text_w = 512;
             text->text_h = 32;
@@ -365,7 +461,7 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             /* grow the bars along y without squeezing their corners (as the game list's box) */
             m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
-            m->scene.stretch_on = o->id == ID_INFO || (o->id >= ID_PILL(0) && o->id < ID_PILL(BPAGE_SLOTS)); /* both are shorter than the original's */
+            m->scene.stretch_on = !p->rows && (o->id == ID_INFO || (o->id >= ID_PILL(0) && o->id < ID_PILL(BPAGE_SLOTS))); /* both are shorter than the original's */
             m->scene.small_left = o->id == ID_INFO; /* the information box has the help box's small corners all round */
             if (m->scene.stretch_on && o->id != ID_INFO) {
                 float want = (PILL_RIGHT_PX - PILL_LEFT_PX) / (PX_PER_UNIT * PILL_SCALE);
