@@ -352,11 +352,14 @@ build_phone(builder* b) {
 
 /* A winners' stand: three blocks in the Dreamcast's colours, the winner (light grey) in the middle, the second (orange) on its left and the third
  * (blue) on its right, about 8 units wide and 6 tall, centred on the origin. The numbers come later: bmodel_podium_digits. */
-#define POD_W 2.8f
-#define POD_D 2.4f
 #define POD_BOTTOM (-3.2f)
-static const float pod_h[3] = {6.0f, 4.2f, 3.0f}; /* the winner (white, 1), the second (orange, 2), the third (blue, 3) */
-static const float pod_cx[3] = {0.0f, -POD_W * 1.04f, POD_W * 1.04f}; /* side by side, with a hair between */
+#define POD_BACK (-1.4f) /* the backs line up: the deeper the block, the further it sticks out to the front */
+/* The winner (1) is the widest and the deepest, the second (2) in between, the third (3) the smallest, the blocks touching: the 1 sticks
+ * out a little to the front. */
+static const float pod_h[3] = {6.0f, 4.2f, 3.0f};
+static const float pod_w[3] = {3.2f, 2.8f, 2.4f};
+static const float pod_d[3] = {2.8f, 2.4f, 2.0f};
+static const float pod_cx[3] = {0.2f, -2.8f, 3.0f}; /* the 1 in the middle, the 2 to its left and the 3 to its right, 0.04 into each other */
 
 #define POD_TAPER 0.95f /* the foot of a block is this much of its top's width and depth: the top is a tiny bit bigger */
 
@@ -365,10 +368,10 @@ build_podium(builder* b) {
     static const uint32_t col[3] = {0xFFE4E6EEu, 0xFFE8681Cu, 0xFF1E5AB4u}; /* light grey (the winner), Dreamcast orange, Dreamcast blue */
     for (int i = 0; i < 3; i++) {
         int poly = poly_new(b, -1, col[i], 0);
-        const float hw = POD_W / 2.0f, hd = POD_D / 2.0f, fw = hw * POD_TAPER, fd = hd * POD_TAPER;
+        const float hw = pod_w[i] / 2.0f, hd = pod_d[i] / 2.0f, cz = POD_BACK + hd, fw = hw * POD_TAPER, fd = hd * POD_TAPER;
         const float y0 = POD_BOTTOM, y1 = POD_BOTTOM + pod_h[i], x = pod_cx[i];
-        v3 b00 = v3m(x - fw, y0, -fd), b10 = v3m(x + fw, y0, -fd), b11 = v3m(x + fw, y0, fd), b01 = v3m(x - fw, y0, fd);
-        v3 t00 = v3m(x - hw, y1, -hd), t10 = v3m(x + hw, y1, -hd), t11 = v3m(x + hw, y1, hd), t01 = v3m(x - hw, y1, hd);
+        v3 b00 = v3m(x - fw, y0, cz - fd), b10 = v3m(x + fw, y0, cz - fd), b11 = v3m(x + fw, y0, cz + fd), b01 = v3m(x - fw, y0, cz + fd);
+        v3 t00 = v3m(x - hw, y1, cz - hd), t10 = v3m(x + hw, y1, cz - hd), t11 = v3m(x + hw, y1, cz + hd), t01 = v3m(x - hw, y1, cz + hd);
         quad(b, poly, t00, t01, t11, t10, NULL, v3m(0, 1, 0));  /* top */
         quad(b, poly, b00, b10, b11, b01, NULL, v3m(0, -1, 0)); /* bottom */
         quad(b, poly, b01, b11, t11, t01, NULL, v3m(0, 0, 1));  /* front */
@@ -640,6 +643,7 @@ bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
     nodes[0].scl.x = nodes[0].scl.y = nodes[0].scl.z = 1.0f;
     nodes[0].parent = -1;
     nodes[0].ang[0] = 0x08E4;  /* about 12 degrees: the tops lean toward the viewer */
+    nodes[0].ang[1] = -0x038E; /* about -5 degrees: turned, so the side of the stand shows */
     nodes[1] = out->nodes[0];
     nodes[1].parent = 0;
     nodes[1].eval = 0;
@@ -657,7 +661,7 @@ bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
         n.scl.x = n.scl.y = n.scl.z = s;
         n.pos.x = pod_cx[i] - digit_cx[i] * s;
         n.pos.y = POD_BOTTOM + pod_h[i] * 0.5f;
-        n.pos.z = POD_D / 2.0f * (1.0f + POD_TAPER) / 2.0f - 2.0f * s + 0.02f; /* the digit's back plane on the block's front face */
+        n.pos.z = POD_BACK + pod_d[i] / 2.0f * (1.0f + (1.0f + POD_TAPER) / 2.0f) - 2.0f * s + 0.02f; /* the digit's back plane on the block's front face */
         nodes[2 + i] = n;
         free(d[i].nodes); /* the node's mesh now belongs to `nodes` */
     }
