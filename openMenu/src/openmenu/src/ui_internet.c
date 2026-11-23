@@ -2942,14 +2942,16 @@ page_icon(int i, int lit) {
     if (!made) {
         for (int k = 0; k < PAGES; k++) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
-            enum { ICON_PAD = (UICON_SIZE * 3) / 2 }; /* the glyph in the middle of a bigger, clear picture: the button's picture area is large */
+            enum { ICON_PAD = 128, ICON_GLYPH = 86 }; /* a power of two: the glyph (two thirds of it) in the middle of a clear picture; the button's picture area is large */
             static uint16_t big[ICON_PAD * ICON_PAD];
             for (int l = 0; l < 2; l++) {
                 uicon_render(k, l ? 0xFF000000u : 0xFF1C2850u, px);
                 memset(big, 0, sizeof(big));
-                const int off = (ICON_PAD - UICON_SIZE) / 2;
-                for (int y = 0; y < UICON_SIZE; y++) {
-                    memcpy(&big[(y + off) * ICON_PAD + off], &px[y * UICON_SIZE], sizeof(uint16_t) * UICON_SIZE);
+                const int off = (ICON_PAD - ICON_GLYPH) / 2;
+                for (int y = 0; y < ICON_GLYPH; y++) {
+                    for (int x = 0; x < ICON_GLYPH; x++) {
+                        big[(y + off) * ICON_PAD + off + x] = px[(y * UICON_SIZE / ICON_GLYPH) * UICON_SIZE + x * UICON_SIZE / ICON_GLYPH];
+                    }
                 }
                 ids[l][k] = gfx_dyn_create(big, ICON_PAD, ICON_PAD);
             }
