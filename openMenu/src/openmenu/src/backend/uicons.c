@@ -164,10 +164,10 @@ sd_wrench(float x, float y) {
 static float
 shape(int id, float x, float y) {
     /* a little crooked and wobbly, as the main menu's models are */
-    static const float tilt[UICON_COUNT] = {-4.0f, 0.0f, 6.0f, -3.0f, 0.0f};
+    static const float tilt[UICON_COUNT] = {-2.0f, 0.0f, 3.0f, -1.5f, 0.0f};
     rot(&x, &y, tilt[id]);
-    x += 0.009f * sinf(9.0f * y + (float)id);
-    y += 0.009f * sinf(8.0f * x + (float)id * 2.0f);
+    x += 0.004f * sinf(9.0f * y + (float)id);
+    y += 0.004f * sinf(8.0f * x + (float)id * 2.0f);
     switch (id) {
         case UICON_ONLINE: return sd_globe(x, y);
         case UICON_PLAY: return sd_pad(x, y);
