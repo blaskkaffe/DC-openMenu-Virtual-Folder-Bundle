@@ -2075,9 +2075,9 @@ draw_chat(int w) {
 #define KB_GAP 4.0f
 #define KB_BORDER 0xFFE8A030u
 #define KB_FILL 0xFF101A38u
-#define KB_KEY 0x50FFFFFFu
-#define KB_KEY_SEL 0xFFB08040u
-#define KB_KEY_OK 0x7030A050u
+#define KB_KEY 0x7030804Cu
+#define KB_KEY_SEL 0xFF48C860u
+#define KB_KEY_OK 0xB02E9A4Au
 #define KB_SHOWN 38
 
 static void
@@ -2135,7 +2135,7 @@ draw_keyboard(const char* title) {
             if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
-            gfx_rect(kx, ky, kw, KB_CELL_H, 0.45f, sel ? KB_KEY_SEL : key.kind == OSK_OK ? KB_KEY_OK : KB_KEY);
+            gfx_rrect(kx, ky, kw, KB_CELL_H, KB_CELL_H / 2.0f, 0.45f, sel ? KB_KEY_SEL : key.kind == OSK_OK ? KB_KEY_OK : KB_KEY); /* ovals, as the BIOS buttons */
             switch (key.kind) {
                 case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
                 case OSK_SHIFT: kb_label("SHIFT", kx, kw, ky, kb.layer == OSK_UPPER ? YELLOW : col); break;
