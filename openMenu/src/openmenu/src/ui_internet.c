@@ -2164,7 +2164,7 @@ uin_draw(void) {
     for (int i = 0; i < PAGES; i++) {
         float x, y;
         blist_button_center_px(i, &x, &y);
-        gfx_image(page_icon(i, i == page), x - (float)UICON_SIZE / 2.0f, y - (float)UICON_SIZE / 2.0f, (float)UICON_SIZE, (float)UICON_SIZE,
+        gfx_image(page_icon(i, i == page), x - (float)UICON_DRAW / 2.0f, y - (float)UICON_DRAW / 2.0f, (float)UICON_DRAW, (float)UICON_DRAW,
                   TEXT_Z);
     }
 }
