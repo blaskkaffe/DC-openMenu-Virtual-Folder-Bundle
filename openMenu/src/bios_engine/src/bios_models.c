@@ -354,11 +354,11 @@ build_person(builder* b) {
     int body = poly_new(b, -1, 0xFF3F78D6u, 0);
     int shade = poly_new(b, -1, 0xFF2D5CAEu, 0);
     int head = poly_new(b, -1, 0xFFF4D2AAu, 0);
-    static const float shoulders[5][2] = {{4.3f, 0.0f}, {4.4f, 0.8f}, {4.0f, 1.9f}, {2.9f, 3.0f}, {1.1f, 3.6f}};
-    lathe(b, body, 8, shoulders, 5, v3m(0.0f, -4.5f, 0.0f), 0.6f, -0.5f, 1, 1);
-    cylinder(b, shade, shade, 0, 8, v3m(0.0f, -0.9f, 0.0f), v3m(0.0f, 1.0f, 0.0f), 1.0f, 0.9f, 1.4f);
-    static const float skull[6][2] = {{0.0f, -2.1f}, {1.3f, -1.6f}, {2.0f, -0.6f}, {2.0f, 0.6f}, {1.3f, 1.6f}, {0.0f, 2.1f}};
-    lathe(b, head, 8, skull, 6, v3m(0.0f, 2.3f, 0.0f), 1.0f, 0.0f, 0, 0);
+    static const float shoulders[5][2] = {{4.3f, 0.0f}, {4.4f, 0.8f}, {4.0f, 1.9f}, {2.9f, 3.0f}, {1.5f, 3.6f}};
+    lathe(b, body, 8, shoulders, 5, v3m(0.0f, -4.3f, 0.0f), 0.6f, -0.5f, 1, 1);
+    static const float skull[6][2] = {{0.0f, -2.4f}, {1.5f, -1.85f}, {2.3f, -0.7f}, {2.3f, 0.7f}, {1.5f, 1.85f}, {0.0f, 2.4f}};
+    lathe(b, head, 8, skull, 6, v3m(0.0f, 1.9f, 0.0f), 1.0f, 0.0f, 0, 0);
+    (void)shade;
 }
 
 #define GLOBE_R 4.6f
