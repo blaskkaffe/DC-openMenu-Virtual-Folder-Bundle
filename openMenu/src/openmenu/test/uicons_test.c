@@ -13,7 +13,7 @@ main(int argc, char** argv) {
     for (int row = 0; row < 2; row++) {
         for (int id = 0; id < UICON_COUNT; id++) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
-            uint32_t colour = row == 0 ? 0xFF0C1430u : 0xFF1C2850u;
+            uint32_t colour = row == 0 ? 0xFF000000u : 0xFF1C2850u;
             int on = 0;
             uicon_render(id, colour, px);
             for (int i = 0; i < UICON_SIZE * UICON_SIZE; i++) {

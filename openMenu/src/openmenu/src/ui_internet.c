@@ -2125,7 +2125,7 @@ draw_footer(void) {
     }
 }
 
-/* The glyph of a page button, drawn once: dark navy like the CD player's marks, a little lighter when not selected. */
+/* The glyph of a page button, drawn once: black when selected like the BIOS marks, dark navy when not. */
 static int
 page_icon(int i, int lit) {
     static int ids[2][PAGES];
@@ -2134,7 +2134,7 @@ page_icon(int i, int lit) {
         for (int k = 0; k < PAGES; k++) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
             for (int l = 0; l < 2; l++) {
-                uicon_render(k, l ? 0xFF0C1430u : 0xFF1C2850u, px);
+                uicon_render(k, l ? 0xFF000000u : 0xFF1C2850u, px);
                 ids[l][k] = gfx_dyn_create(px, UICON_SIZE, UICON_SIZE);
             }
         }

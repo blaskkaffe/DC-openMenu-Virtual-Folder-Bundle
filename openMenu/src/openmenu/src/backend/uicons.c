@@ -62,19 +62,56 @@ sd_globe(float x, float y) {
     d = u(d, fmaxf(meridian, disc));
     d = u(d, fmaxf(fabsf(x - 0.5f) - T * 0.5f, disc));
     d = u(d, fmaxf(fabsf(y - 0.5f) - T * 0.5f, disc));
+    d = u(d, fmaxf(fabsf(y - 0.3f) - T * 0.5f, disc)); /* a parallel on each side of the equator, evenly spaced */
+    d = u(d, fmaxf(fabsf(y - 0.7f) - T * 0.5f, disc));
     return d;
 }
 
+/* A polygon (points in the picture of the BIOS controller, see CT_X / CT_Y): signed distance */
+static float
+sd_poly(float x, float y, const float* pt, int n) {
+    float d = 1e9f;
+    int inside = 0;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        float ax = pt[j * 2], ay = pt[j * 2 + 1], bx = pt[i * 2], by = pt[i * 2 + 1];
+        float e = sd_seg(x, y, ax, ay, bx, by, 0);
+        d = e < d ? e : d;
+        if (((ay > y) != (by > y)) && (x < (bx - ax) * (y - ay) / (by - ay) + ax)) {
+            inside = !inside;
+        }
+    }
+    return inside ? -d : d;
+}
+
+/* The controller of the main menu's Play icon, traced from its model seen from the front: x 28..275, y 28..245 in the trace, fitted into the square */
+#define CT_X(v) (0.04f + ((v) - 28.0f) * 0.003725f)
+#define CT_Y(v) (0.095f + ((v) - 28.0f) * 0.003725f)
+#define CT_R(v) ((v) * 0.003725f)
+
 static float
 sd_pad(float x, float y) {
-    float d = sd_box(x, y, 0.5f, 0.58f, 0.44f, 0.27f, 0.17f);
-    d = u(d, sd_box(x, y, 0.5f, 0.32f, 0.22f, 0.13f, 0.07f)); /* the VMU bump */
-    float h = u(sd_box(x, y, 0.25f, 0.58f, 0.115f, 0.035f, 0.0f), sd_box(x, y, 0.25f, 0.58f, 0.035f, 0.115f, 0.0f)); /* d-pad */
-    h = u(h, sd_circle(x, y, 0.73f, 0.47f, 0.05f)); /* four face buttons */
-    h = u(h, sd_circle(x, y, 0.83f, 0.58f, 0.05f));
-    h = u(h, sd_circle(x, y, 0.73f, 0.69f, 0.05f));
-    h = u(h, sd_circle(x, y, 0.63f, 0.58f, 0.05f));
-    h = u(h, sd_box(x, y, 0.5f, 0.32f, 0.12f, 0.06f, 0.03f)); /* the window */
+    static const float body[] = {110, 30, 150, 26, 192, 30, 196, 46, 215, 51, 245, 55, 262, 68, 271, 95, 276, 135, 275, 175, 270, 205, 258, 232, 247, 243, 236, 238,
+                                 226, 215, 222, 206, 190, 212, 150, 215, 110, 212, 78, 206, 72, 228, 66, 243, 54, 238, 40, 214, 31, 185, 28, 150, 31, 115,
+                                 40, 82, 55, 64, 76, 57, 96, 51, 108, 47};
+    static const float slot[] = {109, 40, 194, 40, 194, 105, 188, 125, 170, 138, 150, 141, 130, 138, 112, 125, 107, 105};
+    float p[sizeof(body) / sizeof(body[0])], q[sizeof(slot) / sizeof(slot[0])];
+    for (unsigned i = 0; i < sizeof(body) / sizeof(body[0]); i += 2) {
+        p[i] = CT_X(body[i]);
+        p[i + 1] = CT_Y(body[i + 1]);
+    }
+    for (unsigned i = 0; i < sizeof(slot) / sizeof(slot[0]); i += 2) {
+        q[i] = CT_X(slot[i]);
+        q[i + 1] = CT_Y(slot[i + 1]);
+    }
+    float d = sd_poly(x, y, p, (int)(sizeof(body) / sizeof(body[0]) / 2));
+    float h = sd_poly(x, y, q, (int)(sizeof(slot) / sizeof(slot[0]) / 2)); /* the slot for the memory card */
+    h = u(h, sd_box(x, y, CT_X(74), CT_Y(147), CT_R(24), CT_R(10), 0.0f)); /* d-pad */
+    h = u(h, sd_box(x, y, CT_X(74), CT_Y(147), CT_R(8), CT_R(23), 0.0f));
+    h = u(h, sd_circle(x, y, CT_X(73), CT_Y(92), CT_R(17))); /* the stick */
+    h = u(h, sd_circle(x, y, CT_X(230), CT_Y(93), CT_R(11))); /* the four buttons */
+    h = u(h, sd_circle(x, y, CT_X(211), CT_Y(112), CT_R(11)));
+    h = u(h, sd_circle(x, y, CT_X(250), CT_Y(112), CT_R(11)));
+    h = u(h, sd_circle(x, y, CT_X(231), CT_Y(127), CT_R(11)));
     return cut(d, h);
 }
 
