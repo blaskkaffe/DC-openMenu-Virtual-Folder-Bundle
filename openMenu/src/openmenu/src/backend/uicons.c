@@ -147,10 +147,9 @@ sd_clock(float x, float y) {
     static const float hand_a[][2] = {{190, 215}, {238, 186}, {338, 308}, {296, 354}}; /* the long hand, up to the left */
     static const float hand_b[][2] = {{318, 298}, {402, 224}, {444, 270}, {346, 338}}; /* the short hand, up to the right */
     float body = sd_circle(x, y, CX(290), CY(355), CL(218)) - 0.012f;
-    float gap = sd_circle(x, y, CX(290), CY(355), CL(236)); /* a thin gap between the bells and the body */
     float d = body;
-    d = u(d, cut(poly_img(x, y, bell_l, 9) - 0.016f, gap));
-    d = u(d, cut(poly_img(x, y, bell_r, 9) - 0.016f, gap));
+    d = u(d, poly_img(x, y, bell_l, 9) - 0.016f);
+    d = u(d, poly_img(x, y, bell_r, 9) - 0.016f);
     d = u(d, sd_box(x, y, CX(548), CY(345), CL(30), CL(44), CL(8)));
     d = cut(d, sd_circle(x, y, CX(292), CY(345), CL(148))); /* the face */
     d = u(d, poly_img(x, y, hand_a, 4) - 0.02f);
