@@ -366,7 +366,9 @@ static const float pod_cx[3] = {0.2f, -2.8f, 3.0f}; /* the 1 in the middle, the 
 static void
 build_podium(builder* b) {
     static const uint32_t col[3] = {0xFFE4E6EEu, 0xFFE8681Cu, 0xFF1E5AB4u}; /* light grey (the winner), Dreamcast orange, Dreamcast blue */
-    for (int i = 0; i < 3; i++) {
+    /* drawn back to front (the faces are not depth sorted): the second and the third first, the winner, which stands in front, last */
+    for (int k = 0; k < 3; k++) {
+        const int i = (k + 1) % 3;
         int poly = poly_new(b, -1, col[i], 0);
         const float hw = pod_w[i] / 2.0f, hd = pod_d[i] / 2.0f, cz = POD_BACK + hd, fw = hw * POD_TAPER, fd = hd * POD_TAPER;
         const float y0 = POD_BOTTOM, y1 = POD_BOTTOM + pod_h[i], x = pod_cx[i];
