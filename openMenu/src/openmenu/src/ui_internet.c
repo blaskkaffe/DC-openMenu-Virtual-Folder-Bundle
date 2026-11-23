@@ -3,7 +3,7 @@
  * backend/netsel + dcnow_net, the saved settings and stars netprefs.
  * The Online page also holds the two DC99 chats (backend/dc99_chat). Four pages on the CD player's buttons: Online (who is online / the games being played), Play (the card's online games and the
  * browsers), Events (going on and coming up / the news), Settings (connection, ISP settings, network test). The connection status is
- * drawn above the panel. A acts, Y stars, START switches the list of a page, X connects or hangs up. */
+ * drawn above the panel. A acts, Y stars, START switches the list of a page; connecting and hanging up is the Connection row of Settings. */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -997,7 +997,7 @@ settings_activate(int row) {
         case SET_GW_NET:
             if (conn.state != DCNOW_CONN_ONLINE) {
                 sound_sfx(BAUDIO_SFX_ERROR);
-                say("Not connected: X connects");
+                say("Not connected: Settings, Connection");
             } else if (gw.busy) {
                 sound_sfx(BAUDIO_SFX_ERROR);
             } else if (gw.reached && gw.info.has_net) {
@@ -1114,7 +1114,7 @@ static void
 kosnet_activate(int online) {
     if (!online) {
         sound_sfx(BAUDIO_SFX_ERROR);
-        say("Not connected: X connects");
+        say("Not connected: Settings, Connection");
     } else if (!kosnet_tls_available()) {
         sound_sfx(BAUDIO_SFX_ERROR);
         say("Posting needs TLS: not in this build");
@@ -1133,7 +1133,7 @@ static void
 chat_irc_activate(int online) {
     if (!online) {
         sound_sfx(BAUDIO_SFX_ERROR);
-        say("Not connected: X connects");
+        say("Not connected: Settings, Connection");
     } else if (!np_chat_nick()[0] || !np_chat_pass()[0]) {
         editor_open_chat(ED_CHAT_NICK, np_chat_nick());
         sound_sfx(BAUDIO_SFX_ENTER);
@@ -1229,7 +1229,7 @@ uin_handle(button_t b) {
                             start_fetches();
                         } else {
                             sound_sfx(BAUDIO_SFX_ERROR);
-                            say("Not connected: X connects");
+                            say("Not connected: Settings, Connection");
                         }
                     } else if (sel[LIST_OGAMES] < nogames) { /* join or start the game */
                         launch_row(ogames[sel[LIST_OGAMES]].item);
@@ -1260,7 +1260,7 @@ uin_handle(button_t b) {
                         start_fetches();
                     } else {
                         sound_sfx(BAUDIO_SFX_ERROR);
-                        say("Not connected: X connects");
+                        say("Not connected: Settings, Connection");
                     }
                     break;
                 }
@@ -1321,7 +1321,6 @@ uin_handle(button_t b) {
                 sound_sfx(BAUDIO_SFX_ERROR);
             }
             break;
-        case BTN_X: connect_or_hang_up(); break;
         case BTN_B:
             sound_sfx(BAUDIO_SFX_CANCEL);
             if (detail) {
@@ -1388,7 +1387,7 @@ uin_sync(void) {
         probed = 1;
         device = dcnow_detect_device();
         /* An adapter needs no Connect step (the main branch's window connects it at once); a modem, the serial cable or the W5500 wait
-         * for X, since a dial takes the phone line and the others probe the serial port. Only once per start: after a hang-up X connects again. */
+         * for X, since a dial takes the phone line and the others probe the serial port. Only once per start: after a hang-up the Connection row connects again. */
         dcnow_conn_poll(&conn);
         if (!adapter_tried && conn.state == DCNOW_CONN_IDLE && (device == DCNOW_DEV_BBA || device == DCNOW_DEV_LAN)) {
             adapter_tried = 1;
@@ -1536,22 +1535,18 @@ text_cut(const char* text, int chars, float x, float y, uint32_t argb) {
 static void
 draw_status(void) {
     char line[64];
-    dcnow_device_t used = dcnow_device_hint();
     switch (conn.state) {
-        case DCNOW_CONN_ONLINE: {
-            snprintf(line, sizeof(line), "Online%s%s  X: hang up", used != DCNOW_DEV_NONE ? " via " : "", used != DCNOW_DEV_NONE ? dcnow_device_short_name(used) : "");
-            break;
-        }
+        case DCNOW_CONN_ONLINE: return; /* nothing to say while all is well: Settings has the Connection row to hang up */
         case DCNOW_CONN_CONNECTING:
             snprintf(line, sizeof(line), "%s", conn.count > 0 ? conn.lines[conn.count - 1] : "Connecting...");
             break;
         case DCNOW_CONN_COOLDOWN: snprintf(line, sizeof(line), "Wait %d s before calling again", conn.cooldown_seconds); break;
         case DCNOW_CONN_FAILED:
             /* the engine's failure lines are "Connection failed.", the reason, and advice when there is any: show the reason */
-            snprintf(line, sizeof(line), "%s  X: retry", conn.count > 1 ? conn.lines[1] : conn.count > 0 ? conn.lines[0] : "Connection failed");
+            snprintf(line, sizeof(line), "%s  (Settings: Connection)", conn.count > 1 ? conn.lines[1] : conn.count > 0 ? conn.lines[0] : "Connection failed");
             break;
         default:
-            snprintf(line, sizeof(line), "%s", !probed ? "Looking for an adapter..." : "Not connected  X: connect (by the Connection setting)");
+            snprintf(line, sizeof(line), "%s", !probed ? "Looking for an adapter..." : "Not connected  (Settings: Connection)");
             break;
     }
     int chars = (int)strlen(line) < 46 ? (int)strlen(line) : 46;
@@ -2288,7 +2283,7 @@ draw_footer(void) {
     } else if (detail) {
         text = page == PAGE_EVENTS && view[page] == VIEW_A ? "Up/Down: scroll  Y: star  B: back" : "Up/Down: scroll  B: back";
     } else if (page == PAGE_ONLINE && view[page] == VIEW_A) {
-        snprintf(line, sizeof(line), "A: refresh  Y: star  START: games  X: %s", conn.state == DCNOW_CONN_ONLINE ? "hang up" : "connect");
+        snprintf(line, sizeof(line), "A: refresh  Y: star  START: games");
         text = line;
     } else if (page == PAGE_ONLINE && view[page] == VIEW_B) {
         text = "A: join or start  Y: star  START: players";
