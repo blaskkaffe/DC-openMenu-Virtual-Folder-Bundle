@@ -2326,6 +2326,9 @@ uin_draw(void) {
             if (say_on && !ed.active) {
                 const float px = 11.9f, z = -335.9375f + 0.39f; /* pixels per unit and depth of the clock screen's buttons */
                 place(so, (PANE_X + PANE_W - PAD - SAY_W / 2.0f - 320.0f) / px, (240.0f - say_cy) / px, z);
+                so->scale_tw[0].cur = 2.6f; /* the clock screen's oval, wider for the word */
+                so->scale_tw[1].cur = 1.25f;
+                so->scale_tw[2].cur = 1.0f;
                 so->var[1] = !say_dead; /* green when it can be used, as the selected button of the clock screen */
                 so->flags &= ~(uint32_t)BVM_F_HIDE;
             } else {
