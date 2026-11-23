@@ -2066,13 +2066,14 @@ draw_chat(int w) {
 }
 
 /* The on-screen keyboard: a popup with a coloured border, the text with its cursor, and a grid of keys. */
-#define KB_W 492.0f
-#define KB_H 292.0f
+#define KB_W 520.0f
+#define KB_H 290.0f
 #define KB_X (320.0f - KB_W / 2.0f) /* popups are in the middle of the screen */
 #define KB_Y (240.0f - KB_H / 2.0f)
-#define KB_CELL_W 42.0f
+#define KB_CELL_W 38.0f
 #define KB_CELL_H 26.0f
-#define KB_GAP 4.0f
+#define KB_GAP 4.0f /* the keys are 42 apart across and 37 down: the same space between the ovals both ways */
+#define KB_ROW_PITCH 37.0f
 #define KB_Z 0.00288f
 #define KB_BORDER 0xFFE8A030u
 #define KB_FILL 0xFF101A38u
@@ -2106,8 +2107,9 @@ kb_label(const char* t, float x, float w, float y, uint32_t col) {
 
 static void
 draw_keyboard(const char* title) {
-    const float gx = KB_X + 18.0f;
-    const float gy = KB_Y + 76.0f;
+    const float gx = KB_X + (KB_W - (10.0f * KB_CELL_W + 9.0f * KB_GAP)) / 2.0f; /* the keys, in the middle */
+    const float fx = KB_X + 18.0f; /* the text field */
+    const float gy = KB_Y + 72.0f;
     const osk_key_t cur = osk_key(&kb);
     const int hide = ed.kind == ED_KN_PASS || ed.kind == ED_CHAT_PASS;
     int from = ed.pos > KB_SHOWN - 2 ? ed.pos - (KB_SHOWN - 2) : 0; /* the text scrolls along with the cursor */
@@ -2121,7 +2123,7 @@ draw_keyboard(const char* title) {
     gfx_text(title, KB_X + 14.0f, top + 6.0f, TEXT_Z, YELLOW, 1);
 
     /* the text */
-    gfx_rect(gx, top + 36.0f, KB_W - 36.0f, 30.0f, KB_Z + 0.00004f, 0xFF050810u);
+    gfx_rect(fx, top + 36.0f, KB_W - 36.0f, 30.0f, KB_Z + 0.00004f, 0xFF050810u);
     {
         char shown[KB_SHOWN + 1];
         char before[KB_SHOWN + 1];
@@ -2131,8 +2133,8 @@ draw_keyboard(const char* title) {
         }
         shown[n] = '\0';
         snprintf(before, sizeof(before), "%.*s", ed.pos - from, shown);
-        gfx_text(shown, gx + 8.0f, top + 37.0f, TEXT_Z, WHITE, 1);
-        gfx_rect(gx + 8.0f + (float)gfx_text_width(before), top + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
+        gfx_text(shown, fx + 8.0f, top + 37.0f, TEXT_Z, WHITE, 1);
+        gfx_rect(fx + 8.0f + (float)gfx_text_width(before), top + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
     }
 
     if (!grid) {
@@ -2145,7 +2147,7 @@ draw_keyboard(const char* title) {
         for (int c = 0; c < OSK_COLS;) {
             osk_key_t key = osk_key_at(kb.layer, r, c);
             float kx = gx + (float)key.col * (KB_CELL_W + KB_GAP);
-            float ky = gy + (float)r * (KB_CELL_H + KB_GAP);
+            float ky = gy + (float)r * KB_ROW_PITCH;
             float kw = (float)key.span * KB_CELL_W + (float)(key.span - 1) * KB_GAP;
             int sel = r == kb.row && key.col == cur.col;
             uint32_t col = WHITE;
@@ -2166,8 +2168,7 @@ draw_keyboard(const char* title) {
             c = key.col + key.span;
         }
     }
-    gfx_text("A: key  X: space  Y: delete", KB_X + 18.0f, KB_Y + KB_H - 56.0f, TEXT_Z, DIM, 1);
-    gfx_text("L/R: cursor  START: done  B: cancel", KB_X + 18.0f, KB_Y + KB_H - 32.0f, TEXT_Z, DIM, 1);
+    gfx_text_scaled("A: key  X: space  Y: del  L/R: cursor  START: done  B: cancel", KB_X + 20.0f, KB_Y + KB_H - 32.0f, TEXT_Z, DIM, 0.75f); /* one row */
 }
 
 /* The editor over the panel: the value, the cursor, the keys. */
