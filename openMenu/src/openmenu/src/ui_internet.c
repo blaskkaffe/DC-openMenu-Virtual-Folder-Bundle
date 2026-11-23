@@ -2942,16 +2942,16 @@ page_icon(int i, int lit) {
     if (!made) {
         for (int k = 0; k < PAGES; k++) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
-            enum { PAD = (UICON_SIZE * 3) / 2 }; /* the glyph in the middle of a bigger, clear picture: the button's picture area is large */
-            static uint16_t big[PAD * PAD];
+            enum { ICON_PAD = (UICON_SIZE * 3) / 2 }; /* the glyph in the middle of a bigger, clear picture: the button's picture area is large */
+            static uint16_t big[ICON_PAD * ICON_PAD];
             for (int l = 0; l < 2; l++) {
                 uicon_render(k, l ? 0xFF000000u : 0xFF1C2850u, px);
                 memset(big, 0, sizeof(big));
-                const int off = (PAD - UICON_SIZE) / 2;
+                const int off = (ICON_PAD - UICON_SIZE) / 2;
                 for (int y = 0; y < UICON_SIZE; y++) {
-                    memcpy(&big[(y + off) * PAD + off], &px[y * UICON_SIZE], sizeof(uint16_t) * UICON_SIZE);
+                    memcpy(&big[(y + off) * ICON_PAD + off], &px[y * UICON_SIZE], sizeof(uint16_t) * UICON_SIZE);
                 }
-                ids[l][k] = gfx_dyn_create(big, PAD, PAD);
+                ids[l][k] = gfx_dyn_create(big, ICON_PAD, ICON_PAD);
             }
         }
         made = 1;
