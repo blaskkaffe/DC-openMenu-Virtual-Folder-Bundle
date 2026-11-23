@@ -70,6 +70,18 @@
 #define HEAD_Y (PANE_Y + 10.0f)
 #define LIST_Y (PANE_Y + 44.0f)
 #define ROWS 8 /* LIST_Y + 8 rows ends above the footer line */
+
+/* A popup in the middle of the screen, as the keyboard's: coloured border, dark fill. The lists draw inside it. */
+#define POP_W 520.0f
+#define POP_H 330.0f
+
+/* Where the buttons of the popup on the screen are (set when they are drawn): what a click on one does is what its button does. */
+static struct {
+    float x0, x1, y0, y1;
+    button_t b;
+} pbtn[4];
+static int npbtn;
+
 #define ITEM_H 46.0f /* events and news: two lines per item */
 #define ITEM_ROWS 4
 #define POPUP_ROWS 10 /* rows of a list in a popup */
@@ -2413,19 +2425,10 @@ online_value(int i, char* out, size_t size) {
 }
 
 /* A popup in the middle of the screen, as the keyboard's: coloured border, dark fill. The lists draw inside it. */
-#define POP_W 520.0f
-#define POP_H 330.0f
 /* The buttons of a popup, the way the Say button is: a green oval of the clock screen under the first letter of the word, the rest of it
  * beside it. `words` are separated by '|'. A notice takes their place for a moment. */
 #define BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
 #define BTN_GAP 34.0f  /* from a word to the next oval */
-/* Where the buttons of the popup on the screen are (set when they are drawn): what a click on one does is what its button does. */
-static struct {
-    float x0, x1, y0, y1;
-    button_t b;
-} pbtn[4];
-static int npbtn;
-
 static button_t
 popup_button_for(const char* word) {
     if (!strcmp(word, "Close") || !strcmp(word, "Back")) {
