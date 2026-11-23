@@ -1893,11 +1893,18 @@ draw_keyboard(const char* title) {
 
     /* the text */
     gfx_rect(gx, KB_Y + 36.0f, KB_W - 36.0f, 30.0f, 0.45f, 0xFF050810u);
-    for (int i = from; i < ed.len && i < from + KB_SHOWN; i++) {
-        char c[2] = {hide && i != ed.pos - 1 ? '*' : ed.text[i], 0}; /* a password shows only the character just typed */
-        gfx_text(c, gx + 8.0f + (float)(i - from) * CHAR_W, KB_Y + 37.0f, TEXT_Z, WHITE, 1);
+    {
+        char shown[KB_SHOWN + 1];
+        char before[KB_SHOWN + 1];
+        int n = 0;
+        for (int i = from; i < ed.len && n < KB_SHOWN; i++) {
+            shown[n++] = hide && i != ed.pos - 1 ? '*' : ed.text[i]; /* a password shows only the character just typed */
+        }
+        shown[n] = '\0';
+        snprintf(before, sizeof(before), "%.*s", ed.pos - from, shown);
+        gfx_text(shown, gx + 8.0f, KB_Y + 37.0f, TEXT_Z, WHITE, 1);
+        gfx_rect(gx + 8.0f + (float)gfx_text_width(before), KB_Y + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
     }
-    gfx_rect(gx + 6.0f + (float)(ed.pos - from) * CHAR_W, KB_Y + 40.0f, 2.0f, 22.0f, 0.46f, YELLOW);
 
     /* the keys */
     for (int r = 0; r < OSK_ROWS; r++) {
@@ -1936,10 +1943,10 @@ draw_editor(void) {
     float x = PANE_X + PAD;
     char line[64];
     if (ed.kind == ED_KN_USER || ed.kind == ED_KN_PASS || ed.kind == ED_KN_MSG) {
-        snprintf(line, sizeof(line), "%s", ed.kind == ED_KN_USER ? "KosNet username (sent over TLS)" : ed.kind == ED_KN_PASS ? "KosNet password (shown as stars)" : "Say in the KosNet chat");
+        snprintf(line, sizeof(line), "%s", ed.kind == ED_KN_USER ? "KosNet username" : ed.kind == ED_KN_PASS ? "KosNet password" : "Say in the KosNet chat");
     } else if (ed.kind != ED_ISP) {
-        snprintf(line, sizeof(line), "%s", ed.kind == ED_CHAT_NICK ? "Chat nick (1-20 letters, digits, _-[]{}^`|)"
-                                           : ed.kind == ED_CHAT_PASS ? "Chat password (sent as typed, use a throwaway)" : "Say in #dc99");
+        snprintf(line, sizeof(line), "%s", ed.kind == ED_CHAT_NICK ? "Chat nick (1-20 characters)"
+                                           : ed.kind == ED_CHAT_PASS ? "Chat password (sent as typed)" : "Say in #dc99");
     } else {
         snprintf(line, sizeof(line), "Edit: %s", names[ed.row - ISP_IP]);
     }

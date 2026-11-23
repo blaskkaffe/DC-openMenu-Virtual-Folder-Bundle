@@ -33,7 +33,7 @@
 
 #define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
-#define MAX_TEXT_ENTRIES 48
+#define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
 #define MAX_LABELS 16
