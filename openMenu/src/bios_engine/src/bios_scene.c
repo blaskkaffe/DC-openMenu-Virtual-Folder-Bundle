@@ -65,6 +65,9 @@ get_model(bscene* s, int idx) {
         int c = idx - BMODEL_BASE;
         if (s->custom_state[c] == 0) {
             s->custom_state[c] = bmodel_build(idx, &s->custom[c]) == 0 ? 1 : 2;
+            if (s->custom_state[c] == 1 && idx == BMODEL_PODIUM) {
+                bmodel_podium_digits(s->rom, &s->custom[c]); /* without the ROM's digits it stays a bare stand */
+            }
         }
         return s->custom_state[c] == 1 ? &s->custom[c] : NULL;
     }

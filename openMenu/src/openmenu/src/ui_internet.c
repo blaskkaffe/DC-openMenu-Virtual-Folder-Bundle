@@ -1464,7 +1464,7 @@ place(bvm_obj* o, float x, float y, float z) {
 /* The icon of an Online row: the same models as the main menu's (controller, clock, globe) and a person, at the BIOS icons' size */
 static void
 online_icon(void* user, int index, bpage_row* out) {
-    static const int icon[ON_ROWS] = {BPAGE_ICON_PERSON, BPAGE_ICON_MAIN_PAD, BPAGE_ICON_MAIN_CLOCK, BPAGE_ICON_GLOBE};
+    static const int icon[ON_ROWS] = {BPAGE_ICON_GLOBE, BPAGE_ICON_MAIN_PAD, BPAGE_ICON_MAIN_CLOCK, BPAGE_ICON_PODIUM};
     (void)user;
     out->icon = icon[index < 0 || index >= ON_ROWS ? 0 : index];
 }

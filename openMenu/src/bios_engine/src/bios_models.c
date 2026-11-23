@@ -5,6 +5,8 @@
  */
 #include "bios_models.h"
 
+#include "bios_rom.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -348,17 +350,21 @@ build_phone(builder* b) {
     bar(b, light, grip, 4, 0.42f, 0.42f);
 }
 
-/* A person: head and shoulders in a few flat facets, centred on the origin (about 9 units tall, like the other icons). */
+/* A winners' stand: three blocks in the Dreamcast's colours, the winner (orange) in the middle, the second (light grey) on its left and the third
+ * (blue) on its right, about 8 units wide and 6 tall, centred on the origin. The numbers come later: bmodel_podium_digits. */
+#define POD_W 2.8f
+#define POD_D 2.4f
+#define POD_BOTTOM (-3.2f)
+static const float pod_h[3] = {6.0f, 4.2f, 3.0f}; /* the winner, the second, the third */
+static const float pod_cx[3] = {0.0f, -POD_W, POD_W};
+
 static void
-build_person(builder* b) {
-    int body = poly_new(b, -1, 0xFF3F78D6u, 0);
-    int shade = poly_new(b, -1, 0xFF2D5CAEu, 0);
-    int head = poly_new(b, -1, 0xFFF4D2AAu, 0);
-    static const float shoulders[5][2] = {{4.3f, 0.0f}, {4.4f, 0.8f}, {4.0f, 1.9f}, {2.9f, 3.0f}, {1.5f, 3.6f}};
-    lathe(b, body, 8, shoulders, 5, v3m(0.0f, -4.3f, 0.0f), 0.6f, -0.5f, 1, 1);
-    static const float skull[6][2] = {{0.0f, -2.4f}, {1.5f, -1.85f}, {2.3f, -0.7f}, {2.3f, 0.7f}, {1.5f, 1.85f}, {0.0f, 2.4f}};
-    lathe(b, head, 8, skull, 6, v3m(0.0f, 1.9f, 0.0f), 1.0f, 0.0f, 0, 0);
-    (void)shade;
+build_podium(builder* b) {
+    static const uint32_t col[3] = {0xFFE8681Cu, 0xFFE4E6EEu, 0xFF1E5AB4u}; /* Dreamcast orange, light grey, Dreamcast blue */
+    for (int i = 0; i < 3; i++) {
+        int poly = poly_new(b, -1, col[i], 0);
+        box(b, poly, pod_cx[i] - POD_W / 2.0f, POD_BOTTOM, -POD_D / 2.0f, pod_cx[i] + POD_W / 2.0f, POD_BOTTOM + pod_h[i], POD_D / 2.0f);
+    }
 }
 
 #define GLOBE_R 4.6f
@@ -579,7 +585,7 @@ bmodel_build(int id, nj_object* out) {
     switch (id) {
         case BMODEL_PHONE: build_phone(&b); break;
         case BMODEL_GLOBE: build_globe(&b); break;
-        case BMODEL_PERSON: build_person(&b); break;
+        case BMODEL_PODIUM: build_podium(&b); break;
         case BMODEL_CASE_WHITE: build_case(&b, 0xFFF4F4F8u, 0xFF2C2C34u, 0x70DCE6F0u, 0); break;
         case BMODEL_CASE_PAL: build_case(&b, 0xFF1E3C96u, 0xFF1E3C96u, 0x802850B4u, 1); break;
         default:
@@ -587,4 +593,66 @@ bmodel_build(int id, nj_object* out) {
             return -1;
     }
     return builder_finish(&b, out);
+}
+
+/* The numbers sit on the blocks' fronts, shrunk to fit, in colours that stand out from the block under them. */
+int
+bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
+    static const int digit_model[3] = {22, 23, 24}; /* the CD player's 1, 2 and 3 (ROM models 21 + digit) */
+    static const uint32_t digit_col[3] = {0xFFFFFFFFu, 0xFF1E5AB4u, 0xFFFFFFFFu};
+    static const float digit_cx[3] = {-0.66f, 0.0f, 0.0f}; /* the 1 is off-centre in its model */
+    const float s = 0.38f;
+    if (!rom || !out || out->count != 1 || !out->nodes[0].mesh) {
+        return -1;
+    }
+    nj_object d[3];
+    for (int i = 0; i < 3; i++) {
+        uint32_t addr = bios_model_addr(rom, digit_model[i]);
+        if (!addr || nj_object_load(rom, addr, &d[i]) != 0 || d[i].count != 1 || !d[i].nodes[0].mesh) {
+            for (int j = 0; j < i; j++) {
+                nj_object_free(&d[j]);
+            }
+            if (addr && i >= 0 && d[i].nodes) {
+                nj_object_free(&d[i]);
+            }
+            return -1;
+        }
+    }
+    nj_node* nodes = (nj_node*)calloc(5, sizeof(nj_node));
+    if (!nodes) {
+        for (int i = 0; i < 3; i++) {
+            nj_object_free(&d[i]);
+        }
+        return -1;
+    }
+    /* 0: the tilt (a little turned and leaning back, so the tops show), 1: the stand, 2..4: the numbers */
+    nodes[0].scl.x = nodes[0].scl.y = nodes[0].scl.z = 1.0f;
+    nodes[0].parent = -1;
+    nodes[0].ang[0] = 0x08E4;  /* about 12 degrees: the tops lean toward the viewer */
+    nodes[0].ang[1] = -0x038E; /* about -5 degrees: turned, so the side of the stand shows */
+    nodes[1] = out->nodes[0];
+    nodes[1].parent = 0;
+    nodes[1].eval = 0;
+    for (int i = 0; i < 3; i++) {
+        nj_node n = d[i].nodes[0];
+        for (int p = 0; p < n.mesh->npolys; p++) {
+            n.mesh->polys[p].diffuse = digit_col[i];
+            n.mesh->polys[p].has_diffuse = 1;
+            n.mesh->polys[p].tex = -1;
+            n.mesh->polys[p].has_uv = 0;
+        }
+        n.parent = 0;
+        n.eval = 0; /* the ROM's own flags (a root's) would ignore the placement */
+        n.ang[0] = n.ang[1] = n.ang[2] = 0;
+        n.scl.x = n.scl.y = n.scl.z = s;
+        n.pos.x = pod_cx[i] - digit_cx[i] * s;
+        n.pos.y = POD_BOTTOM + pod_h[i] * 0.5f;
+        n.pos.z = POD_D / 2.0f - 2.0f * s + 0.02f; /* the digit's back plane on the block's front face */
+        nodes[2 + i] = n;
+        free(d[i].nodes); /* the node's mesh now belongs to `nodes` */
+    }
+    free(out->nodes);
+    out->nodes = nodes;
+    out->count = 5;
+    return 0;
 }

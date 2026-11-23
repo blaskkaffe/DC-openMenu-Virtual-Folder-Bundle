@@ -30,7 +30,7 @@ extern "C" {
 #define BPAGE_ICON_DISC 25             /* the GD-ROM disc (ROM model 61) */
 #define BPAGE_ICON_MAIN_PAD 26         /* the main menu's controller (ROM model 4), with its motion */
 #define BPAGE_ICON_MAIN_CLOCK 27       /* the main menu's alarm clock (ROM model 3), with its motion */
-#define BPAGE_ICON_PERSON 28           /* a person (built in) */
+#define BPAGE_ICON_PODIUM 28           /* a winners' stand with the CD player's digits 1 2 3 (built in) */
 
 /* Where the text goes (pixels), copied from the original Settings screen (photo of the console): the label is centred between the icon
  * (which ends at x 100) and the value pill, the value starts 10 px inside the pill, left aligned, both centred on the row's height. */

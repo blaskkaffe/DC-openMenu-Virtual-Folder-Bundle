@@ -25,7 +25,7 @@ enum {
     BMODEL_GLOBE,                /* low poly earth in green and blue on a small stand */
     BMODEL_CASE_WHITE,           /* CD jewel case with a white spine */
     BMODEL_CASE_PAL,             /* CD jewel case in the blue style of the PAL Dreamcast cases */
-    BMODEL_PERSON,               /* low poly head and shoulders, for the player rows */
+    BMODEL_PODIUM,               /* winners' stand in Dreamcast colours; the numbers 1 2 3 are the CD player's digits (bmodel_podium_digits) */
     BMODEL_END
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)
@@ -37,6 +37,11 @@ enum {
 
 /* Build model `id`. Returns 0, or -1 for an unknown id or out of memory. Free with nj_object_free(). */
 int bmodel_build(int id, nj_object* out);
+
+/* The podium's finishing touch, which needs the ROM: tilts the stand a little and puts the CD player's digit models 1, 2 and 3 on the
+ * fronts of its blocks. `out` is what bmodel_build(BMODEL_PODIUM) made. 0, or -1 (then `out` is left as it was). */
+struct bios_rom;
+int bmodel_podium_digits(const struct bios_rom* rom, nj_object* out);
 
 #ifdef __cplusplus
 }

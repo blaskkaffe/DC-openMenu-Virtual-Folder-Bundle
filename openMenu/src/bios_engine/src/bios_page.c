@@ -91,7 +91,7 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
         case BPAGE_ICON_PAD: *model = 17; *scale = 0.55f; return;
         case BPAGE_ICON_GLOBE: *model = BMODEL_GLOBE; *scale = 0.4f; return;
         case BPAGE_ICON_PHONE: *model = BMODEL_PHONE; *scale = 0.42f; return;
-        case BPAGE_ICON_PERSON: *model = BMODEL_PERSON; *scale = 0.5f; return;
+        case BPAGE_ICON_PODIUM: *model = BMODEL_PODIUM; *scale = 0.5f; return;
         case BPAGE_ICON_MAIN_PAD: *model = 4; *motion = 7; *scale = 0.34f; return;
         case BPAGE_ICON_MAIN_CLOCK: *model = 3; *motion = 5; *scale = 0.40f; return;
         case BPAGE_ICON_CASE: *model = BMODEL_CASE_WHITE; *scale = 0.38f; return;
