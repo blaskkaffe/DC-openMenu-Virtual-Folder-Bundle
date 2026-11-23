@@ -50,6 +50,7 @@
 #define ID_KEY(i) ((uint16_t)(0x1200 + (i))) /* the keyboard's keys: the same oval as the Say button */
 #define KEYS_MAX 48
 #define ID_SAY 0x1120 /* the oval of the chat bar: script 0x3f, the Select button of the BIOS clock screen */
+#define ID_PANEL 0x1140 /* the popups' panel: script 5, the popup of the BIOS file (VMU) screen */
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
@@ -514,6 +515,7 @@ uin_open(bmenu* m, int pal) {
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 6, ID_BACK, PRIO);
     bvm_create(&m->vm, 0x3f, ID_SAY, PRIO);
+    bvm_create(&m->vm, 5, ID_PANEL, PRIO);
     for (int i = 0; i < KEYS_MAX; i++) {
         bvm_create(&m->vm, 0x3f, ID_KEY(i), PRIO);
     }
@@ -2181,9 +2183,6 @@ draw_chat(int w) {
 #define KB_CELL_H 26.0f
 #define KB_GAP 4.0f /* the keys are 42 apart across and 37 down: the same space between the ovals both ways */
 #define KB_ROW_PITCH 37.0f
-#define KB_Z 0.00288f
-#define KB_BORDER 0xFFE8A030u
-#define KB_FILL 0xFF101A38u
 #define KB_KEY 0x7030804Cu
 #define KB_KEY_SEL 0xFF48C860u
 #define KB_KEY_OK 0xB02E9A4Au
@@ -2192,6 +2191,19 @@ draw_chat(int w) {
 /* A key: the Say button's oval (script 0x3f of the BIOS clock screen, 45 x 38 px at scale 1) placed under the key, lit when selected. */
 #define OVAL_W 45.5f
 static int kb_slot;
+
+/* The popup panel: the BIOS file screen's (script 5), in the middle of the screen as that screen puts its popups, see through
+ * the same way. Its size in var 0 and 1 comes out 0.978 times as many pixels (a 460 x 212 popup is 450 x 207 on the screen). */
+#define PANEL_Z (-85000.0f / 256.0f)
+#define PANEL_PX 0.978f
+static int panel_on;
+static float panel_w, panel_h;
+static void
+popup_panel(float w, float h) {
+    panel_on = 1;
+    panel_w = w;
+    panel_h = h;
+}
 static void
 key_oval(float cx, float cy, float sx, float sy, int lit) {
     bvm_obj* o = bvm_find(&menu->vm, ID_KEY(kb_slot));
@@ -2199,7 +2211,9 @@ key_oval(float cx, float cy, float sx, float sy, int lit) {
         return;
     }
     kb_slot++;
-    place(o, (cx - 320.0f) / 11.9f, (240.0f - cy) / 11.9f, -335.9375f + 0.39f);
+    const float z = PANEL_Z + 0.1953125f; /* in front of the panel, as the buttons of the file screen's popups */
+    const float ppu = 11.9f * (335.9375f - 0.39f) / -z;   /* 11.9 pixels per unit at the clock screen's depth */
+    place(o, (cx - 320.0f) / ppu, (240.0f - cy) / ppu, z);
     o->scale_tw[0].cur = sx;
     o->scale_tw[1].cur = sy;
     o->scale_tw[2].cur = 1.0f;
@@ -2225,12 +2239,11 @@ draw_keyboard(const char* title) {
     const float h = grid ? KB_H : 118.0f;
     const float top = 240.0f - h / 2.0f;
 
-    gfx_rect(KB_X, top, KB_W, h, KB_Z, KB_BORDER); /* behind the ovals, in front of the panel */
-    gfx_rect(KB_X + 3.0f, top + 3.0f, KB_W - 6.0f, h - 6.0f, KB_Z + 0.00002f, KB_FILL);
+    popup_panel(KB_W, h);
     gfx_text(title, KB_X + 14.0f, top + 6.0f, TEXT_Z, YELLOW, 1);
 
     /* the text */
-    gfx_rect(fx, top + 36.0f, KB_W - 36.0f, 30.0f, KB_Z + 0.00004f, 0xFF050810u);
+    gfx_rect(fx, top + 36.0f, KB_W - 36.0f, 30.0f, 0.4f, 0xC0050810u); /* in front of the panel */
     {
         char shown[KB_SHOWN + 1];
         char before[KB_SHOWN + 1];
@@ -2353,30 +2366,39 @@ online_value(int i, char* out, size_t size) {
 #define POP_H 330.0f
 /* The buttons of a popup, the way the Say button is: a green oval of the clock screen under the first letter of the word, the rest of it
  * beside it. `words` are separated by '|'. A notice takes their place for a moment. */
+#define BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
+#define BTN_GAP 34.0f  /* from a word to the next oval */
 static void
 draw_popup_buttons(const char* words) {
     if (notice_frames > 0) {
         text_cut(notice, 44, lay_x, lay_foot, WHITE);
         return;
     }
-    float x = lay_x + 22.0f;
     char word[24];
+    float total = -BTN_GAP; /* the row of buttons, from the left of the first oval to the end of the last word: in the middle */
+    for (const char* p = words; p && *p;) {
+        const char* bar = strchr(p, '|');
+        int n = bar ? (int)(bar - p) : (int)strlen(p);
+        snprintf(word, sizeof(word), "%.*s", n, p);
+        total += BTN_LEFT + (float)gfx_text_width(word) + BTN_GAP;
+        p += n + (bar ? 1 : 0);
+    }
+    float x = 320.0f - total / 2.0f + BTN_LEFT;
     for (const char* p = words; p && *p;) {
         const char* bar = strchr(p, '|');
         int n = bar ? (int)(bar - p) : (int)strlen(p);
         snprintf(word, sizeof(word), "%.*s", n, p);
         gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
         key_oval(x - 6.0f, lay_foot + 14.0f, 0.68f, 0.68f, 1);
-        x += (float)gfx_text_width(word) + 56.0f;
+        x += (float)gfx_text_width(word) + BTN_GAP + BTN_LEFT;
         p += n + (bar ? 1 : 0);
     }
 }
 
 static void
 draw_popup_frame(const char* title, const char* buttons) {
-    const float px = 320.0f - POP_W / 2.0f, py = 232.0f - POP_H / 2.0f;
-    gfx_rect(px, py, POP_W, POP_H, KB_Z, KB_BORDER);
-    gfx_rect(px + 3.0f, py + 3.0f, POP_W - 6.0f, POP_H - 6.0f, KB_Z + 0.00002f, KB_FILL);
+    const float px = 320.0f - POP_W / 2.0f, py = 240.0f - POP_H / 2.0f; /* in the middle, as the file screen's popups */
+    popup_panel(POP_W, POP_H);
     lay_x = px + 16.0f;
     lay_head = py + 8.0f;
     lay_list = py + 40.0f;
@@ -2701,6 +2723,7 @@ uin_draw(void) {
     draw_status();
     say_on = 0;
     kb_slot = 0;
+    panel_on = 0;
     for (int i = 0; i < KEYS_MAX; i++) {
         bvm_obj* k = bvm_find(&menu->vm, ID_KEY(i));
         if (k) {
@@ -2709,6 +2732,21 @@ uin_draw(void) {
     }
     draw_page();
     draw_footer();
+    {
+        bvm_obj* po = bvm_find(&menu->vm, ID_PANEL);
+        if (po) {
+            if (panel_on) {
+                place(po, 0.0f, 0.0f, PANEL_Z);
+                po->var[0] = (int)(panel_w / PANEL_PX + 0.5f);
+                po->var[1] = (int)(panel_h / PANEL_PX + 0.5f);
+                po->var[2] = po->var[3] = 256;
+                po->text_w = po->text_h = 0; /* no text of its own: the popup's text is drawn over it */
+                po->flags &= ~(uint32_t)BVM_F_HIDE;
+            } else {
+                po->flags |= BVM_F_HIDE;
+            }
+        }
+    }
     {
         bvm_obj* so = bvm_find(&menu->vm, ID_SAY);
         if (so) {
