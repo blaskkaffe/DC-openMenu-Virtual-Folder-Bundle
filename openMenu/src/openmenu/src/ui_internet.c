@@ -139,7 +139,9 @@ static int notice_frames;
 static bpage orows; /* the Online page's four rows: the BIOS Settings screen's own bars, pills and 3D icons */
 static int say_on, say_dead; /* the chat bar has its oval button this frame, and it cannot be used now */
 static float say_cx, say_cy;
-static void pill(float x, float y, float w, float z, uint32_t argb);
+static void key_oval(float cx, float cy, float sx, float sy, int lit, uint32_t col);
+#define BTN_OVAL_PX 60.0f /* the width of the oval at scale 1, in pixels (measured from the keyboard) */
+static uint32_t key_col[48]; /* a forced colour of the oval in slot i (0: its own green) */
 static picolink_status_t gw; /* the gateway (DC-PicoLink): what it said last */
 static uint64_t last_gw_ask;
 static int wifi_pick; /* the scan result whose password is being typed */
@@ -2227,10 +2229,13 @@ draw_chat(int w) {
                 hcol = WHITE;
             }
             text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
-            say_on = 0; /* the button is a flat A-button pill (red, steady; grey when it cannot be used): no blinking green oval */
+            say_on = 0; /* the button is a steady 3D oval in the A button's red (grey when it cannot be used): no blinking green one */
             say_dead = dead;
-            pill(right - (float)gfx_text_width(btn) - 20.0f, CHAT_BAR_Y, (float)gfx_text_width(btn) + 24.0f, 0.45f, dead ? 0xFF606878u : 0xFFE03C3Cu);
-            gfx_text(btn, right - (float)gfx_text_width(btn) - 8.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+            {
+                const float bwid = (float)gfx_text_width(btn) + 28.0f;
+                key_oval(right - bwid / 2.0f + 4.0f, CHAT_BAR_Y + 14.0f, bwid / BTN_OVAL_PX, 0.6f, 1, dead ? 0xF0606878u : 0xF0E03C3Cu);
+            }
+            gfx_text(btn, right - (float)gfx_text_width(btn) - 10.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
         }
     }
     if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
@@ -2320,7 +2325,7 @@ pill_ready(void) {
 }
 
 /* A pill from x, y, w wide (at least a circle), in `argb` (the grey of the pictures times it). */
-static void
+static void __attribute__((unused))
 pill(float x, float y, float w, float z, uint32_t argb) {
     if (!pill_ready()) {
         return;
@@ -2394,11 +2399,12 @@ key_flat(float cx, float cy, float w, uint32_t argb) {
 }
 
 static void
-key_oval(float cx, float cy, float sx, float sy, int lit) {
+key_oval(float cx, float cy, float sx, float sy, int lit, uint32_t col) {
     bvm_obj* o = bvm_find(&menu->vm, ID_KEY(kb_slot));
     if (!o || kb_slot >= KEYS_MAX) {
         return;
     }
+    key_col[kb_slot] = col;
     kb_slot++;
     const float z = PANEL_Z + 0.1953125f; /* in front of the panel, as the buttons of the file screen's popups */
     const float ppu = 11.9f * (335.9375f - 0.39f) / -z;   /* 11.9 pixels per unit at the clock screen's depth */
@@ -2466,7 +2472,7 @@ draw_keyboard(const char* title) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
             if (sel) {
-                key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, 1);
+                key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, 1, 0);
             } else {
                 key_flat(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? kw + 2.0f : 42.0f, 0xFF0A5421u); /* flat, the same look: only the one under the cursor is a 3D oval (the keyboard stays fast) */
             }
@@ -2590,13 +2596,14 @@ draw_popup_buttons(const char* words) {
         snprintf(word, sizeof(word), "%.*s", n, p);
         {
             button_t pb = popup_button_for(word); /* the colour of the controller button that does it: A red, B blue, X yellow, Y green */
-            uint32_t pc = pb == BTN_A ? 0xFFE03C3Cu : pb == BTN_B ? 0xFF2F6FE0u : pb == BTN_X ? 0xFFE0C030u : 0xFF2FB050u;
-            pill(x - 12.0f, lay_foot - 1.0f, (float)gfx_text_width(word) + 24.0f, 0.45f, pc);
+            uint32_t pc = pb == BTN_A ? 0xF0E03C3Cu : pb == BTN_B ? 0xF02F6FE0u : pb == BTN_X ? 0xF0E0C030u : 0xF02FB050u;
+            const float bwid = (float)gfx_text_width(word) + 28.0f;
+            key_oval(x - 14.0f + bwid / 2.0f, lay_foot + 12.0f, bwid / BTN_OVAL_PX, 0.6f, 1, pc);
             gfx_text(word, x, lay_foot, TEXT_Z, pb == BTN_X ? 0xFF202020u : WHITE, 1);
         }
         if (npbtn < 4) {
-            pbtn[npbtn].x0 = x - 12.0f;
-            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + 12.0f;
+            pbtn[npbtn].x0 = x - 14.0f;
+            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + 14.0f;
             pbtn[npbtn].y0 = lay_foot - 6.0f;
             pbtn[npbtn].y1 = lay_foot + 32.0f;
             pbtn[npbtn++].b = popup_button_for(word);
@@ -2935,9 +2942,16 @@ page_icon(int i, int lit) {
     if (!made) {
         for (int k = 0; k < PAGES; k++) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
+            enum { PAD = (UICON_SIZE * 3) / 2 }; /* the glyph in the middle of a bigger, clear picture: the button's picture area is large */
+            static uint16_t big[PAD * PAD];
             for (int l = 0; l < 2; l++) {
                 uicon_render(k, l ? 0xFF000000u : 0xFF1C2850u, px);
-                ids[l][k] = gfx_dyn_create(px, UICON_SIZE, UICON_SIZE);
+                memset(big, 0, sizeof(big));
+                const int off = (PAD - UICON_SIZE) / 2;
+                for (int y = 0; y < UICON_SIZE; y++) {
+                    memcpy(&big[(y + off) * PAD + off], &px[y * UICON_SIZE], sizeof(uint16_t) * UICON_SIZE);
+                }
+                ids[l][k] = gfx_dyn_create(big, PAD, PAD);
             }
         }
         made = 1;
@@ -3001,6 +3015,15 @@ uin_draw(void) {
     menu->scene.parts = BSCENE_PART_ALL;
     for (int i = 0; i < menu->vm.count; i++) {
         const bvm_obj* o = &menu->vm.objs[menu->vm.order[i]];
+        menu->scene.ovr_n = 0;
+        if (o->id >= ID_KEY(0) && o->id < ID_KEY(KEYS_MAX) && key_col[o->id - ID_KEY(0)]) { /* a button of its own colour: the oval's one polygon */
+            menu->scene.ovr[0].model = o->model;
+            menu->scene.ovr[0].node = 0;
+            menu->scene.ovr[0].poly = 0;
+            menu->scene.ovr[0].argb = key_col[o->id - ID_KEY(0)];
+            menu->scene.ovr[0].lit = 0;
+            menu->scene.ovr_n = 1;
+        }
         if (o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES)) {
             /* the glyph is the button's own picture (texture 0), so it sits in the model and moves with it */
             gfx_decal_override(o->texlist, page_icon((int)(o->id - ID_BUTTON(0)), (int)(o->id - ID_BUTTON(0)) == page));
