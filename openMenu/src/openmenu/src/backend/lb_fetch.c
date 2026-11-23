@@ -247,7 +247,11 @@ run_fetch(int src) {
         } else if (code > 0) {
             snprintf(line, sizeof(line), "%.36s says %d", host, code);
         } else {
-            snprintf(line, sizeof(line), "%.40s did not answer%s%.14s", host, note ? ": " : "", note ? note : "");
+            if (note) { /* the reason comes first: the screen shows 42 characters */
+                snprintf(line, sizeof(line), "TLS: %.26s; HTTP: none", note);
+            } else {
+                snprintf(line, sizeof(line), "%.30s did not answer", host);
+            }
         }
         set_line(LB_FAILED, line);
         return;
