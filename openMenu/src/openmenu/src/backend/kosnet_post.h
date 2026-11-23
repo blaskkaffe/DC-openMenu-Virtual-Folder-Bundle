@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <stddef.h>
+
 enum { KOSNET_OUT = 0, KOSNET_BUSY, KOSNET_IN };
 
 typedef struct kosnet_post_status {
