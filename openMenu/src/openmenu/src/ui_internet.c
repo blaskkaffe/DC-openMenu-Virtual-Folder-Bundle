@@ -944,7 +944,7 @@ setting_text(int row, char* out, size_t size) {
         case SET_TEST: snprintf(out, size, "Network test >"); break;
         case SET_GW_NET:
             if (gw.reached && gw.info.has_net) {
-                snprintf(out, size, "%s  %s%s", gw.info.name[0] ? gw.info.name : "Gateway", gw.info.dcnet == 1 ? "DCNet" : "DCNow!", gw.busy ? " ..." : " (A: switch)");
+                snprintf(out, size, "Gateway network  %s%s", gw.info.dcnet == 1 ? "DCNet" : "DCNow!", gw.busy ? " ..." : " (A: switch)");
             } else {
                 snprintf(out, size, "Gateway  %s", gw.busy ? "looking..." : online ? (gw.reached ? "has no network switch" : "none found (A: look again)") : "connect first");
             }
@@ -2339,7 +2339,7 @@ uin_draw(void) {
     menu->scene.parts = BSCENE_PART_ALL;
     for (int i = 0; i < menu->vm.count; i++) {
         const bvm_obj* o = &menu->vm.objs[menu->vm.order[i]];
-        menu->scene.no_decals = (o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES)) || o->id == ID_SAY;
+        menu->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(PAGES);
         bscene_draw_object(&menu->scene, o, sink);
     }
     menu->scene.no_decals = 0;
