@@ -1722,6 +1722,24 @@ uin_sync(void) {
     } else if (page == PAGE_SETTINGS) {
         picolink_status(&gw);
     }
+    if (page == PAGE_SETTINGS) { /* PREVIEW ONLY: a sample gateway */
+        static const char* const nm[] = {"Home Net", "Cafe Open", "Neighbour 5G", "DIRECT-printer", "Guest"};
+        pl_info_init(&gw.info);
+        gw.reached = 1;
+        gw.busy = 0;
+        gw.info.present = gw.info.has_net = gw.info.has_wifi = 1;
+        snprintf(gw.info.name, sizeof(gw.info.name), "DC-PicoLink");
+        gw.info.dcnet = 0;
+        snprintf(gw.info.wifi_state, sizeof(gw.info.wifi_state), "connected");
+        snprintf(gw.info.wifi_ssid, sizeof(gw.info.wifi_ssid), "Home Net");
+        snprintf(gw.info.wifi_ip, sizeof(gw.info.wifi_ip), "192.168.1.50");
+        gw.info.scan_n = gw.info.scan_have = 5;
+        for (int i = 0; i < 5; i++) {
+            gw.info.scan[i].rssi = -45 - i * 11;
+            gw.info.scan[i].open = i == 1;
+            snprintf(gw.info.scan[i].name, PL_NAME_MAX, "%s", nm[i]);
+        }
+    }
     /* Auto-Refresh of the player list (the VMU screen refreshes on its own while it is on), as the main branch */
     if (online && sf_dcnow_vmu[0] != DCNOW_VMU_ON && pstat.state != DCNOW_FETCH_RUNNING && dcnow_refresh_seconds(sf_dcnow_refresh[0]) > 0
         && timer_ms_gettime64() - last_players_fetch >= (uint64_t)dcnow_refresh_seconds(sf_dcnow_refresh[0]) * 1000u) {
