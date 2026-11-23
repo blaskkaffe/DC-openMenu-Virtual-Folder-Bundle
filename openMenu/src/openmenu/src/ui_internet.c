@@ -139,6 +139,7 @@ static int notice_frames;
 static bpage orows; /* the Online page's four rows: the BIOS Settings screen's own bars, pills and 3D icons */
 static int say_on, say_dead; /* the chat bar has its oval button this frame, and it cannot be used now */
 static float say_cx, say_cy;
+static void pill(float x, float y, float w, float z, uint32_t argb);
 static picolink_status_t gw; /* the gateway (DC-PicoLink): what it said last */
 static uint64_t last_gw_ask;
 static int wifi_pick; /* the scan result whose password is being typed */
@@ -2226,11 +2227,10 @@ draw_chat(int w) {
                 hcol = WHITE;
             }
             text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
-            say_on = 1;
+            say_on = 0; /* the button is a flat A-button pill (red, steady; grey when it cannot be used): no blinking green oval */
             say_dead = dead;
-            say_cx = right - (float)gfx_text_width(btn) - 9.0f; /* as the BIOS: the oval's middle is 9 px left of where the word starts */
-            say_cy = CHAT_BAR_Y + 15.0f;
-            gfx_text(btn, right - (float)gfx_text_width(btn), CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+            pill(right - (float)gfx_text_width(btn) - 20.0f, CHAT_BAR_Y, (float)gfx_text_width(btn) + 24.0f, 0.45f, dead ? 0xFF606878u : 0xFFE03C3Cu);
+            gfx_text(btn, right - (float)gfx_text_width(btn) - 8.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
         }
     }
     if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
