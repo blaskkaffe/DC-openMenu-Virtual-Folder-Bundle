@@ -25,6 +25,7 @@
 #include "backend/events_fetch.h"
 #include "backend/kosnet_post.h"
 #include "backend/osk.h"
+#include "backend/uicons.h"
 #include "backend/net_test.h"
 #include "backend/netsel.h"
 #include "backend/news_fetch.h"
