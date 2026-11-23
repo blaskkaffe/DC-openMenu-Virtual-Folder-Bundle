@@ -2359,12 +2359,13 @@ draw_online_menu(void) {
     static const char* const help[ON_ROWS] = {"Who is online now and the game they are in", "The games that have players online now",
                                               "The event that is on now or comes next", "Open a browser for a game's leaderboard"};
     static const int icon[ON_ROWS] = {PAGE_CHAT, PAGE_PLAY, PAGE_EVENTS, PAGE_ONLINE};
-    const float pitch = 50.0f, pill_h = 42.0f;
+    const float pitch = 62.0f, bar_h = 54.0f, pill_h = 40.0f; /* each row is a bar of its own */
     const float pill_x = PANE_X + 232.0f, pill_w = PANE_W - 232.0f - 14.0f;
     for (int r = 0; r < ON_ROWS; r++) {
         char val[40];
         int is_sel = r == sel[LIST_ONLINE];
-        float cy = PANE_Y + 34.0f + (float)r * pitch;
+        float cy = PANE_Y + bar_h / 2.0f + (float)r * pitch;
+        gfx_pane(PANE_X, cy - bar_h / 2.0f, PANE_W, bar_h, PANE_Z, BSCENE_PANE_ARGB);
         float icon_x = PANE_X + 18.0f, icon_end = icon_x + (float)UICON_DRAW;
         gfx_image(page_icon(icon[r], is_sel), icon_x, cy - (float)UICON_DRAW / 2.0f, (float)UICON_DRAW, (float)UICON_DRAW, TEXT_Z);
         gfx_rrect(pill_x, cy - pill_h / 2.0f, pill_w, pill_h, 6.0f, 0.45f, is_sel ? 0xD0B88C6Cu : 0x80884E9Eu);
@@ -2373,8 +2374,8 @@ draw_online_menu(void) {
         online_value(r, val, sizeof(val));
         text_cut(val, (int)((pill_w - 20.0f) / CHAR_W), pill_x + 10.0f, cy - 12.0f, WHITE);
     }
-    float hy = PANE_Y + 34.0f + (float)ON_ROWS * pitch - 6.0f;
-    gfx_rrect(pill_x, hy, pill_w, PANE_Y + PANE_H - 14.0f - hy, 6.0f, 0.45f, 0x60405088u);
+    float hy = PANE_Y + (float)ON_ROWS * pitch;
+    gfx_pane(PANE_X, hy, PANE_W, PANE_Y + PANE_H - hy, PANE_Z, BSCENE_PANE_ARGB); /* and the information under them in one of its own */
     const char* t = help[sel[LIST_ONLINE]];
     for (int i = 0; i < 2; i++) {
         const char* st = NULL;
@@ -2383,7 +2384,7 @@ draw_online_menu(void) {
             wrap_lines(t, 24, i, &st, &len);
             char line[32];
             snprintf(line, sizeof(line), "%.*s", len < 30 ? len : 30, st);
-            gfx_text(line, pill_x + 10.0f, hy + 6.0f + (float)i * 24.0f, TEXT_Z, WHITE, 1);
+            gfx_text(line, pill_x + 10.0f, hy + 4.0f + (float)i * 24.0f, TEXT_Z, WHITE, 1);
         }
     }
 }
@@ -2549,7 +2550,9 @@ page_icon(int i, int lit) {
 void
 uin_draw(void) {
     const bscene_sink* sink = gfx_sink();
-    gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
+    if (!(page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU && !ed.active)) { /* the Online rows are bars of their own */
+        gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
+    }
     draw_status();
     say_on = 0;
     kb_slot = 0;
