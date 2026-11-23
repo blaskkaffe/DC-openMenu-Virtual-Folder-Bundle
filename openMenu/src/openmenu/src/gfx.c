@@ -1555,6 +1555,19 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
     picture_quad(&dyn_tex[id], x, y, w, h, z, 0xFFFFFFFFu);
 }
 
+void
+gfx_image_tint(int id, float x, float y, float w, float h, float z, uint32_t argb) {
+    if (id < 0 || id >= DYN_MAX || !dyn_tex[id].valid) {
+        return;
+    }
+    picture_quad(&dyn_tex[id], x, y, w, h, z, argb);
+}
+
+int
+gfx_dyn_valid(int id) {
+    return id >= 0 && id < DYN_MAX && dyn_tex[id].valid;
+}
+
 /* Where the header logo is on the screen (measured on the preview: the 128x32 texture covers x 27..165, y 28..61). */
 void
 gfx_logo_badge(void) {

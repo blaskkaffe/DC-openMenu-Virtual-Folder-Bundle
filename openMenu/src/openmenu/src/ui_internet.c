@@ -5,6 +5,7 @@
  * browsers), Events (going on and coming up / the news), Settings (connection, ISP settings, network test). The connection status is
  * drawn above the panel. A acts, Y stars, START switches the list of a page; connecting and hanging up is the Connection row of Settings. */
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2267,6 +2268,71 @@ popup_panel(float w, float h) {
     panel_w = w;
     panel_h = h;
 }
+/* A flat button, cheap to draw: the ends and the middle of a grey, glossy pill as three small pictures, multiplied by a colour when they are drawn
+ * (one rectangle each, where a 3D oval is hundreds of triangles). The selected key of the keyboard is the one 3D oval. */
+enum { PILL_LEFT, PILL_MID, PILL_RIGHT, PILL_PARTS };
+#define PILL_TEX 32 /* the pictures are 32 tall (a circle of 16 at each end) */
+#define PILL_H 26.0f
+#define PILL_CAP 13.0f
+static int pill_id[PILL_PARTS] = {-1, -1, -1};
+
+static unsigned short
+pill_texel(int part, int x, int y) {
+    const float r = PILL_TEX / 2.0f;
+    const float dy = (float)y + 0.5f - r;
+    float cov = r - fabsf(dy) + 0.5f; /* the straight middle */
+    if (part != PILL_MID) {
+        /* the round end: a circle centred on the picture's right edge (left end) or left edge (right end) */
+        const float dx = (part == PILL_LEFT) ? (float)x + 0.5f - r : (float)x + 0.5f;
+        cov = r - sqrtf(dx * dx + dy * dy) + 0.5f;
+    }
+    cov = cov < 0.0f ? 0.0f : cov > 1.0f ? 1.0f : cov;
+    const float t = ((float)y + 0.5f) / (float)PILL_TEX; /* the gloss: light at the top, a bright band, darker toward the bottom */
+    float g = t < 0.22f ? 0.84f + 0.16f * (t / 0.22f) : t < 0.42f ? 1.0f - 0.16f * ((t - 0.22f) / 0.2f) : 0.84f - 0.34f * ((t - 0.42f) / 0.58f);
+    unsigned al = (unsigned)(cov * 15.0f + 0.5f), v = (unsigned)(g * 15.0f + 0.5f);
+    return (unsigned short)((al << 12) | (v << 8) | (v << 4) | v);
+}
+
+static int
+pill_ready(void) {
+    int ok = 1;
+    for (int i = 0; i < PILL_PARTS; i++) {
+        ok = ok && gfx_dyn_valid(pill_id[i]);
+    }
+    if (ok) {
+        return 1;
+    }
+    static const int width[PILL_PARTS] = {16, 8, 16};
+    for (int i = 0; i < PILL_PARTS; i++) {
+        gfx_dyn_free(pill_id[i]); /* a half made set (or one freed with the other pictures) starts again */
+        unsigned short px[16 * PILL_TEX];
+        for (int y = 0; y < PILL_TEX; y++) {
+            for (int x = 0; x < width[i]; x++) {
+                px[y * width[i] + x] = pill_texel(i, x, y);
+            }
+        }
+        pill_id[i] = gfx_dyn_create(px, width[i], PILL_TEX);
+        if (pill_id[i] < 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* A pill from x, y, w wide (at least a circle), in `argb` (the grey of the pictures times it). */
+static void
+pill(float x, float y, float w, float z, uint32_t argb) {
+    if (!pill_ready()) {
+        return;
+    }
+    if (w < 2.0f * PILL_CAP) {
+        w = 2.0f * PILL_CAP;
+    }
+    gfx_image_tint(pill_id[PILL_LEFT], x, y, PILL_CAP, PILL_H, z, argb);
+    gfx_image_tint(pill_id[PILL_MID], x + PILL_CAP, y, w - 2.0f * PILL_CAP, PILL_H, z, argb);
+    gfx_image_tint(pill_id[PILL_RIGHT], x + w - PILL_CAP, y, PILL_CAP, PILL_H, z, argb);
+}
+
 static void
 key_oval(float cx, float cy, float sx, float sy, int lit) {
     bvm_obj* o = bvm_find(&menu->vm, ID_KEY(kb_slot));
@@ -2339,7 +2405,11 @@ draw_keyboard(const char* title) {
             if (key.kind == OSK_CHAR && !osk_char_ok(ed.set, key.ch)) {
                 col = 0xFF606878u; /* this editor does not take it */
             }
-            key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, sel || key.kind == OSK_OK);
+            if (sel || key.kind == OSK_OK) {
+                key_oval(kx + kw / 2.0f, ky + KB_CELL_H / 2.0f, key.span > 1 ? (kw - 13.0f) / (OVAL_W * 1.16f) : 0.68f /* a stretched oval comes out about 16% wider than its scale says; a wide key leaves the same 3.5 px each side as a single one: 11 px between all ovals */, 0.68f, 1);
+            } else {
+                pill(kx + 3.5f, ky, kw - 7.0f, 0.45f, 0xFF1F5C3Cu); /* a flat dark key: only the one under the cursor is a 3D oval (the keyboard stays fast) */
+            }
             switch (key.kind) {
                 case OSK_CHAR: kb_label(t, kx, kw, ky, col); break;
                 case OSK_SHIFT: kb_label("SHIFT", kx, kw, ky, kb.layer == OSK_UPPER ? YELLOW : col); break;
@@ -2458,11 +2528,15 @@ draw_popup_buttons(const char* words) {
         const char* bar = strchr(p, '|');
         int n = bar ? (int)(bar - p) : (int)strlen(p);
         snprintf(word, sizeof(word), "%.*s", n, p);
-        gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
-        key_oval(x - 6.0f, lay_foot + 14.0f, 0.68f, 0.68f, 1);
+        {
+            button_t pb = popup_button_for(word); /* the colour of the controller button that does it: A red, B blue, X yellow, Y green */
+            uint32_t pc = pb == BTN_A ? 0xFFE03C3Cu : pb == BTN_B ? 0xFF2F6FE0u : pb == BTN_X ? 0xFFE0C030u : 0xFF2FB050u;
+            pill(x - 12.0f, lay_foot - 1.0f, (float)gfx_text_width(word) + 24.0f, 0.45f, pc);
+            gfx_text(word, x, lay_foot, TEXT_Z, pb == BTN_X ? 0xFF202020u : WHITE, 1);
+        }
         if (npbtn < 4) {
-            pbtn[npbtn].x0 = x - BTN_LEFT;
-            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + BTN_GAP / 2.0f;
+            pbtn[npbtn].x0 = x - 12.0f;
+            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + 12.0f;
             pbtn[npbtn].y0 = lay_foot - 6.0f;
             pbtn[npbtn].y1 = lay_foot + 32.0f;
             pbtn[npbtn++].b = popup_button_for(word);

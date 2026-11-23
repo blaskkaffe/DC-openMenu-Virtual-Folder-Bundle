@@ -116,3 +116,6 @@ int gfx_dyn_create(const unsigned short* argb4444, int w, int h);
 void gfx_dyn_free(int id);
 void gfx_dyn_free_all(void);
 void gfx_image(int id, float x, float y, float w, float h, float z);
+/* The same picture multiplied by a colour (a grey picture takes the colour); 1 when `id` is a picture that is in video memory. */
+void gfx_image_tint(int id, float x, float y, float w, float h, float z, uint32_t argb);
+int gfx_dyn_valid(int id);
