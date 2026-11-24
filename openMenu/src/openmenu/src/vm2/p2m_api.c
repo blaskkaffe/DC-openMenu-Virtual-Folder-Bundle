@@ -4,7 +4,6 @@
 #include <kos/genwait.h>
 
 #include "p2m_api.h"
-#include "vm2_api.h"
 
 #define P2M_REQ_MAX 252
 #define P2M_ANS_MAX 256
@@ -46,7 +45,7 @@ p2m_request(maple_device_t* dev, const char* lines, char* out, size_t cap) {
     }
     maple_frame_init(&dev->frame);
     memset(request_buf, 0, sizeof(request_buf));
-    request_buf[0] = MAPLE_FUNC_MEMCARD;
+    request_buf[0] = dev->info.functions; /* the unit on the bus (the controller), whatever it is; the firmware echoes it */
     memcpy(&request_buf[1], text, (size_t)n);
     dev->frame.cmd = 0x22;
     dev->frame.dst_port = dev->port;
@@ -125,9 +124,11 @@ p2m_set(maple_device_t* dev, const char* key, const char* value) {
 
 maple_device_t*
 p2m_find(void) {
-    for (int i = 0; i < MAPLE_PORT_COUNT * MAPLE_UNIT_COUNT; i++) {
-        maple_device_t* dev = maple_enum_type(i, MAPLE_FUNC_MEMCARD);
-        if (dev && !strcmp(get_vmu_type_name(dev), "Pico2Maple")) {
+    /* the device on each port's bus (unit 0, the controller): the firmware answers there, no memory card is asked */
+    for (int port = 0; port < MAPLE_PORT_COUNT; port++) {
+        maple_device_t* dev = maple_enum_dev(port, 0);
+        char name[32];
+        if (dev && p2m_get(dev, "hello.name", name, sizeof(name)) == 0 && !strncmp(name, "Pico2Maple", 10)) {
             return dev;
         }
     }
