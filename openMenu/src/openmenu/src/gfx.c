@@ -31,6 +31,10 @@
 #define GFX_REGION_BYTE (*(volatile uint8_t*)0x8C000072)
 #endif
 
+#ifndef BIOS_FONT_ROM /* gfx_host_test puts its own bytes here */
+#define BIOS_FONT_ROM ((const uint8_t*)0xA0100020u) /* what syscall_font_address() returns */
+#endif
+
 #define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
@@ -920,96 +924,212 @@ generic_cover(int pal, int back) {
     return out->valid ? out : NULL;
 }
 
-/* The cases' spines (BMODEL_TEX_SPINE), one generic label per region, made from the BIOS's own Dreamcast logo (the one with the swirl) in a
- * single ink colour, reading upwards along the spine, centred on a lighter patch: PAL blue with white ink, NTSC-J white with black ink and an
- * orange band at the top, NTSC-U black with white ink. 32 x 256: the picture's width is the case's depth, its height the case's height.
- * The BIOS holds no SEGA logo as a picture (the boot animation's is a model), so only the Dreamcast one is used. */
+/* The cases' spines (BMODEL_TEX_SPINE): a generic label per region with the game's own title and product code on it, like the real ones:
+ * the BIOS's Dreamcast logo (the swirl one) at the bottom end, the title in the middle and the product code at the top end, all reading
+ * upwards in one ink colour. PAL: blue with white ink. NTSC-J: white with black ink and an orange band behind the logo. American: black
+ * with white ink. 64 x 512: the picture's width is the case's depth, its height the case's height. The BIOS holds no SEGA logo as a
+ * picture (the boot animation's is a model), so only the Dreamcast one is used. */
 enum { SPINE_PAL, SPINE_J, SPINE_US, SPINE_KINDS };
-static rom_tex spine_tex[SPINE_KINDS];
-static int spine_tried[SPINE_KINDS];
+static char spine_title[64], spine_code[16];
+
+void
+gfx_model_bind_title(const char* title, const char* product) {
+    char t[sizeof(spine_title)], c[sizeof(spine_code)];
+    strncpy(t, title ? title : "", sizeof(t) - 1);
+    t[sizeof(t) - 1] = '\0';
+    strncpy(c, product ? product : "", sizeof(c) - 1);
+    c[sizeof(c) - 1] = '\0';
+    if (strcmp(t, spine_title) || strcmp(c, spine_code)) {
+        strcpy(spine_title, t);
+        strcpy(spine_code, c);
+        memo_ok = 0; /* the spine's picture is another one now */
+    }
+}
+
+/* One string in the BIOS font as a coverage picture (0..255 per pixel, glyph pixels only), tw x 24. Returns its buffer (malloc) or NULL. */
+static uint8_t*
+text_coverage(const char* str, int* tw) {
+    int w = btext_width(str) + 4;
+    if (w < 8 || w > 1024) {
+        return NULL;
+    }
+    uint16_t* cv = calloc((size_t)w * GFX_LINE_H, 2);
+    uint8_t* cov = calloc((size_t)w * GFX_LINE_H, 1);
+    if (!cv || !cov) {
+        free(cv);
+        free(cov);
+        return NULL;
+    }
+    btext_draw(cv, w, GFX_LINE_H, 0, 0, BIOS_FONT_ROM, str, 0xFFFF);
+    for (int i = 0; i < w * GFX_LINE_H; i++) {
+        cov[i] = ((cv[i] >> 12) == 15 && ((cv[i] >> 8) & 15) >= 12) ? 255 : 0; /* the glyph, not its shade */
+    }
+    free(cv);
+    *tw = w;
+    return cov;
+}
+
+static rom_tex spine_tex[2];
+static int spine_cur, spine_have;
+static char spine_key[64 + 16 + 4];
 static rom_tex*
 spine_texture(int kind) {
-    enum { W = 32, H = 256 };
-    rom_tex* out = &spine_tex[kind];
-    if (out->valid || spine_tried[kind] || !g_rom) {
-        return out->valid ? out : NULL;
+    enum { W = 64, H = 512 };
+    char key[sizeof(spine_key)];
+    snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
+    if (spine_have && !strcmp(key, spine_key) && spine_tex[spine_cur].valid) {
+        return &spine_tex[spine_cur];
     }
-    spine_tried[kind] = 1;
-    /* background, patch, ink, [band] colours */
+    if (!g_rom) {
+        return NULL;
+    }
+    /* background, patch, ink, band colours */
     static const float col[SPINE_KINDS][4][3] = {
         {{0x20, 0x41, 0x9B}, {0x2C, 0x52, 0xB4}, {0xF8, 0xF8, 0xFF}, {0x20, 0x41, 0x9B}},
         {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
         {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
-    bios_texture t;
-    uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
-    if (!logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
-        free(logo);
-        return NULL;
-    }
-    /* where the logo's ink is, so it is centred on the patch */
-    int x0 = LOGO_W, x1 = 0, y0 = LOGO_H, y1 = 0;
-    for (int y = 0; y < LOGO_H; y++) {
-        for (int x = 0; x < LOGO_W; x++) {
-            if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
-                x0 = x < x0 ? x : x0;
-                x1 = x > x1 ? x : x1;
-                y0 = y < y0 ? y : y0;
-                y1 = y > y1 ? y : y1;
+    static uint32_t* logo;
+    static int logo_x0, logo_x1, logo_y0, logo_y1, logo_tried;
+    if (!logo && !logo_tried) {
+        logo_tried = 1;
+        bios_texture t;
+        logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+        if (!logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+            free(logo);
+            logo = NULL;
+        } else {
+            logo_x0 = LOGO_W, logo_x1 = 0, logo_y0 = LOGO_H, logo_y1 = 0;
+            for (int y = 0; y < LOGO_H; y++) {
+                for (int x = 0; x < LOGO_W; x++) {
+                    if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
+                        logo_x0 = x < logo_x0 ? x : logo_x0;
+                        logo_x1 = x > logo_x1 ? x : logo_x1;
+                        logo_y0 = y < logo_y0 ? y : logo_y0;
+                        logo_y1 = y > logo_y1 ? y : logo_y1;
+                    }
+                }
             }
         }
     }
-    if (x1 <= x0 || y1 <= y0) {
-        free(logo);
-        return NULL;
-    }
-    const float sw = (float)(x1 - x0 + 1), sh = (float)(y1 - y0 + 1), scx = (float)x0 + sw / 2.0f, scy = (float)y0 + sh / 2.0f;
-    const float len = 150.0f, thick = 24.0f; /* the logo's size on the picture: along the spine, across it */
-    float s = len / sw; /* picture pixels per logo pixel */
-    if (sh * s > thick) {
-        s = thick / sh;
-    }
-    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
-    if (!px) {
-        free(logo);
+    float* rgb = malloc(sizeof(float) * W * H * 3);
+    if (!rgb) {
         return NULL;
     }
     const float* bg = col[kind][0];
     const float* patch = col[kind][1];
     const float* ink = col[kind][2];
     const float* band = col[kind][3];
+    const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = bg[0], g = bg[1], b = bg[2];
-            const float px_x = (float)x + 0.5f, px_y = (float)y + 0.5f;
-            const float cr = 6.0f; /* corner radius of the patch */
-            const float inx = px_x - 3.0f, iny = px_y - 12.0f, pw = W - 6.0f, ph = H - 24.0f;
-            int inside = inx >= 0 && inx <= pw && iny >= 0 && iny <= ph;
-            if (inside) { /* round the four corners */
-                float dx = inx < cr ? cr - inx : ((pw - inx) < cr ? cr - (pw - inx) : 0.0f);
-                float dy = iny < cr ? cr - iny : ((ph - iny) < cr ? cr - (ph - iny) : 0.0f);
+            float* o = &rgb[(y * W + x) * 3];
+            o[0] = bg[0], o[1] = bg[1], o[2] = bg[2];
+            const float fx = (float)x + 0.5f - mx, fy = (float)y + 0.5f - my, pw = W - 2 * mx, ph = H - 2 * my;
+            int inside = fx >= 0 && fx <= pw && fy >= 0 && fy <= ph;
+            if (inside) {
+                float dx = fx < cr ? cr - fx : ((pw - fx) < cr ? cr - (pw - fx) : 0.0f);
+                float dy = fy < cr ? cr - fy : ((ph - fy) < cr ? cr - (ph - fy) : 0.0f);
                 inside = dx * dx + dy * dy <= cr * cr;
             }
             if (inside) {
-                r = patch[0], g = patch[1], b = patch[2];
-                if (kind == SPINE_J && px_y < 56.0f) { /* the orange band at the top */
-                    r = band[0], g = band[1], b = band[2];
-                }
-                /* the logo, turned a quarter to the left (reading upwards): destination -> logo pixel */
-                float rx = px_x - W / 2.0f, ry = px_y - H / 2.0f;
-                float lx = scx + (-ry) / s, ly = scy + rx / s;
-                int ix = (int)lx, iy2 = (int)ly;
-                if (lx >= x0 && ix <= x1 && ly >= y0 && iy2 <= y1) {
-                    float a = (float)(logo[iy2 * LOGO_W + ix] >> 24) / 255.0f;
-                    r += (ink[0] - r) * a, g += (ink[1] - g) * a, b += (ink[2] - b) * a;
-                }
+                const float* c = (kind == SPINE_J && (float)y > H - 150.0f) ? band : patch;
+                o[0] = c[0], o[1] = c[1], o[2] = c[2];
             }
-            px[y * W + x] = (unsigned short)(0xF000u | ((unsigned)(r + 8) >> 4) << 8 | ((unsigned)(g + 8) >> 4) << 4 | ((unsigned)(b + 8) >> 4));
         }
     }
-    upload_argb4444(px, W, H, out);
+    /* ink over the picture: mix of cover (0..1) at picture pixel (x, y) */
+#define SPINE_INK(x, y, a)                                                            \
+    do {                                                                              \
+        float* o_ = &rgb[((y) * W + (x)) * 3];                                        \
+        o_[0] += (ink[0] - o_[0]) * (a), o_[1] += (ink[1] - o_[1]) * (a), o_[2] += (ink[2] - o_[2]) * (a); \
+    } while (0)
+    /* the logo, at the bottom end, turned a quarter to the left (reading upwards): its x runs up the spine */
+    if (logo && logo_x1 > logo_x0) {
+        const float sw = (float)(logo_x1 - logo_x0 + 1), sh = (float)(logo_y1 - logo_y0 + 1);
+        float s = 118.0f / sw;
+        if (sh * s > 34.0f) {
+            s = 34.0f / sh;
+        }
+        const float cy = (float)H - 30.0f - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                float lx = (float)logo_x0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)logo_y0 + sh / 2.0f + ((float)x + 0.5f - cx) / s;
+                int ix = (int)lx, iy = (int)ly;
+                if (lx >= (float)logo_x0 && ix <= logo_x1 && ly >= (float)logo_y0 && iy <= logo_y1) {
+                    float a = (float)(logo[iy * LOGO_W + ix] >> 24) / 255.0f;
+                    SPINE_INK(x, y, a);
+                }
+            }
+        }
+    }
+    /* a string, reading upwards: its middle at picture row `mid`, in at most `avail` rows, glyphs `thick` columns tall at best, centred across */
+    for (int pass = 0; pass < 2; pass++) {
+        const char* str = pass == 0 ? spine_title : spine_code;
+        if (!str[0]) {
+            continue;
+        }
+        int tw = 0;
+        uint8_t* cov = text_coverage(str, &tw);
+        if (!cov) {
+            continue;
+        }
+        const float avail = pass == 0 ? 296.0f : 84.0f, mid = pass == 0 ? 212.0f : 52.0f;
+        const float best = pass == 0 ? 0.95f : 0.62f; /* picture pixels per font pixel */
+        float sl = avail / (float)tw; /* along the spine */
+        if (sl > best) {
+            sl = best;
+        }
+        float st = sl < best * 0.6f ? best * 0.6f : sl; /* across it: condensed a little before the letters get too small */
+        if (pass == 0 && sl > st) {
+            st = sl;
+        }
+        const float cxp = (float)W / 2.0f;
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                /* text x runs up the picture, text y runs to the right; the glyph rows 2..22 are centred */
+                float tx = (float)tw / 2.0f + (mid - ((float)y + 0.5f)) / sl, ty = 12.0f + ((float)x + 0.5f - cxp) / st;
+                int ix = (int)tx, iy = (int)ty;
+                if (tx >= 0 && ix < tw && ty >= 0 && iy < GFX_LINE_H) {
+                    /* two by two samples, so a squeezed text does not break up */
+                    float a = 0;
+                    for (int k = 0; k < 4; k++) {
+                        int jx = (int)(tx + (k & 1 ? 0.25f : -0.25f)), jy = (int)(ty + (k & 2 ? 0.25f : -0.25f));
+                        if (jx >= 0 && jx < tw && jy >= 0 && jy < GFX_LINE_H) {
+                            a += (float)cov[jy * tw + jx] / 255.0f / 4.0f;
+                        }
+                    }
+                    if (a > 0) {
+                        SPINE_INK(x, y, a);
+                    }
+                }
+            }
+        }
+        free(cov);
+    }
+    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
+    if (!px) {
+        free(rgb);
+        return NULL;
+    }
+    for (int i = 0; i < W * H; i++) {
+        px[i] = (unsigned short)(0xF000u | ((unsigned)(rgb[i * 3] + 8) >> 4) << 8 | ((unsigned)(rgb[i * 3 + 1] + 8) >> 4) << 4 | ((unsigned)(rgb[i * 3 + 2] + 8) >> 4));
+    }
+    free(rgb);
+    /* into the other slot; the old picture may still be on the PVR's frame, so it is freed a build later */
+    const int nxt = spine_have ? spine_cur ^ 1 : 0;
+    if (spine_tex[nxt].ptr) {
+        pvr_mem_free(spine_tex[nxt].ptr);
+    }
+    memset(&spine_tex[nxt], 0, sizeof(spine_tex[nxt]));
+    upload_argb4444(px, W, H, &spine_tex[nxt]);
     free(px);
-    free(logo);
-    return out->valid ? out : NULL;
+    if (!spine_tex[nxt].valid) {
+        return NULL;
+    }
+    spine_cur = nxt;
+    spine_have = 1;
+    strcpy(spine_key, key);
+    return &spine_tex[nxt];
 }
 
 static rom_tex*
@@ -1634,9 +1754,6 @@ gfx_set_label(uint16_t obj_id, const char* text) {
 
 /* ---- Text ------------------------------------------------------------------------------- */
 
-#ifndef BIOS_FONT_ROM /* gfx_host_test puts its own bytes here */
-#define BIOS_FONT_ROM ((const uint8_t*)0xA0100020u) /* what syscall_font_address() returns */
-#endif
 
 int
 gfx_text_width(const char* str) {

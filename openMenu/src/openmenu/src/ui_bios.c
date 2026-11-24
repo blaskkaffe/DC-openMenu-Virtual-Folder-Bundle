@@ -305,10 +305,13 @@ static bcase gcase;
 static int gcase_prev_cursor = -1;
 static const gd_item* gcase_prev_item;
 
+static char case_title[64]; /* the title of the game the case shows, for its spine */
+
 static void
 case_bind(void* user, const char* tag) {
     (void)user;
     gfx_model_bind_front(tag);
+    gfx_model_bind_title(case_title, tag);
 }
 
 /* A new case waits for its box art (at most CASE_ART_WAIT frames), so its front does not pop in after it has
@@ -349,6 +352,7 @@ case_update(void) {
             /* by region: PAL blue; Japan only (J) white; America (U, also a J-U-E disc) black */
             const int us = strchr(cur->region, 'U') != NULL;
             int model = !cur->product[0] ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : us ? BMODEL_CASE_DARK : BMODEL_CASE_WHITE;
+            snprintf(case_title, sizeof(case_title), "%s", cur->name);
             bcase_show(&gcase, model, cur->product, dir);
         } else {
             bcase_show(&gcase, -1, "", dir);

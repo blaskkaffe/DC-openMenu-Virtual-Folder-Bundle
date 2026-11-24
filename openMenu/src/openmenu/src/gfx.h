@@ -96,6 +96,8 @@ void gfx_art_box(const char* product, float x, float y, float w, float h, float 
 /* The front picture of the built-in models of bios_models.h (the jewel cases): box art of `product`,
  * or plain white when empty or not found. The back picture is white until something is placed there. */
 void gfx_model_bind_front(const char* product);
+/* The title and product code of the game the CD case shows, for its spine label. */
+void gfx_model_bind_title(const char* title, const char* product);
 
 /* Start loading a game picture before it is needed (box = 1: box art, 0: disc icon), so it is there when the
  * row or case shows it. Returns 1 once the picture is in video memory or known to be missing, 0 while it loads. */
