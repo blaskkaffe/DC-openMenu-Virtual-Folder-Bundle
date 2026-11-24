@@ -193,10 +193,10 @@ blist_row_in_slot(const blist* l, int slot) {
 /* the side layout: two columns of buttons under the card, BACK to the right of the last one */
 static void
 side_button_px(int i, float* x, float* y) {
-    *x = (i & 1) ? 180.0f : 86.0f;
+    *x = (i & 1 || i == 4) ? 180.0f : 86.0f; /* Group takes the last place of the right column: BACK is in the left corner */
     *y = 288.0f + BLIST_SIDE_DY + (float)(i >> 1) * 40.0f;
 }
-#define SIDE_BACK_X 180.0f
+#define SIDE_BACK_X 70.0f /* the BACK picture is 60 wide: its left edge is the card's */
 #define SIDE_BACK_Y (378.0f + BLIST_SIDE_DY)
 
 void
@@ -375,7 +375,7 @@ blist_sync(blist* l) {
             float x, z;
             int show;
         } parts[2] = {
-            {anchor, ANCHOR_X + DXU(l), ROW_Z, s == 0}, /* one bar for the whole box, from slot 0 */
+            {anchor, ANCHOR_X + DXU(l), ROW_Z, s == 0 && !l->side}, /* one bar for the whole box, from slot 0 (the side layout has a panel of its own, see ui_bios.c) */
             {pill, PILL_X + DXU(l), ROW_Z + 0.78f, sel}, /* only the selected row has a pill (lit) */
         };
         for (int i = 0; i < 2; i++) {
