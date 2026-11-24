@@ -194,10 +194,10 @@ blist_row_in_slot(const blist* l, int slot) {
 static void
 side_button_px(int i, float* x, float* y) {
     *x = (i & 1) ? 180.0f : 86.0f;
-    *y = 288.0f + (float)(i >> 1) * 42.0f;
+    *y = 288.0f + BLIST_SIDE_DY + (float)(i >> 1) * 40.0f;
 }
 #define SIDE_BACK_X 180.0f
-#define SIDE_BACK_Y 388.0f
+#define SIDE_BACK_Y (378.0f + BLIST_SIDE_DY)
 
 void
 blist_button_center_px(int i, float* x, float* y) {
