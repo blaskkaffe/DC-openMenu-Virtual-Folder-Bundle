@@ -248,6 +248,7 @@ show_notice(const char* text) {
     notice_frames = NOTICE_FRAMES;
 }
 
+static int viewer_open; /* the case viewer is open (defined with it, further down) */
 static int svmu_active(void); /* the Serial VMU popup, further down */
 static void draw_vmu_menu(void);
 static void draw_svmu(void);
