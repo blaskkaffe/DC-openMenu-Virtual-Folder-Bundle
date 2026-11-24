@@ -14,7 +14,7 @@ SRC="$HERE/../../src"
 TMP="$(mktemp -d)"
 [ -f "$ROM" ] || { echo "usage: $0 dc_boot.bin [outdir]"; exit 1; }
 mkdir -p "$OUT"
-gcc -O2 -o "$TMP/bios_preview" "$SRC/bios_engine/tools/bios_preview.c" "$SRC"/bios_engine/src/*.c "$SRC"/bios_rom/src/*.c \
+gcc -O2 -o "$TMP/bios_preview" "$SRC/bios_engine/tools/bios_preview.c" "$SRC"/bios_engine/src/*.c "$SRC"/bios_engine/src/case_models/*.c "$SRC"/bios_rom/src/*.c \
     -I"$SRC/bios_engine/include" -I"$SRC/bios_rom/include" -lm
 
 shot() { # name frames selected script [VAR=value ...]: the variables are for the preview

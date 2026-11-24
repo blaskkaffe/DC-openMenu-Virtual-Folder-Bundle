@@ -32,7 +32,7 @@ jobs:
           ./bios_rom_test
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
             -IopenMenu/src/bios_rom/include -IopenMenu/src/bios_engine/include \
-            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_engine/src/*.c \
+            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_engine/src/*.c openMenu/src/bios_engine/src/case_models/*.c \
             openMenu/src/bios_engine/test/bios_engine_test.c -lm -o bios_engine_test
           ./bios_engine_test
           gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
@@ -105,7 +105,7 @@ jobs:
         run: |
           gcc -O1 -fsanitize=address,undefined -fno-sanitize-recover=undefined \
             -DBIOS_FONT_ROM=host_font -DGFX_REGION_BYTE=host_region -include openmenu/test/gfx_host/host_font.h \
-            openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c bios_engine/src/*.c bios_rom/src/*.c \
+            openmenu/test/gfx_host/gfx_host_test.c openmenu/src/gfx.c bios_engine/src/*.c bios_engine/src/case_models/*.c bios_rom/src/*.c \
             -Iopenmenu/test/gfx_host/kos -I../external/uthash/include -Ibios_engine/include -Ibios_rom/include \
             -Iopenmenu_shared/include -Iopenmenu/src -lm -o gfx_host_test
           ./gfx_host_test > /dev/null
