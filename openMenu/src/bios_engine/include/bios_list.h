@@ -39,6 +39,7 @@ typedef struct blist {
     int top;
     int back_selected; /* the cursor is on the BACK marker, below the last row */
     int button;        /* the cursor is on bottom button 0..BLIST_BUTTONS-1, -1 when not (lit as in the CD player) */
+    int side;          /* the side layout: rows on the right over the whole height, buttons and BACK stacked on the left (the case is the caller's) */
     int pal_console;   /* set by the caller: the console is a PAL one (the BACK marker is blue instead of red) */
     unsigned anim;     /* frames since the list was opened (the BACK marker's frame blinks) */
     int disc_number;   /* set by the caller before blist_sync(): disc of a multi-disc game on the selected row (1..99), 0 if not
@@ -64,6 +65,11 @@ void blist_button_center_px(int i, float* x, float* y);
 void blist_press_button(blist* l, int i);
 /* The bottom button under a point (pixels), -1 if none. */
 int blist_button_at_px(float x, float y);
+
+/* The same for a list that may be in the side layout. */
+void blist_button_center_px_l(const blist* l, int i, float* x, float* y);
+int blist_button_at_px_l(const blist* l, float x, float y);
+int blist_back_at_px_l(const blist* l, float x, float y);
 
 /* The BACK marker is under a point (pixels). */
 int blist_back_at_px(float x, float y);

@@ -365,6 +365,7 @@ games_sync(void) {
     case_update();
     blist_set_count(&glist, uil_count());
     blist_set_cursor(&glist, uil_cursor());
+    glist.side = !viewer_open; /* the viewer keeps the list's old layout (its panel and BACK) */
     glist.pal_console = console_is_pal();
     glist.disc_number = 0;
     for (int s = 0; s < glist.slots; s++) {
@@ -460,7 +461,7 @@ draw_button_text(void) {
         const char* text = button_text(i);
         if (text[0]) {
             float x, y;
-            blist_button_center_px(i, &x, &y);
+            blist_button_center_px_l(&glist, i, &x, &y);
             gfx_text(text, x - (float)gfx_text_width(text) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
         }
     }
@@ -575,44 +576,71 @@ near_sink(const bscene_sink* out) {
 static void draw_viewer(void);
 static int viewer_open;
 
+/* The left side of the game list: a dark top row and a blue card with the case, as the File screen's (flat colours measured
+ * from the BIOS: bar #4b5776 with a lighter top edge and a darker foot, card #5254b6 with a darker rim and a 3 px shadow). */
+#define CARD_X 40.0f
+#define CARD_Y 70.0f
+#define CARD_W 186.0f
+#define CARD_H 192.0f
+#define SBAR_Y 24.0f
+#define SBAR_H 38.0f
+
+static void
+draw_side_card(const gd_item* cur) {
+    char count[24];
+    const float z = PANE_Z;
+    /* top row */
+    gfx_rrect(CARD_X, SBAR_Y, CARD_W, SBAR_H, 8.0f, z, 0xFF404963u);
+    gfx_rrect(CARD_X, SBAR_Y, CARD_W, SBAR_H - 5.0f, 8.0f, z + 0.00004f, 0xFF4B5776u);
+    gfx_rrect(CARD_X, SBAR_Y, CARD_W, 5.0f, 3.0f, z + 0.00008f, 0xFF5C688Cu);
+    gfx_rect(CARD_X, SBAR_Y + 4.0f, CARD_W, SBAR_H - 9.0f, z + 0.00008f, 0xFF4B5776u);
+    {
+        list_view view;
+        list_view_get(&view);
+        const char* name = "Games";
+        char tail[12];
+        if (view.kind == LIST_VIEW_FOLDER && view.folder_path && view.folder_path[0]) {
+            const char* slash = strrchr(view.folder_path, '/');
+            snprintf(tail, sizeof(tail), "%.9s", slash ? slash + 1 : view.folder_path);
+            name = tail;
+        }
+        gfx_text(name, CARD_X + 10.0f, SBAR_Y + 3.0f, 0.5f, 0xFFFFFF00u, 1);
+        snprintf(count, sizeof(count), "%d/%d", uil_cursor() + 1, uil_count());
+        gfx_text(count, CARD_X + CARD_W - 8.0f - (float)gfx_text_width(count), SBAR_Y + 3.0f, 0.5f, 0xFFCCCCCCu, 1);
+    }
+    /* the card */
+    gfx_rrect(CARD_X, CARD_Y + 3.0f, CARD_W, CARD_H, 6.0f, z, 0xFF455076u);
+    gfx_rrect(CARD_X, CARD_Y, CARD_W, CARD_H, 6.0f, z + 0.00004f, 0xFF4D4FAAu);
+    gfx_rrect(CARD_X + 2.0f, CARD_Y + 2.0f, CARD_W - 4.0f, CARD_H - 4.0f, 5.0f, z + 0.00008f, 0xFF5254B6u);
+    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL,
+               near_sink(gfx_sink()));
+    if (cur && !uil_is_folder(cur)) {
+        char info[2][24];
+        int k = game_info_lines(cur, info);
+        float y = CARD_Y + CARD_H - 4.0f - (float)k * (GFX_LINE_H - 8.0f);
+        for (int i = 0; i < k; i++) {
+            gfx_text(info[i], CARD_X + 10.0f, y, 0.5f, 0xFFCCCCCCu, 1);
+            y += GFX_LINE_H - 8.0f;
+        }
+    } else if (cur) {
+        gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
+    }
+}
+
 static void
 draw_games(void) {
-    char lines[3][20];
     if (viewer_open) {
         draw_viewer();
         return;
     }
     blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {
-        gfx_text("No games found.", 64.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
+        gfx_text("No games found.", 260.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
         return;
     }
     const gd_item* cur = uil_item(uil_cursor());
     draw_button_text();
-    float panel_top, panel_bottom;
-    blist_rows_extent_px(&glist, &panel_top, &panel_bottom);
-    const float art_y = panel_top + 8.0f;
-    /* the colour, alpha (BSCENE_PANE_ARGB) and corner radius of the row bars; just in front of the clouds (~0.0026), behind the case */
-    gfx_pane(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, PANE_Z, BSCENE_PANE_ARGB);
-    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, art_y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL,
-               near_sink(gfx_sink()));
-    if (cur && !uil_is_folder(cur)) {
-        float y = art_y + ART_SIZE + 6.0f;
-        int n = wrap_text(cur->name, 15, lines, 3);
-        for (int i = 0; i < n; i++) {
-            gfx_text(lines[i], INFO_X, y, 0.5f, 0xFFFFFFFFu, 1);
-            y += GFX_LINE_H - 4.0f;
-        }
-        char info[2][24];
-        int k = game_info_lines(cur, info);
-        y = panel_bottom - 8.0f - (float)k * (GFX_LINE_H - 4.0f);
-        for (int i = 0; i < k; i++) {
-            gfx_text(info[i], INFO_X, y, 0.5f, 0xFFC0C0C0u, 1);
-            y += GFX_LINE_H - 4.0f;
-        }
-    } else if (cur) {
-        gfx_text("Folder", INFO_X, art_y, 0.5f, 0xFFFFFFFFu, 1);
-    }
+    draw_side_card(cur);
 }
 
 /* ---- Case viewer (Y, or a click on the case): the game information screen. The case large on the right two thirds,
@@ -871,7 +899,7 @@ handle_viewer(button_t b) {
         case BTN_A:
         case BTN_START:
             if (pointer.clicked) { /* a click only leaves when it is on BACK (elsewhere it starts a drag) */
-                if (blist_back_at_px(pointer_screen_x(), (float)pointer.y)) {
+                if (blist_back_at_px_l(&glist, pointer_screen_x(), (float)pointer.y)) {
                     close_viewer();
                 }
             } else {
@@ -1550,6 +1578,7 @@ handle_main(button_t b) {
                     }
                 }
                 blist_open(&glist, &menu, UIL_VISIBLE, uil_count());
+                glist.side = 1;
                 viewer_open = 0;
                 options_open = 0;
                 blist_set_cursor(&glist, uil_cursor());
@@ -1933,10 +1962,7 @@ handle_options(button_t b) {
 /* The case of the right panel is under a point (pixels). */
 static int
 case_at_px(float x, float y) {
-    float top, bottom;
-    blist_rows_extent_px(&glist, &top, &bottom);
-    float art_y = top + 8.0f;
-    return x >= INFO_X - 6.0f && x <= INFO_X + INFO_W + 6.0f && y >= art_y - 10.0f && y <= art_y + ART_SIZE + 10.0f;
+    return x >= CARD_X && x <= CARD_X + CARD_W && y >= CARD_Y && y <= CARD_Y + CARD_H;
 }
 
 static void
@@ -2378,14 +2404,14 @@ apply_hover(void) {
             if (viewer_open) {
                 break;
             }
-            if (blist_back_at_px(ux, uy)) {
+            if (blist_back_at_px_l(&glist, ux, uy)) {
                 if (!glist.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
                 glist.back_selected = 1;
                 glist.button = -1;
                 break;
             }
             {
-                int bt = blist_button_at_px(ux, uy);
+                int bt = blist_button_at_px_l(&glist, ux, uy);
                 if (bt >= 0) {
                     if (bt != glist.button) sound_sfx(BAUDIO_SFX_CURSOR);
                     glist.button = bt;

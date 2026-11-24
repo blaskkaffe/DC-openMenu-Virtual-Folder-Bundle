@@ -2743,6 +2743,25 @@ collect_grid(bfs* fs, hit* h) {
             h[n++] = (hit){px[i], py[i], hw, hh, i};
         }
     }
+    /* the controller on top of a column (picture and its A..D tab) stands for the first card of that column that can be picked */
+    for (int p = 0; p < 4 && n < HIT_MAX - 1; p++) {
+        float cx, cy;
+        if (!obj_px(fs, ID_PAD(p), &cx, &cy)) {
+            continue;
+        }
+        int best = -1;
+        float best_y = 1e9f;
+        for (int i = 0; i < 8; i++) {
+            float dx = px[i] - cx;
+            if (have[i] && grid_pick_ok(fs, i) && dx > -hw && dx < hw && py[i] < best_y) {
+                best = i;
+                best_y = py[i];
+            }
+        }
+        if (best >= 0) {
+            h[n++] = (hit){cx, cy + 22.0f, hw * 0.75f, 52.0f, best};
+        }
+    }
     return add_obj(fs, h, n, ID_BACK, BACK_HALF, BACK_HALF, 8);
 }
 
