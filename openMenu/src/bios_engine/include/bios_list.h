@@ -9,6 +9,13 @@
 
 #include "bios_menu.h"
 
+/* The CD case on the Play screen (side layout) is this many percent bigger than the first design; the card under it grows by the same
+ * amount of height (BLIST_SIDE_DY pixels) and the buttons below it move down with it. */
+#ifndef BLIST_SIDE_CASE_PCT
+#define BLIST_SIDE_CASE_PCT 30
+#endif
+#define BLIST_SIDE_DY (120.0f * (float)BLIST_SIDE_CASE_PCT / 100.0f)
+
 #ifdef __cplusplus
 extern "C" {
 #endif

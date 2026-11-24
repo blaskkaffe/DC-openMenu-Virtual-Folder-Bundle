@@ -588,7 +588,7 @@ static int viewer_open;
 #define CARD_X 40.0f
 #define CARD_Y 70.0f
 #define CARD_W 186.0f
-#define CARD_H 192.0f
+#define CARD_H (192.0f + BLIST_SIDE_DY)
 #define SBAR_Y 24.0f
 #define SBAR_H 38.0f
 
@@ -619,7 +619,8 @@ draw_side_card(const gd_item* cur) {
     gfx_rrect(CARD_X, CARD_Y + 3.0f, CARD_W, CARD_H, 6.0f, z, 0xFF455076u);
     gfx_rrect(CARD_X, CARD_Y, CARD_W, CARD_H, 6.0f, z + 0.00004f, 0xFF4D4FAAu);
     gfx_rrect(CARD_X + 2.0f, CARD_Y + 2.0f, CARD_W - 4.0f, CARD_H - 4.0f, 5.0f, z + 0.00008f, 0xFF5254B6u);
-    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f, 118.0f, case_bind, NULL,
+    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
+               118.0f * (1.0f + (float)BLIST_SIDE_CASE_PCT / 100.0f), case_bind, NULL,
                near_sink(gfx_sink()));
     if (cur && !uil_is_folder(cur)) {
         char info[2][24];
