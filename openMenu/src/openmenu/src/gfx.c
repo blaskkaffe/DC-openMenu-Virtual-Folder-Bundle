@@ -815,25 +815,138 @@ ribs_texture(void) {
     return ribs_tex.valid ? &ribs_tex : NULL;
 }
 
-/* The PAL case's spine (BMODEL_TEX_SPINE): the blue spine with a lighter patch in the middle and the wordmark of the BIOS's own
- * logo (the European one, no swirl) on it in dark ink, reading upwards along the spine. 32 x 256, the picture's width is the
- * case's depth and its height the case's height. */
-static rom_tex spine_tex;
-static int spine_tried;
+/* The cases' fronts and backs for a game without box art, from the BIOS's own disc picture (it has the stacked Dreamcast logo with the
+ * word under the swirl): the front is the disc's blue (PAL) or red (NTSC) with the logo in white, the back is white with the logo in its
+ * own colours. 128 x 128, the logo's width is `frac` of the picture. */
+static rom_tex generic_tex[2][2]; /* [pal][back] */
+static int generic_tried[2][2];
 static rom_tex*
-spine_texture(void) {
-    enum { W = 32, H = 256 };
-    if (spine_tex.valid || spine_tried || !g_rom) {
-        return spine_tex.valid ? &spine_tex : NULL;
+generic_cover(int pal, int back) {
+    enum { N = 128 };
+    rom_tex* out = &generic_tex[pal ? 1 : 0][back ? 1 : 0];
+    if (out->valid || generic_tried[pal ? 1 : 0][back ? 1 : 0] || !g_rom) {
+        return out->valid ? out : NULL;
     }
-    spine_tried = 1;
+    generic_tried[pal ? 1 : 0][back ? 1 : 0] = 1;
+    uint32_t* d = malloc(sizeof(uint32_t) * 256 * 256);
+    unsigned short* px = calloc((size_t)N * N, sizeof(unsigned short));
+    if (!d || !px) {
+        free(d);
+        free(px);
+        return NULL;
+    }
+    int found = 0, ok = 0;
+    for (int n = 0; n < bios_texture_count(g_rom) && !ok; n++) {
+        bios_texture t;
+        if (bios_texture_get(g_rom, n, &t) == 0 && t.gbix == 0 && t.width == 256 && t.height == 256) {
+            if (found == (pal ? 0 : 1)) {
+                ok = bios_texture_decode(&t, d) == 0;
+            }
+            found++;
+        }
+    }
+    if (!ok) {
+        free(d);
+        free(px);
+        return NULL;
+    }
+    const uint32_t bgc = d[128 * 256 + 40]; /* the disc's coloured half */
+    /* where the logo is (on the disc's light half, right of the hole): the pixels that differ from the light grey */
+    #define DISC_GREY 204.0f
+    int x0 = 256, x1 = 0, y0 = 256, y1 = 0;
+    for (int y = 90; y < 175; y++) {
+        for (int x = 165; x < 250; x++) {
+            uint32_t c = d[y * 256 + x];
+            float df = fabsf((float)((c >> 16) & 255) - DISC_GREY);
+            float dg = fabsf((float)((c >> 8) & 255) - DISC_GREY);
+            float db = fabsf((float)(c & 255) - DISC_GREY);
+            if ((df > dg ? (df > db ? df : db) : (dg > db ? dg : db)) > 60.0f) {
+                x0 = x < x0 ? x : x0;
+                x1 = x > x1 ? x : x1;
+                y0 = y < y0 ? y : y0;
+                y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        free(d);
+        free(px);
+        return NULL;
+    }
+    const float lw = (float)(x1 - x0 + 1), lh = (float)(y1 - y0 + 1);
+    const float want = back ? 66.0f : 88.0f; /* the logo's width on the picture */
+    const float sc = want / lw;              /* picture pixels per disc pixel */
+    const float cx = (float)N / 2.0f, cy = (float)N / 2.0f;
+    for (int y = 0; y < N; y++) {
+        for (int x = 0; x < N; x++) {
+            float r, g, b;
+            if (back) {
+                r = g = b = 255.0f;
+            } else {
+                r = (float)((bgc >> 16) & 255), g = (float)((bgc >> 8) & 255), b = (float)(bgc & 255);
+            }
+            /* logo pixel for this picture pixel, bilinear */
+            float fx = (float)x0 + (x + 0.5f - cx) / sc + lw / 2.0f - 0.5f, fy = (float)y0 + (y + 0.5f - cy) / sc + lh / 2.0f - 0.5f;
+            if (fx >= (float)x0 - 1 && fx <= (float)x1 + 1 && fy >= (float)y0 - 1 && fy <= (float)y1 + 1) {
+                int ix = (int)floorf(fx), iy = (int)floorf(fy);
+                float ax = fx - (float)ix, ay = fy - (float)iy;
+                float cr = 0, cg = 0, cb = 0, ca = 0;
+                for (int k = 0; k < 4; k++) {
+                    int xx = ix + (k & 1), yy = iy + (k >> 1);
+                    float w = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
+                    if (xx < 0 || xx > 255 || yy < 0 || yy > 255) {
+                        continue;
+                    }
+                    uint32_t c = d[yy * 256 + xx];
+                    float rr = (float)((c >> 16) & 255), gg = (float)((c >> 8) & 255), bb = (float)(c & 255);
+                    float df = fabsf(rr - DISC_GREY), dg = fabsf(gg - DISC_GREY), db = fabsf(bb - DISC_GREY);
+                    float a = (df > dg ? (df > db ? df : db) : (dg > db ? dg : db)) / 150.0f;
+                    a = a > 1.0f ? 1.0f : a;
+                    cr += w * rr * 1.25f, cg += w * gg * 1.25f, cb += w * bb * 1.25f, ca += w * a;
+                }
+                if (back) { /* its own colours, the light grey of the disc becoming the white of the paper */
+                    cr = cr > 255 ? 255 : cr, cg = cg > 255 ? 255 : cg, cb = cb > 255 ? 255 : cb;
+                    r = cr, g = cg, b = cb;
+                } else { /* white ink */
+                    r += (255.0f - r) * ca, g += (255.0f - g) * ca, b += (255.0f - b) * ca;
+                }
+            }
+            px[y * N + x] = (unsigned short)(0xF000u | ((unsigned)(r + 8) >> 4) << 8 | ((unsigned)(g + 8) >> 4) << 4 | ((unsigned)(b + 8) >> 4));
+        }
+    }
+    upload_argb4444(px, N, N, out);
+    free(px);
+    free(d);
+    return out->valid ? out : NULL;
+}
+
+/* The cases' spines (BMODEL_TEX_SPINE), one generic label per region, made from the BIOS's own Dreamcast logo (the one with the swirl) in a
+ * single ink colour, reading upwards along the spine, centred on a lighter patch: PAL blue with white ink, NTSC-J white with black ink and an
+ * orange band at the top, NTSC-U black with white ink. 32 x 256: the picture's width is the case's depth, its height the case's height.
+ * The BIOS holds no SEGA logo as a picture (the boot animation's is a model), so only the Dreamcast one is used. */
+enum { SPINE_PAL, SPINE_J, SPINE_US, SPINE_KINDS };
+static rom_tex spine_tex[SPINE_KINDS];
+static int spine_tried[SPINE_KINDS];
+static rom_tex*
+spine_texture(int kind) {
+    enum { W = 32, H = 256 };
+    rom_tex* out = &spine_tex[kind];
+    if (out->valid || spine_tried[kind] || !g_rom) {
+        return out->valid ? out : NULL;
+    }
+    spine_tried[kind] = 1;
+    /* background, patch, ink, [band] colours */
+    static const float col[SPINE_KINDS][4][3] = {
+        {{0x20, 0x41, 0x9B}, {0x2C, 0x52, 0xB4}, {0xF8, 0xF8, 0xFF}, {0x20, 0x41, 0x9B}},
+        {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
+        {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
     bios_texture t;
     uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
-    if (!logo || bios_header_logo(g_rom, 2, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+    if (!logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
         free(logo);
         return NULL;
     }
-    /* where the wordmark's ink is, so it is centred on the patch */
+    /* where the logo's ink is, so it is centred on the patch */
     int x0 = LOGO_W, x1 = 0, y0 = LOGO_H, y1 = 0;
     for (int y = 0; y < LOGO_H; y++) {
         for (int x = 0; x < LOGO_W; x++) {
@@ -850,7 +963,7 @@ spine_texture(void) {
         return NULL;
     }
     const float sw = (float)(x1 - x0 + 1), sh = (float)(y1 - y0 + 1), scx = (float)x0 + sw / 2.0f, scy = (float)y0 + sh / 2.0f;
-    const float len = 120.0f, thick = 20.0f; /* the wordmark's size on the picture: along the spine, across it */
+    const float len = 150.0f, thick = 24.0f; /* the logo's size on the picture: along the spine, across it */
     float s = len / sw; /* picture pixels per logo pixel */
     if (sh * s > thick) {
         s = thick / sh;
@@ -860,41 +973,43 @@ spine_texture(void) {
         free(logo);
         return NULL;
     }
+    const float* bg = col[kind][0];
+    const float* patch = col[kind][1];
+    const float* ink = col[kind][2];
+    const float* band = col[kind][3];
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            /* the label: blue, with a lighter rounded patch */
-            float r = 0x20, g = 0x41, b = 0x9B;
-            float px_x = (float)x + 0.5f, px_y = (float)y + 0.5f;
-            float ex = px_x < 3.0f ? 3.0f - px_x : (px_x > W - 3.0f ? px_x - (W - 3.0f) : 0.0f);
-            float ey = px_y < 40.0f ? 40.0f - px_y : (px_y > H - 40.0f ? px_y - (H - 40.0f) : 0.0f);
+            float r = bg[0], g = bg[1], b = bg[2];
+            const float px_x = (float)x + 0.5f, px_y = (float)y + 0.5f;
             const float cr = 6.0f; /* corner radius of the patch */
-            float inx = px_x - 3.0f, iny = px_y - 40.0f;
-            int inside = px_x >= 3.0f && px_x <= W - 3.0f && px_y >= 40.0f && px_y <= H - 40.0f;
+            const float inx = px_x - 3.0f, iny = px_y - 12.0f, pw = W - 6.0f, ph = H - 24.0f;
+            int inside = inx >= 0 && inx <= pw && iny >= 0 && iny <= ph;
             if (inside) { /* round the four corners */
-                float dx = inx < cr ? cr - inx : ((W - 6.0f - inx) < cr ? cr - (W - 6.0f - inx) : 0.0f);
-                float dy = iny < cr ? cr - iny : ((H - 80.0f - iny) < cr ? cr - (H - 80.0f - iny) : 0.0f);
+                float dx = inx < cr ? cr - inx : ((pw - inx) < cr ? cr - (pw - inx) : 0.0f);
+                float dy = iny < cr ? cr - iny : ((ph - iny) < cr ? cr - (ph - iny) : 0.0f);
                 inside = dx * dx + dy * dy <= cr * cr;
             }
-            (void)ex;
-            (void)ey;
             if (inside) {
-                r = 0x3C, g = 0x66, b = 0xC8;
-                /* the wordmark, turned a quarter to the left (reading upwards): destination -> logo pixel */
+                r = patch[0], g = patch[1], b = patch[2];
+                if (kind == SPINE_J && px_y < 56.0f) { /* the orange band at the top */
+                    r = band[0], g = band[1], b = band[2];
+                }
+                /* the logo, turned a quarter to the left (reading upwards): destination -> logo pixel */
                 float rx = px_x - W / 2.0f, ry = px_y - H / 2.0f;
                 float lx = scx + (-ry) / s, ly = scy + rx / s;
-                int ix = (int)lx, iy = (int)ly;
-                if (ix >= x0 && ix <= x1 && iy >= y0 && iy <= y1) {
-                    float a = (float)(logo[iy * LOGO_W + ix] >> 24) / 255.0f;
-                    r += (0x10 - r) * a, g += (0x18 - g) * a, b += (0x28 - b) * a;
+                int ix = (int)lx, iy2 = (int)ly;
+                if (lx >= x0 && ix <= x1 && ly >= y0 && iy2 <= y1) {
+                    float a = (float)(logo[iy2 * LOGO_W + ix] >> 24) / 255.0f;
+                    r += (ink[0] - r) * a, g += (ink[1] - g) * a, b += (ink[2] - b) * a;
                 }
             }
             px[y * W + x] = (unsigned short)(0xF000u | ((unsigned)(r + 8) >> 4) << 8 | ((unsigned)(g + 8) >> 4) << 4 | ((unsigned)(b + 8) >> 4));
         }
     }
-    upload_argb4444(px, W, H, &spine_tex);
+    upload_argb4444(px, W, H, out);
     free(px);
     free(logo);
-    return spine_tex.valid ? &spine_tex : NULL;
+    return out->valid ? out : NULL;
 }
 
 static rom_tex*
@@ -913,9 +1028,19 @@ get_rom_texture_uncached(bscene_texref ref) {
             if (e && e->tex.valid) {
                 return &e->tex;
             }
+            rom_tex* r = generic_cover(ref.a == BMODEL_CASE_PAL, 0); /* no box art: the generic front of the region */
+            if (r) {
+                return r;
+            }
+        }
+        if (ref.b == BMODEL_TEX_BACK) {
+            rom_tex* r = generic_cover(ref.a == BMODEL_CASE_PAL, 1);
+            if (r) {
+                return r;
+            }
         }
         if (ref.b == BMODEL_TEX_SPINE) {
-            rom_tex* r = spine_texture();
+            rom_tex* r = spine_texture(ref.a == BMODEL_CASE_PAL ? SPINE_PAL : ref.a == BMODEL_CASE_WHITE ? SPINE_J : SPINE_US);
             if (r) {
                 return r;
             }

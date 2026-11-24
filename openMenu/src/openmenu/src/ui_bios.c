@@ -345,8 +345,10 @@ case_update(void) {
         case_wait = 0;
         int dir = cursor >= gcase_prev_cursor ? 1 : -1;
         if (cur && !uil_is_folder(cur)) {
-            /* a game of a PAL serial: the blue Dreamcast case; another game: the white CD case; no serial (a homebrew, or a disc the menu cannot read): the dark one */
-            int model = !cur->product[0] ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : BMODEL_CASE_WHITE;
+            /* a game of a PAL serial: the blue Dreamcast case; an American one: the black CD case; another: the white one; no serial (a homebrew, or a disc the menu cannot read): the black one */
+            /* by region: PAL blue; Japan only (J) white; America (U, also a J-U-E disc) black */
+            const int us = strchr(cur->region, 'U') != NULL;
+            int model = !cur->product[0] ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : us ? BMODEL_CASE_DARK : BMODEL_CASE_WHITE;
             bcase_show(&gcase, model, cur->product, dir);
         } else {
             bcase_show(&gcase, -1, "", dir);

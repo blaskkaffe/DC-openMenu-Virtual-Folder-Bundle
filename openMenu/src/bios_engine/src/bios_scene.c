@@ -77,6 +77,9 @@ get_model(bscene* s, int idx) {
     if (s->model_state[idx] == 0) {
         uint32_t addr = bios_model_addr(s->rom, idx);
         s->model_state[idx] = (addr && nj_object_load(s->rom, addr, &s->models[idx]) == 0) ? 1 : 2;
+        if (idx == 0 && s->model_state[idx] == 1) {
+            bmodel_fix_back(&s->models[idx]); /* the BACK marker with four identical corners */
+        }
     }
     return s->model_state[idx] == 1 ? &s->models[idx] : NULL;
 }

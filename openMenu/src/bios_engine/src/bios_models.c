@@ -557,11 +557,8 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                 } else if (strstr(f, "label_rear")) {
                     tex = BMODEL_TEX_BACK;
                 } else if (strstr(f, "spine")) {
-                    if (!ribbed) {
-                        tex = BMODEL_TEX_SPINE; /* the PAL case: the spine label with the BIOS's Dreamcast wordmark (made by gfx) */
-                    } else {
-                        tint = spine_tint;
-                    }
+                    tex = BMODEL_TEX_SPINE; /* the spine label of the case's region, with the BIOS's Dreamcast logo (made by gfx) */
+                    (void)spine_tint;
                 } else {
                     tint = 0x24414141u; /* the ribs: faint dark lines, as their average */
                 }
@@ -721,5 +718,92 @@ bmodel_podium_digits(const struct bios_rom* rom, nj_object* out) {
     free(out->nodes);
     out->nodes = nodes;
     out->count = 5;
+    return 0;
+}
+
+
+/* The BACK marker (ROM model 0, node 0): the BIOS's own frame has corners cut differently (the picture's by one amount, the frame's by another),
+ * which looks wonky. Here the frame and the picture are rebuilt with four identical rounded corners, same size, same depth, same texture. */
+#define BK_SEG 6 /* segments per corner */
+#define BK_N (4 * (BK_SEG + 1))
+static void
+bk_ring(float hx, float hy, float r, float z, float nz, float out_n, nj_vertex* v) {
+    for (int k = 0; k < 4; k++) {
+        const float cx = (k == 0 || k == 3) ? hx - r : -(hx - r), cy = (k == 0 || k == 1) ? hy - r : -(hy - r);
+        for (int j = 0; j <= BK_SEG; j++) {
+            const float a = ((float)k + (float)j / (float)BK_SEG) * 1.5707963f, c = cosf(a), sn = sinf(a);
+            nj_vertex* q = &v[k * (BK_SEG + 1) + j];
+            memset(q, 0, sizeof(*q));
+            q->pos = v3m(cx + r * c, cy + r * sn, z);
+            q->nrm = v3m(out_n * c, out_n * sn, nz);
+            q->valid = q->has_nrm = 1;
+        }
+    }
+}
+
+int
+bmodel_fix_back(nj_object* obj) {
+    if (!obj || obj->count < 1 || !obj->nodes[0].mesh) {
+        return -1;
+    }
+    nj_mesh* m = obj->nodes[0].mesh;
+    if (m->npolys != 2 || m->polys[0].has_uv || !m->polys[1].has_uv || m->polys[1].ntris != 6) {
+        return -1; /* not the ROM model this was made for */
+    }
+    const int nv = 5 * BK_N + 1; /* back, wall front, bevel outer, bevel inner, picture ring, picture centre */
+    nj_vertex* verts = (nj_vertex*)calloc((size_t)nv, sizeof(nj_vertex));
+    nj_corner* fr = (nj_corner*)calloc((size_t)BK_N * 4 * 3, sizeof(nj_corner)); /* wall + bevel: 2 quads per segment each */
+    nj_corner* pic = (nj_corner*)calloc((size_t)BK_N * 3, sizeof(nj_corner));
+    if (!verts || !fr || !pic) {
+        free(verts);
+        free(fr);
+        free(pic);
+        return -1;
+    }
+    const float OX = 2.60f, OY = 2.51f, OR = 0.62f, IX = 2.37f, IY = 2.30f, IR = 0.40f;
+    bk_ring(OX, OY, OR, -0.36f, 0.0f, 1.0f, verts);
+    bk_ring(OX, OY, OR, 0.04f, 0.0f, 1.0f, verts + BK_N);
+    bk_ring(OX, OY, OR, 0.04f, 0.6f, 0.8f, verts + 2 * BK_N);
+    bk_ring(IX, IY, IR, 0.21f, 0.6f, 0.8f, verts + 3 * BK_N);
+    bk_ring(IX, IY, IR, 0.21f, 1.0f, 0.0f, verts + 4 * BK_N);
+    nj_vertex* ctr = &verts[5 * BK_N];
+    ctr->pos = v3m(0, 0, 0.21f);
+    ctr->nrm = v3m(0, 0, 1);
+    ctr->valid = ctr->has_nrm = 1;
+    int nc = 0;
+    for (int i = 0; i < BK_N; i++) {
+        const int j = (i + 1) % BK_N;
+        const int w[6] = {i, j, BK_N + j, i, BK_N + j, BK_N + i};
+        for (int k = 0; k < 6; k++) {
+            fr[nc].idx = (uint16_t)w[k];
+            fr[nc++].u = 0;
+        }
+        const int b[6] = {2 * BK_N + i, 2 * BK_N + j, 3 * BK_N + i, 2 * BK_N + j, 3 * BK_N + j, 3 * BK_N + i};
+        for (int k = 0; k < 6; k++) {
+            fr[nc].idx = (uint16_t)b[k];
+            fr[nc++].u = 0;
+        }
+    }
+    int pc = 0;
+    for (int i = 0; i < BK_N; i++) {
+        const int j = (i + 1) % BK_N;
+        const int t[3] = {5 * BK_N, 4 * BK_N + i, 4 * BK_N + j};
+        for (int k = 0; k < 3; k++) {
+            const nj_vertex* v = &verts[t[k]];
+            pic[pc].idx = (uint16_t)t[k];
+            pic[pc].u = (v->pos.x + IX) / (2.0f * IX) * 0.98f;
+            pic[pc].v = (IY - v->pos.y) / (2.0f * IY) * 0.99f + 0.01f;
+            pc++;
+        }
+    }
+    free(m->verts);
+    free(m->polys[0].corners);
+    free(m->polys[1].corners);
+    m->verts = verts;
+    m->nverts = nv;
+    m->polys[0].corners = fr;
+    m->polys[0].ntris = nc / 3;
+    m->polys[1].corners = pic;
+    m->polys[1].ntris = pc / 3;
     return 0;
 }
