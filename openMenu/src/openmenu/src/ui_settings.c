@@ -20,6 +20,7 @@
 #include "serial_log.h"
 #include "sound.h"
 #include "ui_settings.h"
+#include "vm2/p2m_api.h"
 
 typedef struct {
     int action;        /* UIS_ACTION_*, 0 for a choice */
@@ -31,7 +32,18 @@ typedef struct {
     int count;
     const char* const* names;
     int sysoff;        /* nonzero: the choice is a byte of the BIOS system settings at 0x8C000078 + sysoff */
+    int live;          /* nonzero: a setting of the Pico2Maple firmware (P2M_*), read from and written to the device */
 } row_def;
+
+/* The Pico2Maple's own settings (dc1 API, p2m_api.h): shown at the end of the Settings list while one is plugged in. */
+enum { P2M_NONE, P2M_BRIGHT, P2M_FLIP, P2M_ICONS, P2M_SLOT, P2M_LAYOUT, P2M_AUTO, P2M_COUNT };
+#define P2M_ROWS (P2M_COUNT - 1)
+static const char* const p2m_bright_names[] = {"0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"};
+static const char* const p2m_flip_names[] = {"Normal", "Flipped"};
+static const char* const p2m_icon_names[] = {"BIOS icons 0-9", "Card image"};
+static const char* const p2m_slot_names[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Game ID"};
+static const char* const p2m_layout_names[] = {"Standard", "All", "Twin", "Fight", "Custom"};
+static const char* const p2m_auto_names[] = {"On", "Off"};
 
 static const char* const sort_modes[] = {"A-Z", "SD card order", "Release year"}; /* sf_sort 0, 1 (SORT_NAME), 2 (SORT_DATE) */
 static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
@@ -111,6 +123,12 @@ static const row_def rows[] = {
      on_off},
     {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
     {UIS_ACTION_ABOUT, UIS_ICON_OTHER, "Other", "About", "Version and credits", NULL, 0, NULL},
+    {0, UIS_ICON_VMU, "Pico2Maple", "Display brightness", "Brightness of the OLED screen", NULL, 11, p2m_bright_names, 0, P2M_BRIGHT},
+    {0, UIS_ICON_VMU, "Pico2Maple", "Flip display", "Turn the OLED screen 180 degrees", NULL, 2, p2m_flip_names, 0, P2M_FLIP},
+    {0, UIS_ICON_VMU, "Pico2Maple", "Memory card icons", "BIOS icons 0-9 per slot, or the card image", NULL, 2, p2m_icon_names, 0, P2M_ICONS},
+    {0, UIS_ICON_VMU, "Pico2Maple", "Memory card slot", "The slot the console sees (or the game's)", NULL, 11, p2m_slot_names, 0, P2M_SLOT},
+    {0, UIS_ICON_PAD, "Pico2Maple", "Pad layout", "Button layout of the USB pad", NULL, 5, p2m_layout_names, 0, P2M_LAYOUT},
+    {0, UIS_ICON_PAD, "Pico2Maple", "Keyboard/mouse switch", "Switch by itself to the one being used", NULL, 2, p2m_auto_names, 0, P2M_AUTO},
     /* shown on the Internet screen's Settings page */
     {0, -1, "Internet", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
      refresh_modes},
@@ -124,9 +142,76 @@ static const row_def rows[] = {
 
 #define VALID(r) ((r) >= 0 && (r) < NUM_ROWS)
 
+/* the Pico2Maple found when the Settings screen was opened, and what it said */
+static maple_device_t* p2m_dev;
+static uint8_t p2m_val[P2M_COUNT];
+
+static const char*
+p2m_key(int live) {
+    static const char* const keys[P2M_COUNT] = {"", "display.brightness", "display.flip", "vmu.icons", "vmu.slot", "port.self.layout",
+                                                 "port.self.switch.auto"};
+    return keys[live];
+}
+
+/* text of a choice as the firmware writes it, and the other way round (-1 when it is none of them) */
+static void
+p2m_text(int live, int choice, char* out, size_t cap) {
+    static const char* const flip[] = {"normal", "flipped"};
+    static const char* const icons[] = {"bios", "image"};
+    static const char* const layout[] = {"standard", "all", "twin", "fight", "custom"};
+    static const char* const onoff[] = {"on", "off"};
+    switch (live) {
+        case P2M_BRIGHT: snprintf(out, cap, "%d", choice * 10); break;
+        case P2M_FLIP: snprintf(out, cap, "%s", flip[choice & 1]); break;
+        case P2M_ICONS: snprintf(out, cap, "%s", icons[choice & 1]); break;
+        case P2M_SLOT:
+            if (choice >= 10) snprintf(out, cap, "gameid");
+            else snprintf(out, cap, "%d", choice + 1);
+            break;
+        case P2M_LAYOUT: snprintf(out, cap, "%s", layout[choice % 5]); break;
+        default: snprintf(out, cap, "%s", onoff[choice & 1]); break;
+    }
+}
+
+static int
+p2m_parse(int live, const char* v) {
+    static const char* const flip[] = {"normal", "flipped"};
+    static const char* const icons[] = {"bios", "image"};
+    static const char* const layout[] = {"standard", "all", "twin", "fight", "custom"};
+    static const char* const onoff[] = {"on", "off"};
+    const char* const* list = NULL;
+    int n = 0;
+    switch (live) {
+        case P2M_BRIGHT: return (atoi(v) + 5) / 10 > 10 ? 10 : (atoi(v) + 5) / 10;
+        case P2M_SLOT: return !strncasecmp(v, "game", 4) ? 10 : (atoi(v) >= 1 && atoi(v) <= 10 ? atoi(v) - 1 : 0);
+        case P2M_FLIP: list = flip, n = 2; break;
+        case P2M_ICONS: list = icons, n = 2; break;
+        case P2M_LAYOUT: list = layout, n = 5; break;
+        default: list = onoff, n = 2; break;
+    }
+    for (int i = 0; i < n; i++) {
+        if (!strcasecmp(v, list[i])) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+/* Look for a Pico2Maple and read its settings; call when the Settings screen opens, before uis_count(). */
+void
+uis_refresh_devices(void) {
+    p2m_dev = p2m_find();
+    for (int i = P2M_BRIGHT; p2m_dev && i < P2M_COUNT; i++) {
+        char v[32];
+        if (p2m_get(p2m_dev, p2m_key(i), v, sizeof(v)) == 0) {
+            p2m_val[i] = (uint8_t)p2m_parse(i, v);
+        }
+    }
+}
+
 int
 uis_count(void) {
-    return NUM_ROWS - NET_ROWS;
+    return NUM_ROWS - NET_ROWS - P2M_ROWS + (p2m_dev ? P2M_ROWS : 0);
 }
 
 int
@@ -196,6 +281,9 @@ uis_clock_migrate(void) {
 
 int
 uis_get(int row) {
+    if (VALID(row) && rows[row].live) {
+        return p2m_val[rows[row].live];
+    }
     if (VALID(row) && rows[row].sysoff) {
         int v = SYS(row);
         return v < rows[row].count ? v : 0;
@@ -215,6 +303,15 @@ uis_get(int row) {
 
 void
 uis_set(int row, int choice) {
+    if (VALID(row) && rows[row].live && choice >= 0 && choice < rows[row].count) {
+        char v[32];
+        p2m_text(rows[row].live, choice, v, sizeof(v));
+        if (p2m_dev && p2m_set(p2m_dev, p2m_key(rows[row].live), v) == 0) {
+            p2m_val[rows[row].live] = (uint8_t)choice;
+            p2m_request(p2m_dev, "call sys.commit\n", v, sizeof(v)); /* the firmware keeps what is asked for */
+        }
+        return;
+    }
     if (VALID(row) && rows[row].sysoff && choice >= 0 && choice < rows[row].count) {
         SYS(row) = (uint8_t)choice;
         sys_dirty = 1;
@@ -292,7 +389,7 @@ uis_opens_popup(int row) {
 
 void
 uis_change(int row, int delta) {
-    if (!VALID(row) || !(rows[row].var || rows[row].sysoff)) {
+    if (!VALID(row) || !(rows[row].var || rows[row].sysoff || rows[row].live)) {
         return;
     }
     int v = (uis_get(row) + delta) % rows[row].count;

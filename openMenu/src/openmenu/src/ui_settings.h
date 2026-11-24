@@ -14,6 +14,8 @@
 /* uis_count rows are the Settings list. The Internet screen's Settings page shows uis_net_count rows from uis_net_first on, with the
  * same calls (label, value, uis_change, uis_commit). */
 int uis_count(void);
+/* Look for a Pico2Maple (or other device with settings of its own) and read them; call before opening the Settings list, as the list grows by its rows. */
+void uis_refresh_devices(void);
 int uis_net_first(void);
 int uis_net_count(void);
 
