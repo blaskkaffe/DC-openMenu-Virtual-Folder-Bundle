@@ -643,9 +643,10 @@ draw_games(void) {
     }
     if (glist.side) { /* the list's field: the card's corners and colours, over the whole height */
         const float lx = 40.0f + 196.5f, lw = blist_row_right_px() - 40.0f, ly = 24.0f, lh = 420.0f;
-        gfx_rrect(lx, ly + 3.0f, lw, lh, 6.0f, PANE_Z, 0xFF3F4A88u);
-        gfx_rrect(lx, ly, lw, lh, 6.0f, PANE_Z + 0.00004f, 0xFF646F95u);
-        gfx_rrect(lx + 2.0f, ly + 2.0f, lw - 4.0f, lh - 4.0f, 5.0f, PANE_Z + 0.00008f, 0xFF535C90u);
+        const float pz = PANE_Z - 0.00006f; /* the rows are at 1/353.5 = 0.00283: the field stays behind them */
+        gfx_rrect(lx, ly + 3.0f, lw, lh, 6.0f, pz, 0xFF3F4A88u);
+        gfx_rrect(lx, ly, lw, lh, 6.0f, pz + 0.00004f, 0xFF646F95u);
+        gfx_rrect(lx + 2.0f, ly + 2.0f, lw - 4.0f, lh - 4.0f, 5.0f, pz + 0.00008f, 0xFF535C90u);
     }
     blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {
