@@ -319,15 +319,18 @@ X connects or hangs up from any page, B or BACK leaves. The empty player list sh
 
 ## Extra models in the BIOS style (sketch2)
 
-`src/bios_engine/src/bios_models.c` builds four models in code (no ROM data), ids from `BMODEL_BASE` (0x100):
+`src/bios_engine/src/bios_models.c` builds its models in code (no ROM data), ids from `BMODEL_BASE` (0x100):
 `BMODEL_PHONE` (classic telephone in the music note colour, plain white dial disc), `BMODEL_GLOBE` (low poly
-earth, green land raised over blue sea, small stand), `BMODEL_CASE_WHITE` and `BMODEL_CASE_PAL` (CD jewel
-cases, white spine / blue PAL style). Use the id as `bvm_obj.model` and also as its `texlist`; the scene
-draws them like ROM models.
+earth, green land raised over blue sea, small stand), and the three cases, which are not procedural: `BMODEL_CASE_WHITE`
+and `BMODEL_CASE_DARK` (CD jewel cases) and `BMODEL_CASE_PAL` (the blue PAL Dreamcast case) are built from the exported models in
+`src/bios_engine/src/case_models/` (triangle strips in millimetres, light baked into the vertex colours; 54, 54 and 144 triangles).
+The Play screen shows the PAL case for a game with a PAL serial, the white one for any other game and the dark one for an
+entry with no serial. Use the id as `bvm_obj.model` and also as its `texlist`; the scene draws them like ROM models.
 
 The jewel cases have two texture slots: slot 0 (`BMODEL_TEX_FRONT`) is the front picture (box art, UV 0..1,
 top-left origin), slot 1 (`BMODEL_TEX_BACK`) the back. In the app `gfx_model_bind_front(product)` puts the box
-art of a game on the front; the back is plain white until something is placed there.
+art of a game on the front; the rear label is plain until something is placed there. The spine label and the ribs of the exported
+models are flat colours (the average of their sample pictures).
 Triangle counts (budget about 330, the ROM icons have 208 to 486): phone 228, globe 320 (icosphere, 1280 with -DGLOBE_SUBDIV=3), cases 88 and 80.
 `models/*.obj` are the same models exported with `tools/bmodel_obj` (materials `front_art`, `back_art`).
 Preview: `BIOS_PREVIEW_ROT="22,-25,0" bios_preview dc_boot.bin out.ppm 5 <0..3> -10`.

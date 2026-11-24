@@ -8,7 +8,7 @@
 
 #include "bios_models.h"
 
-static const char* const names[BMODEL_COUNT] = {"phone", "globe", "case_white", "case_pal"};
+static const char* const names[BMODEL_COUNT] = {"phone", "globe", "case_white", "case_pal", "case_dark", "podium"};
 
 int
 main(int argc, char** argv) {

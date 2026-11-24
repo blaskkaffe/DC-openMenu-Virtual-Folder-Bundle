@@ -997,7 +997,7 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         static bcase bc;
         bcase_init(&bc);
-        bcase_show(&bc, BMODEL_CASE_PAL, "A", 1);
+        bcase_show(&bc, getenv("BIOS_PREVIEW_MODEL") ? atoi(getenv("BIOS_PREVIEW_MODEL")) : BMODEL_CASE_PAL, "A", 1); /* BIOS_PREVIEW_MODEL: a BMODEL id */
         for (int i = 0; i < 200; i++) bcase_step(&bc);
         float pt, pb;
         blist_rows_extent_px(&list, &pt, &pb);

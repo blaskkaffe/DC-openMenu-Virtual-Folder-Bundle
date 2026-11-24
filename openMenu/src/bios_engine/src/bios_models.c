@@ -6,13 +6,14 @@
 #include "bios_models.h"
 
 #include "bios_rom.h"
+#include "case_models/dc_model.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define MAX_VERTS 4096
-#define MAX_POLYS 12
+#define MAX_POLYS 64
 #define MAX_TRIS 1600
 #define PI_F 3.14159265f
 
@@ -134,19 +135,6 @@ quad(builder* b, int poly, v3 a, v3 bb, v3 c, v3 d, const float uv[4][2], v3 out
     }
     tri(b, poly, t0, NULL, uv ? u0 : NULL, out);
     tri(b, poly, t1, NULL, uv ? u1 : NULL, out);
-}
-
-/* Axis aligned box between two corners; faces listed in `mask` get polygon `poly` (bit 0..5 = +x -x +y -y +z -z). */
-static void
-box(builder* b, int poly, float x0, float y0, float z0, float x1, float y1, float z1) {
-    v3 c000 = v3m(x0, y0, z0), c100 = v3m(x1, y0, z0), c110 = v3m(x1, y1, z0), c010 = v3m(x0, y1, z0);
-    v3 c001 = v3m(x0, y0, z1), c101 = v3m(x1, y0, z1), c111 = v3m(x1, y1, z1), c011 = v3m(x0, y1, z1);
-    quad(b, poly, c100, c110, c111, c101, NULL, v3m(1, 0, 0));
-    quad(b, poly, c000, c001, c011, c010, NULL, v3m(-1, 0, 0));
-    quad(b, poly, c010, c011, c111, c110, NULL, v3m(0, 1, 0));
-    quad(b, poly, c000, c100, c101, c001, NULL, v3m(0, -1, 0));
-    quad(b, poly, c001, c101, c111, c011, NULL, v3m(0, 0, 1));
-    quad(b, poly, c000, c010, c110, c100, NULL, v3m(0, 0, -1));
 }
 
 /* Rectangular frustum standing on y: bottom half sizes (w0, d0) at y0, top (w1, d1) at y1, centred on (cx, cz). */
@@ -537,55 +525,101 @@ build_globe(builder* b) {
     }
 }
 
-/* The jewel cases. Width x, height y, depth z; scaled down to menu icon size. */
-static void
-build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int pal) {
-    const float S = 0.75f;
-    /* The PAL case has a wide blue spine band that also shows on the front, the picture fills the rest. */
-    const float hw = (pal ? 6.78f : 6.6f) * S, hh = 6.2f * S, hd = (pal ? 1.0f : 0.5f) * S; /* the PAL cases are about twice as thick: 20 mm against 10 (measured from a photo of a stack) */
-    const float spine_w = (pal ? 1.5f : 1.0f) * S;
-    /* art window on the front: 11.8 x 11.8 */
-    const float ax0 = pal ? -hw + spine_w : -5.4f * S, ax1 = hw - 0.2f * S, ay0 = -5.9f * S, ay1 = 5.9f * S;
-
-    /* polygon order is draw order (the PVR sorts by submission): what lies behind first, the
-     * pictures after the solid body, the translucent plastic last */
-    int tray = poly_new(b, -1, tray_c, 0);
-    int spine = poly_new(b, -1, spine_c, 0);
-    int mark = poly_new(b, -1, 0xFFFFFFFFu, 0);
-    int back = poly_new(b, BMODEL_TEX_BACK, 0xFFFFFFFFu, 0);
-    int front = poly_new(b, BMODEL_TEX_FRONT, 0xFFFFFFFFu, 0);
-    int edge = poly_new(b, -1, edge_c, STRIP_DOUBLE_SIDED); /* translucent plastic goes last */
-
-    float fuv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}}; /* bottom-left, bottom-right, top-right, top-left */
-    const float az = hd - 0.2f * S; /* the picture lies just behind the clear front: 2 mm gap */
-    quad(b, front, v3m(ax0, ay0, az), v3m(ax1, ay0, az), v3m(ax1, ay1, az), v3m(ax0, ay1, az), fuv, v3m(0, 0, 1));
-    /* the back picture covers the whole back plate; seen from behind, +x is on the left */
-    float buv[4][2] = {{1, 1}, {0, 1}, {0, 0}, {1, 0}};
-    float bz = -hd - 0.01f;
-    quad(b, back, v3m(-hw, -hh, bz), v3m(hw, -hh, bz), v3m(hw, hh, bz), v3m(-hw, hh, bz), buv, v3m(0, 0, -1));
-    /* tray (behind the picture) and the spine */
-    box(b, tray, -hw, -hh, -hd, hw, hh, -hd + 0.15f * S);
-    box(b, spine, -hw, -hh, -hd, -hw + spine_w, hh, hd);
-    if (pal) {
-        /* the embossed label panel on the spine */
-        int label = poly_new(b, -1, 0xFF3C66CCu, 0);
-        /* The label runs the length of the spine but leaves a rim of dark blue as thick as the top edge (0.3 cm)
-         * at both ends. It sits toward the front of the spine: 2 mm behind the front face, 13 mm wide. */
-        const float label_front = hd - 0.2f * S, label_back = label_front - 1.3f * S;
-        box(b, label, -hw - 0.04f, -hh + 0.3f * S, label_back, -hw + 0.02f, hh - 0.3f * S, label_front);
-    } else {
-        box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
+/* The jewel cases: the models made for the menu (case_models/, generated: triangle strips in millimetres, the light baked into the vertex colours),
+ * 125 mm tall, scaled to BMODEL_CASE_HEIGHT. The front and rear labels are the picture slots (texture 0 and 1); the spine label and the ribs are plain
+ * colours (the average of their pictures). Parts are drawn opaque first, then the clear ones. Every polygon of one colour in a part is one poly. */
+static uint32_t
+mul_argb(uint32_t c, uint32_t t) {
+    uint32_t r = 0;
+    for (int sh = 0; sh < 32; sh += 8) {
+        r |= ((((c >> sh) & 255u) * ((t >> sh) & 255u) + 127u) / 255u) << sh;
     }
-    /* clear plastic: the outer faces of the edges and the rim of the front lid. No inner walls, so the
-     * picture does not look like it lies at the bottom of a deep well. */
-    quad(b, edge, v3m(-hw, hh, -hd), v3m(hw, hh, -hd), v3m(hw, hh, hd), v3m(-hw, hh, hd), NULL, v3m(0, 1, 0));     /* top */
-    quad(b, edge, v3m(-hw, -hh, -hd), v3m(hw, -hh, -hd), v3m(hw, -hh, hd), v3m(-hw, -hh, hd), NULL, v3m(0, -1, 0)); /* bottom */
-    quad(b, edge, v3m(hw, -hh, -hd), v3m(hw, hh, -hd), v3m(hw, hh, hd), v3m(hw, -hh, hd), NULL, v3m(1, 0, 0));      /* right */
-    quad(b, edge, v3m(-hw, ay1, hd), v3m(hw, ay1, hd), v3m(hw, hh, hd), v3m(-hw, hh, hd), NULL, v3m(0, 0, 1));      /* front rim, top */
-    quad(b, edge, v3m(-hw, -hh, hd), v3m(hw, -hh, hd), v3m(hw, ay0, hd), v3m(-hw, ay0, hd), NULL, v3m(0, 0, 1));    /* bottom */
-    quad(b, edge, v3m(ax1, ay0, hd), v3m(hw, ay0, hd), v3m(hw, ay1, hd), v3m(ax1, ay1, hd), NULL, v3m(0, 0, 1));    /* right */
-    if (ax0 > -hw + spine_w + 0.001f) {
-        quad(b, edge, v3m(-hw + spine_w, ay0, hd), v3m(ax0, ay0, hd), v3m(ax0, ay1, hd), v3m(-hw + spine_w, ay1, hd), NULL, v3m(0, 0, 1));
+    return r;
+}
+
+static void
+build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
+    const float S = BMODEL_CASE_HEIGHT / 125.0f;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int pi = 0; pi < m->nparts; pi++) {
+            const dc_part_t* part = &m->parts[pi];
+            if (part->translucent != pass) {
+                continue;
+            }
+            int tex = -1;
+            uint32_t tint = 0xFFFFFFFFu;
+            if (part->texture >= 0) {
+                const char* f = m->tex[part->texture].file;
+                if (strstr(f, "label_front")) {
+                    tex = BMODEL_TEX_FRONT;
+                } else if (strstr(f, "label_rear")) {
+                    tex = BMODEL_TEX_BACK;
+                } else if (strstr(f, "spine")) {
+                    tint = spine_tint;
+                } else {
+                    tint = 0x24414141u; /* the ribs: faint dark lines, as their average */
+                }
+            }
+            int ntri = 0;
+            for (int st = 0; st < part->nstrips; st++) {
+                ntri += part->strip_len[st] - 2;
+            }
+            const int first = b->npolys;
+            const dc_vertex_t* src = part->verts;
+            for (int st = 0; st < part->nstrips; st++) {
+                const int n = part->strip_len[st];
+                const uint32_t col = mul_argb(src[0].argb, tint);
+                int g = first;
+                while (g < b->npolys && b->polys[g].diffuse != col) {
+                    g++;
+                }
+                if (g == b->npolys) {
+                    if (b->npolys >= MAX_POLYS) {
+                        b->err = 1;
+                        return;
+                    }
+                    bpoly* np = &b->polys[b->npolys++];
+                    np->tex = tex;
+                    np->diffuse = col;
+                    np->flags = STRIP_IGNORE_LIGHT | STRIP_DOUBLE_SIDED;
+                    np->ntris = 0;
+                    np->corners = (nj_corner*)calloc((size_t)ntri * 3, sizeof(nj_corner));
+                    if (!np->corners) {
+                        b->err = 1;
+                        return;
+                    }
+                }
+                bpoly* bp = &b->polys[g];
+                for (int t = 0; t + 2 < n; t++) {
+                    if (b->nverts + 3 > MAX_VERTS) {
+                        b->err = 1;
+                        return;
+                    }
+                    /* a strip alternates its winding: odd triangles are turned so all of them face the same way */
+                    const int ord[3] = {(t & 1) ? 1 : 0, (t & 1) ? 0 : 1, 2};
+                    v3 p[3];
+                    for (int k = 0; k < 3; k++) {
+                        const dc_vertex_t* sv = &src[t + ord[k]];
+                        p[k] = v3m(sv->x * S, sv->y * S, sv->z * S);
+                    }
+                    const v3 fn = norm(cross(sub(p[1], p[0]), sub(p[2], p[0])));
+                    for (int k = 0; k < 3; k++) {
+                        const dc_vertex_t* sv = &src[t + ord[k]];
+                        nj_vertex* v = &b->verts[b->nverts];
+                        memset(v, 0, sizeof(*v));
+                        v->pos = p[k];
+                        v->nrm = fn;
+                        v->valid = v->has_nrm = 1;
+                        nj_corner* c = &bp->corners[bp->ntris * 3 + k];
+                        c->idx = (uint16_t)b->nverts++;
+                        c->u = sv->u;
+                        c->v = sv->v;
+                    }
+                    bp->ntris++;
+                }
+                src += n;
+            }
+        }
     }
 }
 
@@ -603,8 +637,9 @@ bmodel_build(int id, nj_object* out) {
         case BMODEL_PHONE: build_phone(&b); break;
         case BMODEL_GLOBE: build_globe(&b); break;
         case BMODEL_PODIUM: build_podium(&b); break;
-        case BMODEL_CASE_WHITE: build_case(&b, 0xFFF4F4F8u, 0xFF2C2C34u, 0x70DCE6F0u, 0); break;
-        case BMODEL_CASE_PAL: build_case(&b, 0xFF1E3C96u, 0xFF1E3C96u, 0x802850B4u, 1); break;
+        case BMODEL_CASE_WHITE: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u); break;
+        case BMODEL_CASE_DARK: build_case(&b, &dc_model_cd_case_darkgray, 0xFF292D31u); break;
+        case BMODEL_CASE_PAL: build_case(&b, &dc_model_dreamcast_pal_case_blue, 0xFF20419Bu); break;
         default:
             builder_free(&b);
             return -1;
