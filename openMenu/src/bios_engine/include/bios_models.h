@@ -46,6 +46,9 @@ int bmodel_build(int id, nj_object* out);
 struct bios_rom;
 int bmodel_podium_digits(const struct bios_rom* rom, nj_object* out);
 
+/* The BACK marker's frame and picture (ROM model 0) rebuilt with four identical rounded corners. `out` is the loaded ROM model. 0, or -1 (left as it was). */
+int bmodel_fix_back(nj_object* out);
+
 #ifdef __cplusplus
 }
 #endif
