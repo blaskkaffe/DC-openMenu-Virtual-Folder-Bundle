@@ -815,6 +815,88 @@ ribs_texture(void) {
     return ribs_tex.valid ? &ribs_tex : NULL;
 }
 
+/* The PAL case's spine (BMODEL_TEX_SPINE): the blue spine with a lighter patch in the middle and the wordmark of the BIOS's own
+ * logo (the European one, no swirl) on it in dark ink, reading upwards along the spine. 32 x 256, the picture's width is the
+ * case's depth and its height the case's height. */
+static rom_tex spine_tex;
+static int spine_tried;
+static rom_tex*
+spine_texture(void) {
+    enum { W = 32, H = 256 };
+    if (spine_tex.valid || spine_tried || !g_rom) {
+        return spine_tex.valid ? &spine_tex : NULL;
+    }
+    spine_tried = 1;
+    bios_texture t;
+    uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+    if (!logo || bios_header_logo(g_rom, 2, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+        free(logo);
+        return NULL;
+    }
+    /* where the wordmark's ink is, so it is centred on the patch */
+    int x0 = LOGO_W, x1 = 0, y0 = LOGO_H, y1 = 0;
+    for (int y = 0; y < LOGO_H; y++) {
+        for (int x = 0; x < LOGO_W; x++) {
+            if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
+                x0 = x < x0 ? x : x0;
+                x1 = x > x1 ? x : x1;
+                y0 = y < y0 ? y : y0;
+                y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        free(logo);
+        return NULL;
+    }
+    const float sw = (float)(x1 - x0 + 1), sh = (float)(y1 - y0 + 1), scx = (float)x0 + sw / 2.0f, scy = (float)y0 + sh / 2.0f;
+    const float len = 120.0f, thick = 20.0f; /* the wordmark's size on the picture: along the spine, across it */
+    float s = len / sw; /* picture pixels per logo pixel */
+    if (sh * s > thick) {
+        s = thick / sh;
+    }
+    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
+    if (!px) {
+        free(logo);
+        return NULL;
+    }
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            /* the label: blue, with a lighter rounded patch */
+            float r = 0x20, g = 0x41, b = 0x9B;
+            float px_x = (float)x + 0.5f, px_y = (float)y + 0.5f;
+            float ex = px_x < 3.0f ? 3.0f - px_x : (px_x > W - 3.0f ? px_x - (W - 3.0f) : 0.0f);
+            float ey = px_y < 40.0f ? 40.0f - px_y : (px_y > H - 40.0f ? px_y - (H - 40.0f) : 0.0f);
+            const float cr = 6.0f; /* corner radius of the patch */
+            float inx = px_x - 3.0f, iny = px_y - 40.0f;
+            int inside = px_x >= 3.0f && px_x <= W - 3.0f && px_y >= 40.0f && px_y <= H - 40.0f;
+            if (inside) { /* round the four corners */
+                float dx = inx < cr ? cr - inx : ((W - 6.0f - inx) < cr ? cr - (W - 6.0f - inx) : 0.0f);
+                float dy = iny < cr ? cr - iny : ((H - 80.0f - iny) < cr ? cr - (H - 80.0f - iny) : 0.0f);
+                inside = dx * dx + dy * dy <= cr * cr;
+            }
+            (void)ex;
+            (void)ey;
+            if (inside) {
+                r = 0x3C, g = 0x66, b = 0xC8;
+                /* the wordmark, turned a quarter to the left (reading upwards): destination -> logo pixel */
+                float rx = px_x - W / 2.0f, ry = px_y - H / 2.0f;
+                float lx = scx + (-ry) / s, ly = scy + rx / s;
+                int ix = (int)lx, iy = (int)ly;
+                if (ix >= x0 && ix <= x1 && iy >= y0 && iy <= y1) {
+                    float a = (float)(logo[iy * LOGO_W + ix] >> 24) / 255.0f;
+                    r += (0x10 - r) * a, g += (0x18 - g) * a, b += (0x28 - b) * a;
+                }
+            }
+            px[y * W + x] = (unsigned short)(0xF000u | ((unsigned)(r + 8) >> 4) << 8 | ((unsigned)(g + 8) >> 4) << 4 | ((unsigned)(b + 8) >> 4));
+        }
+    }
+    upload_argb4444(px, W, H, &spine_tex);
+    free(px);
+    free(logo);
+    return spine_tex.valid ? &spine_tex : NULL;
+}
+
 static rom_tex*
 get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.b == 0) {
@@ -830,6 +912,12 @@ get_rom_texture_uncached(bscene_texref ref) {
             art_entry* e = art_get(model_front_product, 1);
             if (e && e->tex.valid) {
                 return &e->tex;
+            }
+        }
+        if (ref.b == BMODEL_TEX_SPINE) {
+            rom_tex* r = spine_texture();
+            if (r) {
+                return r;
             }
         }
         if (ref.b == BMODEL_TEX_RIBS) {
