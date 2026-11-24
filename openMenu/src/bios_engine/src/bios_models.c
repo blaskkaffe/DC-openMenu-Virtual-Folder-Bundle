@@ -557,7 +557,11 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                 } else if (strstr(f, "label_rear")) {
                     tex = BMODEL_TEX_BACK;
                 } else if (strstr(f, "spine")) {
-                    tint = spine_tint;
+                    if (!ribbed) {
+                        tex = BMODEL_TEX_SPINE; /* the PAL case: the spine label with the BIOS's Dreamcast wordmark (made by gfx) */
+                    } else {
+                        tint = spine_tint;
+                    }
                 } else {
                     tint = 0x24414141u; /* the ribs: faint dark lines, as their average */
                 }
