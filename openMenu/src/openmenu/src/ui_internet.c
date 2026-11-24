@@ -2231,11 +2231,8 @@ draw_chat(int w) {
             text_cut(hint, (int)((right - x - bw - 24.0f) / CHAR_W), x + 8.0f, CHAT_BAR_Y + 1.0f, hcol);
             say_on = 0; /* the button is a steady 3D oval in the A button's red (grey when it cannot be used): no blinking green one */
             say_dead = dead;
-            {
-                const float bwid = (float)gfx_text_width(btn) + 28.0f;
-                key_oval(right - bwid / 2.0f + 4.0f, CHAT_BAR_Y + 14.0f, bwid / BTN_OVAL_PX, 0.6f, 1, dead ? 0xF0606878u : 0xF0E03C3Cu);
-            }
-            gfx_text(btn, right - (float)gfx_text_width(btn) - 10.0f, CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
+            key_oval(right - (float)gfx_text_width(btn) - 9.0f, CHAT_BAR_Y + 15.0f, 0.68f, 0.68f, 1, dead ? 0xF0606878u : 0xF0E03C3Cu); /* as the BIOS: 9 px left of the word */
+            gfx_text(btn, right - (float)gfx_text_width(btn), CHAT_BAR_Y + 1.0f, TEXT_Z, dead ? DIM : WHITE, 1);
         }
     }
     if (st->state == DC99_CHAT_FAILED && st->note[0] && n > 0) {
@@ -2597,13 +2594,12 @@ draw_popup_buttons(const char* words) {
         {
             button_t pb = popup_button_for(word); /* the colour of the controller button that does it: A red, B blue, X yellow, Y green */
             uint32_t pc = pb == BTN_A ? 0xF0E03C3Cu : pb == BTN_B ? 0xF02F6FE0u : pb == BTN_X ? 0xF0E0C030u : 0xF02FB050u;
-            const float bwid = (float)gfx_text_width(word) + 28.0f;
-            key_oval(x - 14.0f + bwid / 2.0f, lay_foot + 12.0f, bwid / BTN_OVAL_PX, 0.6f, 1, pc);
-            gfx_text(word, x, lay_foot, TEXT_Z, pb == BTN_X ? 0xFF202020u : WHITE, 1);
+            key_oval(x - 6.0f, lay_foot + 14.0f, 0.68f, 0.68f, 1, pc); /* the oval as it always was (never stretched), beside its word */
+            gfx_text(word, x, lay_foot, TEXT_Z, WHITE, 1);
         }
         if (npbtn < 4) {
-            pbtn[npbtn].x0 = x - 14.0f;
-            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + 14.0f;
+            pbtn[npbtn].x0 = x - BTN_LEFT;
+            pbtn[npbtn].x1 = x + (float)gfx_text_width(word) + BTN_GAP / 2.0f;
             pbtn[npbtn].y0 = lay_foot - 6.0f;
             pbtn[npbtn].y1 = lay_foot + 32.0f;
             pbtn[npbtn++].b = popup_button_for(word);
