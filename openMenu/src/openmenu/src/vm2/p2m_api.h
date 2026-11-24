@@ -1,4 +1,4 @@
-/* p2m_api: the "dc1" text API of the Pico2Maple firmware (2.5 and later), spoken over Maple command 0x22 to its memory card unit.
+/* p2m_api: the "dc1" text API of the Pico2Maple firmware (2.5 and later), spoken over Maple command 0x22 to the unit on the bus (the controller), never the memory card.
  * A request is "dc1\n" and lines "get <key>", "set <key> <value>", "call <action>"; the answer is "dc1\n" and one "ok <key> <value>" or
  * "err <key> <why>" line each. Keys: display.brightness (0-100), display.flip (normal|flipped|toggle), vmu.icons (bios|image),
  * vmu.slot (1-10|gameid), port.self.layout, port.self.switch.auto (on|off), port.self.mode, sys.commit ... */
@@ -8,7 +8,7 @@
 
 #include <dc/maple.h>
 
-/* The first memory card unit that answers as a Pico2Maple, or NULL. Asks each memory card (a blocking Maple round trip). */
+/* The first port whose bus device answers "get hello.name" as Pico2Maple, or NULL (a blocking Maple round trip per port). */
 maple_device_t* p2m_find(void);
 
 /* Send the request lines (without the "dc1" line) and copy the answer text (without its "dc1" line) into out. 0 on success. */
