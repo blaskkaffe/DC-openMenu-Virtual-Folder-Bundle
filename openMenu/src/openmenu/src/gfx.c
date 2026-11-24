@@ -256,7 +256,7 @@ enum { JOB_FREE = 0, JOB_QUEUED, JOB_READING, JOB_DONE, JOB_FAILED, JOB_ERROR };
 typedef struct {
     volatile int state;
     char id[20];
-    int box;
+    int box; /* 0 disc label / icon, 1 box front, 2 back, 3 spine */
     int entry;
     uint8_t* buf;
     uint32_t size; /* bytes of pixel data after the 0x20 byte header */
@@ -269,9 +269,10 @@ static kthread_t* art_thread;
 static int art_started;
 
 static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
+static dat_file dat_back, dat_back_ex, dat_spine, dat_spine_ex; /* BACK.DAT, SPINE.DAT: the case's back and spine pictures (BOX.DAT's format; _EX wins) */
 static dat_file dat_disc; /* DISC.DAT: the games' own disc labels (their 0GDTEX.PVR), collected by the card manager */
 static int dats_loaded;
-static int dat_ok[5], dat_tries[5];
+static int dat_ok[9], dat_tries[9];
 static uint32_t dat_retry_at;
 static art_entry art_cache[ART_SLOTS];
 static char row_product[BLIST_MAX_SLOTS][16];
@@ -285,13 +286,13 @@ static int art_jobs_idle(void);
  * been ready), but only while the loader thread is not reading from them. */
 static void
 art_load_dats(void) {
-    static dat_file* const dats[5] = {&dat_disc, &dat_icon, &dat_icon_ex, &dat_box, &dat_box_ex};
-    static const char* const names[5] = {"DISC.DAT", "ICON.DAT", "ICON_EX.DAT", "BOX.DAT", "BOX_EX.DAT"};
+    static dat_file* const dats[9] = {&dat_disc, &dat_icon, &dat_icon_ex, &dat_box, &dat_box_ex, &dat_back, &dat_back_ex, &dat_spine, &dat_spine_ex};
+    static const char* const names[9] = {"DISC.DAT", "ICON.DAT", "ICON_EX.DAT", "BOX.DAT", "BOX_EX.DAT", "BACK.DAT", "BACK_EX.DAT", "SPINE.DAT", "SPINE_EX.DAT"};
     if (dats_loaded == 2 || (dats_loaded && (frame_no < dat_retry_at || !art_jobs_idle()))) {
         return;
     }
     int pending = 0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 9; i++) {
         if (dat_ok[i] || dat_tries[i] >= DAT_RETRIES) {
             continue;
         }
@@ -375,8 +376,9 @@ art_worker(void* param) {
             j->state = JOB_READING;
             uint64_t t0 = timer_us_gettime64();
             /* disc labels: the game's own label (DISC.DAT) first; then the add-on file wins over the main one */
-            const dat_file* order[3] = {j->box ? NULL : &dat_disc, j->box ? &dat_box_ex : &dat_icon_ex,
-                                        j->box ? &dat_box : &dat_icon};
+            const dat_file* order[3] = {j->box ? NULL : &dat_disc,
+                                        j->box == 1 ? &dat_box_ex : j->box == 2 ? &dat_back_ex : j->box == 3 ? &dat_spine_ex : &dat_icon_ex,
+                                        j->box == 1 ? &dat_box : j->box == 2 ? &dat_back : j->box == 3 ? &dat_spine : &dat_icon};
             int got = 0, error = 0;
             for (int k = 0; k < 3 && got != 1; k++) {
                 if (order[k]) {
@@ -494,7 +496,7 @@ art_get(const char* product, int box) {
     }
     art_load_dats();
     const char* id = serial_santize_art(product);
-    snprintf(key, sizeof(key), "%s%.17s", box ? "#" : "", id);
+    snprintf(key, sizeof(key), "%s%.17s", box == 1 ? "#" : box == 2 ? "%" : box == 3 ? "^" : "", id);
     art_entry* free_slot = NULL;
     art_entry* oldest = NULL;
     for (int i = 0; i < ART_SLOTS; i++) {
@@ -805,16 +807,18 @@ get_rom_texture(bscene_texref ref) {
 static rom_tex ribs_tex;
 static rom_tex*
 ribs_texture(void) {
-    static const char pattern[] = "ggggggghhhhcccggggggghhhhcccgggggggghhhccccggggggghhhccccggggggg";
+    /* 8 even ribs across 64 columns (a repeat is 9.1 mm: 1.14 mm per rib); rows 0..3 and 12..15 are plain white (the 0.8 mm at the
+     * sides of the band stay untextured), the ribs are in rows 4..11 */
+    static const unsigned char rib[8] = {0xF, 0xF, 0xE, 0xC, 0xB, 0xB, 0xC, 0xE};
     if (!ribs_tex.valid) {
-        unsigned short px[64 * 8];
-        for (int x = 0; x < 64; x++) {
-            unsigned v = pattern[x] == 'g' ? 0xD : (pattern[x] == 'h' ? 0xF : 0xE);
-            for (int y = 0; y < 8; y++) {
+        unsigned short px[64 * 16];
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 64; x++) {
+                unsigned v = (y < 4 || y >= 12) ? 0xFu : rib[x & 7];
                 px[y * 64 + x] = (unsigned short)(0xF000u | (v << 8) | (v << 4) | v);
             }
         }
-        upload_argb4444(px, 64, 8, &ribs_tex);
+        upload_argb4444(px, 64, 16, &ribs_tex);
     }
     return ribs_tex.valid ? &ribs_tex : NULL;
 }
@@ -870,6 +874,10 @@ generic_cover(int pal, int back) {
     int x0 = 256, x1 = 0, y0 = 256, y1 = 0;
     for (int y = 90; y < 175; y++) {
         for (int x = 165; x < 250; x++) {
+            const float rr0 = (float)(x - 128), rr1 = (float)(y - 128);
+            if (rr0 * rr0 + rr1 * rr1 > 112.0f * 112.0f) {
+                continue; /* the disc's rim is not part of the logo */
+            }
             uint32_t c = d[y * 256 + x];
             float df = fabsf((float)((c >> 16) & 255) - DISC_GREY);
             float dg = fabsf((float)((c >> 8) & 255) - DISC_GREY);
@@ -889,7 +897,10 @@ generic_cover(int pal, int back) {
     }
     const float lw = (float)(x1 - x0 + 1), lh = (float)(y1 - y0 + 1);
     const float want = back ? 66.0f : 88.0f; /* the logo's width on the picture */
-    const float sc = want / lw;              /* picture pixels per disc pixel */
+    const float sc = want / lw;              /* picture pixels per disc pixel, vertically */
+    /* the label is lw_mm x 120 mm: the picture is square, so the logo is made narrower to look right once stretched over it */
+    const float lw_mm = pal ? (back ? 138.3f : 120.0f) : (back ? 139.6f : 120.0f);
+    const float scx = sc * 120.0f / lw_mm;
     const float cx = (float)N / 2.0f, cy = (float)N / 2.0f;
     for (int y = 0; y < N; y++) {
         for (int x = 0; x < N; x++) {
@@ -900,7 +911,7 @@ generic_cover(int pal, int back) {
                 r = (float)((bgc >> 16) & 255), g = (float)((bgc >> 8) & 255), b = (float)(bgc & 255);
             }
             /* logo pixel for this picture pixel, bilinear */
-            float fx = (float)x0 + (x + 0.5f - cx) / sc + lw / 2.0f - 0.5f, fy = (float)y0 + (y + 0.5f - cy) / sc + lh / 2.0f - 0.5f;
+            float fx = (float)x0 + (x + 0.5f - cx) / scx + lw / 2.0f - 0.5f, fy = (float)y0 + (y + 0.5f - cy) / sc + lh / 2.0f - 0.5f;
             if (fx >= (float)x0 - 1 && fx <= (float)x1 + 1 && fy >= (float)y0 - 1 && fy <= (float)y1 + 1) {
                 int ix = (int)floorf(fx), iy = (int)floorf(fy);
                 float ax = fx - (float)ix, ay = fy - (float)iy;
@@ -909,6 +920,10 @@ generic_cover(int pal, int back) {
                     int xx = ix + (k & 1), yy = iy + (k >> 1);
                     float w = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
                     if (xx < 0 || xx > 255 || yy < 0 || yy > 255) {
+                        continue;
+                    }
+                    if ((xx - 128) * (xx - 128) + (yy - 128) * (yy - 128) > 112 * 112) {
+                        cr += w * 255.0f * 1.25f, cg += w * 255.0f * 1.25f, cb += w * 255.0f * 1.25f; /* outside the logo: paper */
                         continue;
                     }
                     uint32_t c = d[yy * 256 + xx];
@@ -932,6 +947,65 @@ generic_cover(int pal, int back) {
     free(px);
     free(d);
     return out->valid ? out : NULL;
+}
+
+/* The PAL case's hinge bar (BMODEL_TEX_PILL): 8 x 123 mm, dark blue; the lighter rounded pill (full width, 51 mm tall, corners of 3.2 mm) in
+ * the middle with the swirl of the BIOS's logo in white on it. 32 x 512. */
+static rom_tex pill_tex;
+static rom_tex*
+pill_texture(void) {
+    enum { W = 32, H = 512 };
+    static int tried;
+    if (pill_tex.valid || tried || !g_rom) {
+        return pill_tex.valid ? &pill_tex : NULL;
+    }
+    tried = 1;
+    bios_texture t;
+    uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
+    if (!px || !logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+        free(logo);
+        free(px);
+        return NULL;
+    }
+    int y0 = LOGO_H, y1 = 0;
+    for (int y = 0; y < LOGO_H; y++) {
+        for (int x = 0; x < LOGO_SWIRL_W; x++) {
+            if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
+                y0 = y < y0 ? y : y0;
+                y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    const float sh = (float)(y1 - y0 + 1), sw = (float)LOGO_SWIRL_W;
+    const float ppm_x = (float)W / 8.0f, ppm_y = (float)H / 123.0f; /* picture pixels per mm */
+    const float swirl_mm = 6.0f;
+    const float sx = swirl_mm * ppm_x / sw, sy = swirl_mm * ppm_y / (sw > sh ? sw : sh); /* picture pixels per logo pixel, each way */
+    const float cx = (float)W / 2.0f, cy = (61.5f - 0.0f) * ppm_y; /* the middle of the bar */
+    const float pt = (61.5f - 25.5f) * ppm_y, pb = (61.5f + 25.5f) * ppm_y, rad = 3.2f * ppm_x;
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            float r = 0x0D, g = 0x2C, b = 0x89;
+            const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
+            if (fy >= pt && fy <= pb && fx >= 1.5f && fx <= (float)W - 1.5f) {
+                float dx = fx < 1.5f + rad ? 1.5f + rad - fx : (fx > (float)W - 1.5f - rad ? fx - ((float)W - 1.5f - rad) : 0.0f);
+                float dy = fy < pt + rad ? pt + rad - fy : (fy > pb - rad ? fy - (pb - rad) : 0.0f);
+                if (dx * dx + dy * dy <= rad * rad) {
+                    r = 0x1E, g = 0x48, b = 0xAD;
+                }
+            }
+            const float lx = sw / 2.0f + (fx - cx) / sx, ly = (float)y0 + sh / 2.0f + (fy - cy) / sy;
+            if (lx >= 0 && lx < (float)LOGO_SWIRL_W && ly >= (float)y0 && ly <= (float)y1) {
+                float a = (float)(logo[(int)ly * LOGO_W + (int)lx] >> 24) / 255.0f;
+                r += (255.0f - r) * a, g += (255.0f - g) * a, b += (255.0f - b) * a;
+            }
+            px[y * W + x] = pack4444(r * 16.0f / 16.0f, g, b);
+        }
+    }
+    upload_argb4444(px, W, H, &pill_tex);
+    free(px);
+    free(logo);
+    return pill_tex.valid ? &pill_tex : NULL;
 }
 
 /* The cases' spines (BMODEL_TEX_SPINE): a generic label per region with the game's own title and product code on it, like the real ones:
@@ -1029,6 +1103,10 @@ spine_texture(int kind) {
     const float* patch = col[kind][1];
     const float* ink = col[kind][2];
     const float* band = col[kind][3];
+    /* The label is depth x 120 mm (7 mm on the NTSC cases, 15.4 on the PAL one): picture pixels per mm across over those along. The logo and
+     * the letters are drawn that much wider across than along, so they are not stretched on the case. */
+    const float depth_mm = kind == SPINE_PAL ? 15.4f : 7.03f;
+    const float ra = ((float)W / depth_mm) / ((float)H / 120.0f);
     const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
@@ -1057,13 +1135,13 @@ spine_texture(int kind) {
     if (logo && logo_x1 > logo_x0) {
         const float sw = (float)(logo_x1 - logo_x0 + 1), sh = (float)(logo_y1 - logo_y0 + 1);
         float s = 118.0f / sw;
-        if (sh * s > 34.0f) {
-            s = 34.0f / sh;
+        if (sh * s * ra > 0.6f * (float)W) {
+            s = 0.6f * (float)W / (sh * ra);
         }
         const float cy = (float)H - 30.0f - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
-                float lx = (float)logo_x0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)logo_y0 + sh / 2.0f + ((float)x + 0.5f - cx) / s;
+                float lx = (float)logo_x0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)logo_y0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
                 int ix = (int)lx, iy = (int)ly;
                 if (lx >= (float)logo_x0 && ix <= logo_x1 && ly >= (float)logo_y0 && iy <= logo_y1) {
                     float a = (float)(logo[iy * LOGO_W + ix] >> 24) / 255.0f;
@@ -1089,10 +1167,10 @@ spine_texture(int kind) {
         if (sl > best) {
             sl = best;
         }
-        float st = sl < best * 0.6f ? best * 0.6f : sl; /* across it: condensed a little before the letters get too small */
-        if (pass == 0 && sl > st) {
-            st = sl;
+        if (sl * ra * 24.0f > 0.55f * (float)W) {
+            sl = 0.55f * (float)W / (24.0f * ra); /* the letters fit across the label */
         }
+        const float st = sl * ra; /* across it: in proportion */
         const float cxp = (float)W / 2.0f;
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
@@ -1164,12 +1242,26 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_BACK) {
+            art_entry* e = art_get(model_front_product, 2); /* BACK.DAT */
+            if (e && e->tex.valid) {
+                return &e->tex;
+            }
             rom_tex* r = generic_cover(ref.a == BMODEL_CASE_PAL, 1);
             if (r) {
                 return r;
             }
         }
+        if (ref.b == BMODEL_TEX_PILL) {
+            rom_tex* r = pill_texture();
+            if (r) {
+                return r;
+            }
+        }
         if (ref.b == BMODEL_TEX_SPINE) {
+            art_entry* e = art_get(model_front_product, 3); /* SPINE.DAT */
+            if (e && e->tex.valid) {
+                return &e->tex;
+            }
             rom_tex* r = spine_texture(ref.a == BMODEL_CASE_PAL ? SPINE_PAL : ref.a == BMODEL_CASE_WHITE ? SPINE_J : SPINE_US);
             if (r) {
                 return r;

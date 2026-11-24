@@ -14,7 +14,7 @@
 #ifndef BLIST_SIDE_CASE_PCT
 #define BLIST_SIDE_CASE_PCT 40
 #endif
-#define BLIST_SIDE_DY (120.0f * (float)BLIST_SIDE_CASE_PCT / 100.0f)
+#define BLIST_SIDE_DY 54.0f /* the card is square (186 x 186) above its 60 px of information lines: 246 tall, 54 more than the first design */
 
 #ifdef __cplusplus
 extern "C" {
