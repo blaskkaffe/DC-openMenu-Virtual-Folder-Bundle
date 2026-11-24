@@ -537,6 +537,50 @@ mul_argb(uint32_t c, uint32_t t) {
     return r;
 }
 
+/* The label quads of the cases are 120 mm tall (the pictures have a 1:1 pixel ratio: front 120 x 120, back about 139 x 120, spine 7 / 15.4 x 120):
+ * the model's labels are moved to those sizes. The front of the NTSC cases is the 120 mm square at the right edge; the hinge side
+ * beside it is a plain quad (below). */
+static float
+remap_f(float v, float o0, float o1, float n0, float n1) {
+    return o1 > o0 ? n0 + (v - o0) / (o1 - o0) * (n1 - n0) : v;
+}
+
+static void
+fit_label(dc_vertex_t v[4], const char* name, int pal) {
+    float x0 = v[0].x, x1 = v[0].x, z0 = v[0].z, z1 = v[0].z;
+    for (int i = 1; i < 4; i++) {
+        x0 = v[i].x < x0 ? v[i].x : x0;
+        x1 = v[i].x > x1 ? v[i].x : x1;
+        z0 = v[i].z < z0 ? v[i].z : z0;
+        z1 = v[i].z > z1 ? v[i].z : z1;
+    }
+    for (int i = 0; i < 4; i++) {
+        v[i].y = v[i].y > 0.0f ? 60.0f : -60.0f;
+        if (strstr(name, "label_front")) {
+            v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : -50.0f, pal ? 67.0f : 70.0f);
+        } else if (strstr(name, "label_spine")) {
+            v[i].z = remap_f(v[i].z, z0, z1, pal ? -8.4f : -3.77f, pal ? 7.0f : 3.27f);
+        }
+    }
+}
+
+/* The PAL case's hinge bar: the blue pill and the carrier it belongs to made one flat box, as wide as the pill (8 mm), over the whole
+ * height of the front's hinge side; its front is a picture (BMODEL_TEX_PILL) with the lighter rounded pill and the swirl. */
+static void
+build_pal_bar(builder* b, float S) {
+    const float x0 = -66.0f, x1 = -58.0f, yt = 61.5f, yb = -61.5f, zb = 8.5f, zf = 8.9f;
+    const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
+    static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
+    quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
+    int q = poly_new(b, -1, 0xFF0D2C89u, STRIP_IGNORE_LIGHT);
+    const v3 A0 = v3m(x0 * S, yt * S, zb * S), B0 = v3m(x1 * S, yt * S, zb * S), C0 = v3m(x1 * S, yb * S, zb * S), D0 = v3m(x0 * S, yb * S, zb * S);
+    quad(b, q, A0, A, D, D0, NULL, v3m(-1, 0, 0));
+    quad(b, q, B, B0, C0, C, NULL, v3m(1, 0, 0));
+    quad(b, q, A0, B0, B, A, NULL, v3m(0, 1, 0));
+    quad(b, q, D, C, C0, D0, NULL, v3m(0, -1, 0));
+}
+
 static void
 build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
     const float S = BMODEL_CASE_HEIGHT / 125.0f;
@@ -547,6 +591,24 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
             const dc_part_t* part = &m->parts[pi];
             if (part->translucent != pass) {
                 continue;
+            }
+            if (!strcmp(part->name, "hinge_pill")) {
+                build_pal_bar(b, S); /* the pill and the carrier: one flat box */
+                continue;
+            }
+            dc_vertex_t lab[4];
+            const dc_vertex_t* part_verts = part->verts;
+            if (strstr(part->name, "label_") && part->nstrips == 1 && part->strip_len[0] == 4) {
+                memcpy(lab, part->verts, sizeof(lab));
+                fit_label(lab, part->name, !ribbed);
+                part_verts = lab;
+                if (ribbed && strstr(part->name, "label_front")) { /* the hinge side beside the 120 mm front: plain */
+                    const uint32_t fill = m == &dc_model_cd_case_white ? 0xFFD8D8D8u : 0xFF2E2E2Eu;
+                    int hp = poly_new(b, -1, fill, STRIP_IGNORE_LIGHT);
+                    const float zf = lab[0].z;
+                    quad(b, hp, v3m(-70.5f * S, 60.0f * S, zf * S), v3m(-50.0f * S, 60.0f * S, zf * S), v3m(-50.0f * S, -60.0f * S, zf * S),
+                         v3m(-70.5f * S, -60.0f * S, zf * S), NULL, v3m(0, 0, 1));
+                }
             }
             int tex = -1;
             uint32_t tint = 0xFFFFFFFFu;
@@ -568,7 +630,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                 ntri += part->strip_len[st] - 2;
             }
             const int first = b->npolys;
-            const dc_vertex_t* src = part->verts;
+            const dc_vertex_t* src = part_verts;
             for (int st = 0; st < part->nstrips; st++) {
                 const int n = part->strip_len[st];
                 /* the NTSC cases' ribs: the outer top, bottom and right edges and the hinge strip (white or black, the spine's) carry the ribbed
@@ -580,6 +642,29 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     rib_axis = st == 0 ? 0 : 1;
                 }
                 const int stex = rib_axis >= 0 ? BMODEL_TEX_RIBS : tex;
+                /* across the ribbed band: 0.8 mm at each side stay plain (the texture's rows 0..3 and 12..15 are plain, the ribs in between) */
+                int cax = -1;
+                float cmin = 0.0f, cext = 0.0f;
+                if (rib_axis >= 0) {
+                    float mn[3] = {1e9f, 1e9f, 1e9f}, mxv[3] = {-1e9f, -1e9f, -1e9f};
+                    for (int i = 0; i < n; i++) {
+                        const float c3[3] = {src[i].x, src[i].y, src[i].z};
+                        for (int k = 0; k < 3; k++) {
+                            mn[k] = c3[k] < mn[k] ? c3[k] : mn[k];
+                            mxv[k] = c3[k] > mxv[k] ? c3[k] : mxv[k];
+                        }
+                    }
+                    for (int k = 0; k < 3; k++) {
+                        if (k != rib_axis && mxv[k] - mn[k] > cext) {
+                            cext = mxv[k] - mn[k];
+                            cmin = mn[k];
+                            cax = k;
+                        }
+                    }
+                    if (cext < 1.7f) {
+                        cax = -1;
+                    }
+                }
                 const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(src[0].argb, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
                 while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
@@ -625,7 +710,14 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                         nj_corner* c = &bp->corners[bp->ntris * 3 + k];
                         c->idx = (uint16_t)b->nverts++;
                         c->u = rib_axis < 0 ? sv->u : (rib_axis == 0 ? sv->x : sv->y) / RIB_MM;
-                        c->v = rib_axis < 0 ? sv->v : 0.5f;
+                        if (rib_axis < 0) {
+                            c->v = sv->v;
+                        } else if (cax < 0) {
+                            c->v = 0.5f;
+                        } else {
+                            const float cc = cax == 0 ? sv->x : (cax == 1 ? sv->y : sv->z);
+                            c->v = 0.25f + ((cc - cmin) - 0.8f) / (cext - 1.6f) * 0.5f;
+                        }
                     }
                     bp->ntris++;
                 }

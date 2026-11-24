@@ -462,8 +462,36 @@ button_text(int i) {
     return gfx_text_width(lng) <= BUTTON_TEXT_W ? lng : sht;
 }
 
+/* The list-view button of the side layout shows the option last chosen from its menu (Recent, Favorites, Folders, the sort, Group). */
+static int viewmenu_choice = LBTN_SORT;
+static int viewmenu_open, viewmenu_row;
+static const int viewmenu_order[5] = {LBTN_RECENT, LBTN_FAVORITES, LBTN_FOLDERS, LBTN_SORT, LBTN_GROUP};
+
+static const char*
+viewmenu_long(int lbtn) {
+    switch (lbtn) {
+        case LBTN_RECENT: return "Recent";
+        case LBTN_FAVORITES: return "Favorites";
+        case LBTN_FOLDERS: return "Folders";
+        case LBTN_SORT: return sort_long[sort_index()];
+        default: return "Group None";
+    }
+}
+
+static const char*
+viewmenu_name(int row) {
+    return viewmenu_long(viewmenu_order[row]);
+}
+
 static void
 draw_button_text(void) {
+    if (glist.side) {
+        const char* text = button_text(viewmenu_choice);
+        float x, y;
+        blist_button_center_px_l(&glist, 0, &x, &y);
+        gfx_text(text, x - (float)gfx_text_width(text) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
+        return;
+    }
     for (int i = 0; i < BLIST_BUTTONS; i++) {
         const char* text = button_text(i);
         if (text[0]) {
@@ -524,25 +552,47 @@ cycle_sort(void) {
     }
 }
 
-/* What we know of a game for the info panel: product code and region, then players, VMU blocks and discs. */
+/* What we know of a game for the card under the case: the year of release and the region, then the disc (n/m) and the players
+ * (offline, and "+Net" when the game plays online; the database has no count of online players). */
 static int
 game_info_lines(const gd_item* cur, char out[2][24]) {
     out[0][0] = out[1][0] = '\0';
     if (!cur || uil_is_folder(cur)) {
         return 0;
     }
-    snprintf(out[0], sizeof(out[0]), "%.10s %.4s", cur->product, cur->region);
-    int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
-    int players = 0, blocks = 0;
+    char year[8] = "";
+    if (cur->date[0] >= '0' && cur->date[0] <= '9' && cur->date[3] >= '0' && cur->date[3] <= '9') {
+        snprintf(year, sizeof(year), "%.4s", cur->date);
+    }
+    int nreg = 0;
+    const char* reg = "";
+    for (const char* r = cur->region; *r && r < cur->region + 3; r++) {
+        nreg += *r == 'J' || *r == 'U' || *r == 'E';
+        reg = *r == 'J' ? "Japan" : *r == 'U' ? "USA" : *r == 'E' ? "Europe" : reg;
+    }
+    if (nreg > 1) {
+        reg = "World";
+    } else if (nreg == 0) {
+        reg = cur->product[0] && serial_is_pal(cur->product) ? "Europe" : "";
+    }
+    snprintf(out[0], sizeof(out[0]), "%s%s%s", year, year[0] && reg[0] ? " " : "", reg);
+    int total = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
+    int num = atoi(cur->disc);
+    total = total > 0 ? total : 1;
+    num = num > 0 && num <= total ? num : 1;
+    int players = 0, net = 0;
     struct db_item* meta = NULL;
     if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
         players = meta->num_players;
-        blocks = meta->vmu_blocks;
+        net = meta->network != 0;
     }
-    char p[8] = "", v[8] = "";
-    if (players) snprintf(p, sizeof(p), "%dP ", players);
-    if (blocks) snprintf(v, sizeof(v), "%dB ", blocks);
-    snprintf(out[1], sizeof(out[1]), "%s%s%dD", p, v, discs > 0 ? discs : 1);
+    char p[12] = "";
+    if (players) {
+        snprintf(p, sizeof(p), " %dP%s", players, net ? "+Net" : "");
+    } else if (net) {
+        snprintf(p, sizeof(p), " Net");
+    }
+    snprintf(out[1], sizeof(out[1]), "Disc %d/%d%s", num, total, p);
     return 2;
 }
 
@@ -1479,6 +1529,9 @@ draw_frame(void) {
             if (options_open) {
                 draw_options();
             }
+            if (viewmenu_open) {
+                draw_popup("View", "A: choose   B: close", 5, viewmenu_row, viewmenu_name, NULL);
+            }
         }
     }
     if (screen == SCREEN_MAIN) {
@@ -1596,6 +1649,7 @@ handle_main(button_t b) {
                 glist.side = 1;
                 viewer_open = 0;
                 options_open = 0;
+                viewmenu_open = 0;
                 blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_FILE) {
@@ -1981,6 +2035,56 @@ case_at_px(float x, float y) {
     return x >= CARD_X && x <= CARD_X + CARD_W && y >= CARD_Y && y <= CARD_Y + CARD_H;
 }
 
+/* The view menu of the list-view button: A does what the five buttons did. */
+static void
+view_action(int lbtn) {
+    blist_press_button(&glist, 0);
+    if (lbtn == LBTN_RECENT) {
+        viewmenu_choice = lbtn;
+        open_recent();
+    } else if (lbtn == LBTN_FAVORITES) {
+        viewmenu_choice = lbtn;
+        open_favorites();
+    } else if (lbtn == LBTN_FOLDERS) {
+        viewmenu_choice = lbtn;
+        go_folders();
+    } else if (lbtn == LBTN_SORT) {
+        viewmenu_choice = lbtn;
+        cycle_sort();
+    } else {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("No other groups yet");
+    }
+}
+
+static void
+handle_viewmenu(button_t b) {
+    switch (b) {
+        case BTN_UP:
+            if (viewmenu_row > 0) {
+                viewmenu_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (viewmenu_row < 4) {
+                viewmenu_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_A:
+        case BTN_START:
+            viewmenu_open = 0;
+            view_action(viewmenu_order[viewmenu_row]);
+            break;
+        case BTN_B:
+            viewmenu_open = 0;
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            break;
+        default: break;
+    }
+}
+
 static void
 handle_games(button_t b) {
     const gd_item* game = NULL;
@@ -1990,6 +2094,10 @@ handle_games(button_t b) {
     }
     if (options_open) {
         handle_options(b);
+        return;
+    }
+    if (viewmenu_open) {
+        handle_viewmenu(b);
         return;
     }
     if (viewer_open) {
@@ -2009,7 +2117,7 @@ handle_games(button_t b) {
                 sound_sfx(BAUDIO_SFX_CURSOR);
                 break;
             case BTN_RIGHT:
-                if (glist.button < BLIST_BUTTONS - 1) {
+                if (glist.button < (glist.side ? 0 : BLIST_BUTTONS - 1)) {
                     glist.button++;
                     sound_sfx(BAUDIO_SFX_CURSOR);
                 }
@@ -2026,6 +2134,15 @@ handle_games(button_t b) {
                 break;
             case BTN_A:
             case BTN_START:
+                if (glist.side) { /* the one button: a menu of the five views */
+                    viewmenu_open = 1;
+                    viewmenu_row = 0;
+                    for (int r = 0; r < 5; r++) {
+                        viewmenu_row = viewmenu_order[r] == viewmenu_choice ? r : viewmenu_row;
+                    }
+                    sound_sfx(BAUDIO_SFX_ENTER);
+                    break;
+                }
                 blist_press_button(&glist, glist.button);
                 if (glist.button == LBTN_RECENT) {
                     open_recent();
@@ -2272,7 +2389,7 @@ bench_apply(const bench_cmd* c) {
         char line[64];
         snprintf(line, sizeof(line), "forced back to the main menu from %s", log_label());
         serial_log_block("bench", line);
-        recent_open = options_open = viewer_open = settings_popup = about_open = report_page = vmu_menu_open = 0;
+        recent_open = options_open = viewmenu_open = viewer_open = settings_popup = about_open = report_page = vmu_menu_open = 0;
         if (screen == SCREEN_SETTINGS || screen == SCREEN_DATETIME) {
             uis_commit();
         }
@@ -2388,6 +2505,9 @@ apply_hover(void) {
         options_build();
         popup_rows = opt_count;
         popup_cur = &options_row;
+    } else if (viewmenu_open && screen == SCREEN_GAMES) {
+        popup_rows = 5;
+        popup_cur = &viewmenu_row;
     } else if (settings_popup) {
         popup_rows = uis_choice_count(page.cursor);
         popup_cur = &settings_popup_sel;
@@ -2603,7 +2723,7 @@ ui_bios_run(const bios_rom* rom) {
             apply_hover(); /* a click acts on what is under the pointer, even if it has not moved */
         }
         int typed = input_typed_char();
-        if (typed && screen == SCREEN_GAMES && !recent_open && !options_open && !viewer_open && uil_jump_to_letter(typed)) {
+        if (typed && screen == SCREEN_GAMES && !recent_open && !options_open && !viewmenu_open && !viewer_open && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
         }
         if (report_page) {
@@ -2718,7 +2838,7 @@ ui_bios_run(const bios_rom* rom) {
         }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
-                    !viewer_open && !options_open && !svmu_active());
+                    !viewer_open && !options_open && !viewmenu_open && !svmu_active());
         clock_extender_tick(); /* openMenu 1.7.1's Clock extender: one date write per run when it is on */
 
         uint64_t logic_end = timer_us_gettime64();

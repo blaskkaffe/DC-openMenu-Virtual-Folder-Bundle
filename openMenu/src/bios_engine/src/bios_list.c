@@ -190,14 +190,16 @@ blist_row_in_slot(const blist* l, int slot) {
     return slot >= 0 && slot < l->slots && row < l->count ? row : -1;
 }
 
-/* the side layout: two columns of buttons under the card, BACK to the right of the last one */
+/* the side layout: BACK in the left corner under the card, the one list-view button beside it */
+#define SIDE_BACK_X 70.0f /* the BACK picture is 60 wide: its left edge is the card's */
+#define SIDE_BACK_Y 426.0f
 static void
 side_button_px(int i, float* x, float* y) {
-    *x = (i & 1 || i == 4) ? 180.0f : 86.0f; /* Group takes the last place of the right column: BACK is in the left corner */
-    *y = 288.0f + BLIST_SIDE_DY + (float)(i >> 1) * 40.0f;
+    /* one button (the others are hidden): the list-view button, beside BACK in the bottom row */
+    (void)i;
+    *x = 165.0f;
+    *y = SIDE_BACK_Y;
 }
-#define SIDE_BACK_X 70.0f /* the BACK picture is 60 wide: its left edge is the card's */
-#define SIDE_BACK_Y (378.0f + BLIST_SIDE_DY)
 
 void
 blist_button_center_px(int i, float* x, float* y) {
@@ -239,14 +241,9 @@ blist_button_at_px_l(const blist* l, float x, float y) {
     if (!l->side) {
         return blist_button_at_px(x, y);
     }
-    for (int i = 0; i < BLIST_BUTTONS; i++) {
-        float cx, cy;
-        side_button_px(i, &cx, &cy);
-        if (x >= cx - 42.0f && x <= cx + 42.0f && y >= cy - 21.0f && y <= cy + 21.0f) {
-            return i;
-        }
-    }
-    return -1;
+    float cx, cy;
+    side_button_px(0, &cx, &cy);
+    return x >= cx - 42.0f && x <= cx + 42.0f && y >= cy - 21.0f && y <= cy + 21.0f ? 0 : -1;
 }
 
 int
@@ -448,7 +445,7 @@ blist_sync(blist* l) {
                 set_pos(o, (cx - 320.0f) / PX_PER_UNIT, (240.0f - cy) / PX_PER_UNIT, o->pos[2]);
             }
         }
-        set_hidden(o, 0);
+        set_hidden(o, l->side && i >= 1 && i < BLIST_BUTTONS); /* the side layout has the one button */
     }
 }
 
