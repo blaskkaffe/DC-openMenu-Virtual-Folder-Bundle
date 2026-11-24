@@ -1593,6 +1593,7 @@ handle_main(button_t b) {
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uis_snapshot();
+                uis_refresh_devices();
                 bpage_open(&page, &menu, uis_count());
                 page.pal = console_is_pal();
                 settings_popup = 0;
