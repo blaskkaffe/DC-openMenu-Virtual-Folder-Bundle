@@ -580,7 +580,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     rib_axis = st == 0 ? 0 : 1;
                 }
                 const int stex = rib_axis >= 0 ? BMODEL_TEX_RIBS : tex;
-                const uint32_t col = mul_argb(src[0].argb, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
+                const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(src[0].argb, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
                 while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
                     g++;

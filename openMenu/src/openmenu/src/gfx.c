@@ -819,6 +819,16 @@ ribs_texture(void) {
     return ribs_tex.valid ? &ribs_tex : NULL;
 }
 
+/* An opaque ARGB4444 pixel from 0..255 colour values. */
+static unsigned short
+pack4444(float r, float g, float b) {
+    unsigned c[3] = {(unsigned)(r + 8.0f) >> 4, (unsigned)(g + 8.0f) >> 4, (unsigned)(b + 8.0f) >> 4};
+    for (int i = 0; i < 3; i++) {
+        c[i] = c[i] > 15u ? 15u : c[i];
+    }
+    return (unsigned short)(0xF000u | c[0] << 8 | c[1] << 4 | c[2]);
+}
+
 /* The cases' fronts and backs for a game without box art, from the BIOS's own disc picture (it has the stacked Dreamcast logo with the
  * word under the swirl): the front is the disc's blue (PAL) or red (NTSC) with the logo in white, the back is white with the logo in its
  * own colours. 128 x 128, the logo's width is `frac` of the picture. */
@@ -915,7 +925,7 @@ generic_cover(int pal, int back) {
                     r += (255.0f - r) * ca, g += (255.0f - g) * ca, b += (255.0f - b) * ca;
                 }
             }
-            px[y * N + x] = (unsigned short)(0xF000u | ((unsigned)(r + 8) >> 4) << 8 | ((unsigned)(g + 8) >> 4) << 4 | ((unsigned)(b + 8) >> 4));
+            px[y * N + x] = pack4444(r, g, b);
         }
     }
     upload_argb4444(px, N, N, out);
@@ -1112,7 +1122,7 @@ spine_texture(int kind) {
         return NULL;
     }
     for (int i = 0; i < W * H; i++) {
-        px[i] = (unsigned short)(0xF000u | ((unsigned)(rgb[i * 3] + 8) >> 4) << 8 | ((unsigned)(rgb[i * 3 + 1] + 8) >> 4) << 4 | ((unsigned)(rgb[i * 3 + 2] + 8) >> 4));
+        px[i] = pack4444(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
     }
     free(rgb);
     /* into the other slot; the old picture may still be on the PVR's frame, so it is freed a build later */
