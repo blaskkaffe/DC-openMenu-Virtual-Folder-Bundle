@@ -796,6 +796,25 @@ get_rom_texture(bscene_texref ref) {
     return t;
 }
 
+/* The ribs of the NTSC cases' edges (BMODEL_TEX_RIBS): grey stripes (groove, ridge, flat) that modulate the face's colour, 64x8,
+ * the pattern of the ribs picture of the case models. */
+static rom_tex ribs_tex;
+static rom_tex*
+ribs_texture(void) {
+    static const char pattern[] = "ggggggghhhhcccggggggghhhhcccgggggggghhhccccggggggghhhccccggggggg";
+    if (!ribs_tex.valid) {
+        unsigned short px[64 * 8];
+        for (int x = 0; x < 64; x++) {
+            unsigned v = pattern[x] == 'g' ? 0xD : (pattern[x] == 'h' ? 0xF : 0xE);
+            for (int y = 0; y < 8; y++) {
+                px[y * 64 + x] = (unsigned short)(0xF000u | (v << 8) | (v << 4) | v);
+            }
+        }
+        upload_argb4444(px, 64, 8, &ribs_tex);
+    }
+    return ribs_tex.valid ? &ribs_tex : NULL;
+}
+
 static rom_tex*
 get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.b == 0) {
@@ -811,6 +830,12 @@ get_rom_texture_uncached(bscene_texref ref) {
             art_entry* e = art_get(model_front_product, 1);
             if (e && e->tex.valid) {
                 return &e->tex;
+            }
+        }
+        if (ref.b == BMODEL_TEX_RIBS) {
+            rom_tex* r = ribs_texture();
+            if (r) {
+                return r;
             }
         }
         return white_tex();

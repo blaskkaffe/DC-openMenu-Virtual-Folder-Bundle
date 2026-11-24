@@ -34,6 +34,7 @@ enum {
 #define BMODEL_CASE_HEIGHT 9.3f /* height of the two cases in model units */
 #define BMODEL_TEX_FRONT 0
 #define BMODEL_TEX_BACK 1
+#define BMODEL_TEX_RIBS 2 /* the cases' ribbed edges: grey stripes that modulate the face colour (made by gfx) */
 #define BMODEL_NOTE_COLOR 0xFF7F66FFu /* material colour of the music note (ROM model 2) */
 
 /* Build model `id`. Returns 0, or -1 for an unknown id or out of memory. Free with nj_object_free(). */

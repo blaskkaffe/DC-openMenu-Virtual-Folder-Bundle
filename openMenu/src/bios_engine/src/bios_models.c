@@ -540,6 +540,8 @@ mul_argb(uint32_t c, uint32_t t) {
 static void
 build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
     const float S = BMODEL_CASE_HEIGHT / 125.0f;
+    const int ribbed = m != &dc_model_dreamcast_pal_case_blue;
+#define RIB_MM 9.1f
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
             const dc_part_t* part = &m->parts[pi];
@@ -568,9 +570,18 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
             const dc_vertex_t* src = part->verts;
             for (int st = 0; st < part->nstrips; st++) {
                 const int n = part->strip_len[st];
-                const uint32_t col = mul_argb(src[0].argb, tint);
+                /* the NTSC cases' ribs: the outer top, bottom and right edges and the hinge strip (white or black, the spine's) carry the ribbed
+                 * texture, its u running across the ribs (one repeat of the picture is RIB_MM wide) */
+                int rib_axis = -1; /* 0: u from x, 1: u from y */
+                if (ribbed && !strcmp(part->name, "case_shell") && st <= 2) {
+                    rib_axis = st == 2 ? 1 : 0;
+                } else if (ribbed && !strcmp(part->name, "hinge_strip") && (st == 0 || st == 2)) {
+                    rib_axis = st == 0 ? 0 : 1;
+                }
+                const int stex = rib_axis >= 0 ? BMODEL_TEX_RIBS : tex;
+                const uint32_t col = mul_argb(src[0].argb, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
-                while (g < b->npolys && b->polys[g].diffuse != col) {
+                while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
                     g++;
                 }
                 if (g == b->npolys) {
@@ -579,9 +590,9 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                         return;
                     }
                     bpoly* np = &b->polys[b->npolys++];
-                    np->tex = tex;
+                    np->tex = stex;
                     np->diffuse = col;
-                    np->flags = STRIP_IGNORE_LIGHT | STRIP_DOUBLE_SIDED;
+                    np->flags = STRIP_IGNORE_LIGHT; /* one-sided: a back face (the rear label seen from the front) must not take part in the PVR's per-triangle sort */
                     np->ntris = 0;
                     np->corners = (nj_corner*)calloc((size_t)ntri * 3, sizeof(nj_corner));
                     if (!np->corners) {
@@ -612,8 +623,8 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                         v->valid = v->has_nrm = 1;
                         nj_corner* c = &bp->corners[bp->ntris * 3 + k];
                         c->idx = (uint16_t)b->nverts++;
-                        c->u = sv->u;
-                        c->v = sv->v;
+                        c->u = rib_axis < 0 ? sv->u : (rib_axis == 0 ? sv->x : sv->y) / RIB_MM;
+                        c->v = rib_axis < 0 ? sv->v : 0.5f;
                     }
                     bp->ntris++;
                 }
