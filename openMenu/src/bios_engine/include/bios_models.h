@@ -23,8 +23,9 @@ extern "C" {
 enum {
     BMODEL_PHONE = BMODEL_BASE,  /* classic telephone, the colour of the music note, white dial disc */
     BMODEL_GLOBE,                /* low poly earth in green and blue on a small stand */
-    BMODEL_CASE_WHITE,           /* CD jewel case with a white spine */
-    BMODEL_CASE_PAL,             /* CD jewel case in the blue style of the PAL Dreamcast cases */
+    BMODEL_CASE_WHITE,           /* CD jewel case, white */
+    BMODEL_CASE_PAL,             /* the blue PAL Dreamcast case */
+    BMODEL_CASE_DARK,            /* CD jewel case, dark grey */
     BMODEL_PODIUM,               /* winners' stand in Dreamcast colours; the numbers 1 2 3 are the CD player's digits (bmodel_podium_digits) */
     BMODEL_END
 };
