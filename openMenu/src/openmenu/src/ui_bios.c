@@ -613,7 +613,7 @@ draw_side_card(const gd_item* cur) {
     gfx_rrect(CARD_X, CARD_Y + 3.0f, CARD_W, CARD_H, 6.0f, z, 0xFF455076u);
     gfx_rrect(CARD_X, CARD_Y, CARD_W, CARD_H, 6.0f, z + 0.00004f, 0xFF4D4FAAu);
     gfx_rrect(CARD_X + 2.0f, CARD_Y + 2.0f, CARD_W - 4.0f, CARD_H - 4.0f, 5.0f, z + 0.00008f, 0xFF5254B6u);
-    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL,
+    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f, 118.0f, case_bind, NULL,
                near_sink(gfx_sink()));
     if (cur && !uil_is_folder(cur)) {
         char info[2][24];
