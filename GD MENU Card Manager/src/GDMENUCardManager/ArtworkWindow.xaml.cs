@@ -21,6 +21,11 @@ namespace GDMENUCardManager
         private byte[] _pendingIconPvrData;  // 128x128 for ICON.DAT
         private bool _deleteRequested;
 
+        // The rest of the 3D case: back cover, spine label and disc label (staged the same way as the front)
+        private ArtworkSlots _slots;
+        private ArtSlot _slot = ArtSlot.Front;
+        private bool _gdTexAvailable;
+
         // Original artwork data for undo
         private byte[] _originalBoxPvrData;
         private byte[] _originalIconPvrData;
@@ -69,7 +74,19 @@ namespace GDMENUCardManager
             set { _hasUnsavedChanges = value; RaisePropertyChanged(); RaisePropertyChanged(nameof(CanDelete)); }
         }
 
-        public bool CanDelete => !HasUnsavedChanges && _manager.BoxDat?.HasArtworkForSerial(Serial) == true;
+        public bool CanDelete => _slot == ArtSlot.Front
+            ? !HasUnsavedChanges && _manager.BoxDat?.HasArtworkForSerial(Serial) == true
+            : _slots?.Current(_slot) != null;
+
+        private string _slotHint = ArtworkSlots.Hint(ArtSlot.Front, false, false);
+        public string SlotHint
+        {
+            get => _slotHint;
+            private set { _slotHint = value; RaisePropertyChanged(); }
+        }
+
+        public string EmptyText => _slot == ArtSlot.Front ? "No artwork assigned"
+            : _slot == ArtSlot.Disc ? "No disc label" : "No " + _slot.ToString().ToLowerInvariant() + " picture assigned";
 
         private bool _canImportFromDisc;
         public bool CanImportFromDisc
@@ -95,6 +112,8 @@ namespace GDMENUCardManager
 
             _item = item;
             Serial = BoxDatManager.NormalizeSerial(item.ProductNumber);
+            _slots = new ArtworkSlots(_manager);
+            _slots.Reset(Serial);
 
             // Capture original artwork data for undo
             _originalBoxPvrData = _manager.BoxDat?.GetPvrDataForSerial(Serial);
@@ -152,13 +171,46 @@ namespace GDMENUCardManager
 
         private void LoadCurrentArtwork()
         {
-            if (_manager.BoxDat == null || !_manager.BoxDat.IsLoaded)
-                return;
+            ShowSlot();
+        }
 
-            var pvrData = _manager.BoxDat.GetPvrDataForSerial(Serial);
-            if (pvrData != null)
+        /// <summary>The preview, hint and buttons for the picture chosen above the preview.</summary>
+        private void ShowSlot()
+        {
+            byte[] data;
+            bool chosen = true;
+            if (_slot == ArtSlot.Front)
             {
-                DisplayPvrData(pvrData);
+                data = _deleteRequested ? null : _pendingPvrData ?? (_manager.BoxDat?.IsLoaded == true ? _manager.BoxDat.GetPvrDataForSerial(Serial) : null);
+            }
+            else
+            {
+                data = _slots.Current(_slot);
+                if (data == null && _slot == ArtSlot.Disc)
+                {
+                    // nothing chosen by hand: what the menu will show (the disc's own label, else a scraped one)
+                    chosen = false;
+                    _gdTexCache.TryGetValue(_item, out var gdtex);
+                    data = _slots.DefaultDiscLabel(gdtex);
+                }
+            }
+            if (data != null)
+                DisplayPvrData(data);
+            else
+                PreviewImage = null;
+            SlotHint = ArtworkSlots.Hint(_slot, chosen && data != null, _gdTexAvailable);
+            CanImportFromDisc = _gdTexAvailable && (_slot == ArtSlot.Front || _slot == ArtSlot.Disc);
+            RaisePropertyChanged(nameof(CanDelete));
+            RaisePropertyChanged(nameof(EmptyText));
+        }
+
+        private void Slot_Click(object sender, RoutedEventArgs e)
+        {
+            var tag = (sender as FrameworkElement)?.Tag as string;
+            if (Enum.TryParse<ArtSlot>(tag, out var slot) && slot != _slot)
+            {
+                _slot = slot;
+                ShowSlot();
             }
         }
 
@@ -172,6 +224,7 @@ namespace GDMENUCardManager
             _pendingPvrData = null;
             _pendingIconPvrData = null;
             _deleteRequested = false;
+            _slots.Reset(Serial);
             HasUnsavedChanges = false;
             PreviewImage = null;
 
@@ -194,6 +247,7 @@ namespace GDMENUCardManager
             var item = _item;
 
             CanImportFromDisc = false;
+            _gdTexAvailable = false;
 
             if (!ImageHelper.CanExtractGdText(item))
             {
@@ -233,7 +287,10 @@ namespace GDMENUCardManager
 
         private void ApplyGdTexProbeResult(byte[] gdtex)
         {
-            CanImportFromDisc = gdtex != null;
+            _gdTexAvailable = gdtex != null;
+            CanImportFromDisc = _gdTexAvailable && (_slot == ArtSlot.Front || _slot == ArtSlot.Disc);
+            if (_slot == ArtSlot.Disc)
+                ShowSlot();
             ImportFromDiscTooltip = gdtex != null ? ImportTooltipAvailable : ImportTooltipNotFound;
         }
 
@@ -322,6 +379,22 @@ namespace GDMENUCardManager
 
         private async Task LoadAndPreviewImage(string imagePath)
         {
+            if (_slot != ArtSlot.Front)
+            {
+                try
+                {
+                    var slot = _slot;
+                    var pvr = await Task.Run(() => ArtworkSlots.EncodeFile(slot, imagePath));
+                    _slots.Stage(slot, pvr);
+                    HasUnsavedChanges = true;
+                    ShowSlot();
+                }
+                catch
+                {
+                    // Silently fail, so the user can try again.
+                }
+                return;
+            }
             try
             {
                 // Generate both 256x256 (BOX.DAT) and 128x128 (ICON.DAT) PVRs
@@ -350,6 +423,22 @@ namespace GDMENUCardManager
             if (!_gdTexCache.TryGetValue(_item, out var gdtex) || gdtex == null)
                 return;
 
+            if (_slot == ArtSlot.Disc)
+            {
+                try
+                {
+                    var label = await Task.Run(() => ArtworkSlots.EncodeDiscLabel(gdtex));
+                    _slots.Stage(ArtSlot.Disc, label);
+                    HasUnsavedChanges = true;
+                    ShowSlot();
+                }
+                catch
+                {
+                    // Silently fail, so the user can try again.
+                }
+                return;
+            }
+
             try
             {
                 // Decode the disc's texture and reencode it through the same pipeline Browse uses
@@ -376,6 +465,15 @@ namespace GDMENUCardManager
 
         private void DeleteEntry_Click(object sender, RoutedEventArgs e)
         {
+            if (_slot != ArtSlot.Front)
+            {
+                // the back, spine or disc label: removed when the changes are saved (Save, then Save Changes)
+                _slots.StageDelete(_slot);
+                HasUnsavedChanges = true;
+                ShowSlot();
+                return;
+            }
+
             var result = MessageBox.Show(this,
                 $"Delete artwork entry for serial '{Serial}'?",
                 "Confirmation",
@@ -423,6 +521,16 @@ namespace GDMENUCardManager
         {
             if (_manager.BoxDat == null)
                 return;
+
+            // the back cover, spine label and disc label
+            _slots.Apply();
+            if (_pendingPvrData == null && !_deleteRequested)
+            {
+                HasUnsavedChanges = false;
+                _manager.RefreshArtworkStatusForSerial(Serial);
+                ShowSlot();
+                return;
+            }
 
             byte[] newBoxData = null;
             byte[] newIconData = null;

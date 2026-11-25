@@ -225,21 +225,36 @@ namespace GDMENUCardManager.Core
         /// </summary>
         public IconDatManager DiscArtDat { get; private set; }
 
+        /// <summary>SPINE.DAT: spine labels (32x256, read upwards) for the BIOS-style openMenu's 3D case.</summary>
+        public BoxDatManager SpineDat { get; private set; }
+
+        /// <summary>
+        /// Disc labels chosen by hand (128x128, ICON.DAT's format), kept with the menu data as DISCUSER.DAT. When the menu
+        /// is built they go into DISC.DAT before anything else: before the disc's own label (0GDTEX.PVR) and the scraped
+        /// ones. Not copied to the card as it is.
+        /// </summary>
+        public IconDatManager DiscUserDat { get; private set; }
+
         /// <summary>INFO.DAT: release date, developer, publisher and the like (see InfoDatManager).</summary>
         public InfoDatManager InfoDat { get; private set; }
 
         public const string BackDatFileName = "BACK.DAT";
         public const string DiscArtDatFileName = "DISCART.DAT";
         public const string InfoDatFileName = "INFO.DAT";
+        public const string SpineDatFileName = "SPINE.DAT";
+        public const string DiscUserDatFileName = "DISCUSER.DAT";
 
         public string GetBackDatPath() => Path.Combine(GetMenuDataPath(), BackDatFileName);
         public string GetDiscArtDatPath() => Path.Combine(GetMenuDataPath(), DiscArtDatFileName);
         public string GetInfoDatPath() => Path.Combine(GetMenuDataPath(), InfoDatFileName);
+        public string GetSpineDatPath() => Path.Combine(GetMenuDataPath(), SpineDatFileName);
+        public string GetDiscUserDatPath() => Path.Combine(GetMenuDataPath(), DiscUserDatFileName);
 
         /// <summary>Some of the DATs written by the scraper (or by hand) are not saved yet.</summary>
         public bool HasUnsavedScrapedData =>
             MetaDat?.HasUnsavedChanges == true || BackDat?.HasUnsavedChanges == true ||
-            DiscArtDat?.HasUnsavedChanges == true || InfoDat?.HasUnsavedChanges == true;
+            DiscArtDat?.HasUnsavedChanges == true || InfoDat?.HasUnsavedChanges == true ||
+            SpineDat?.HasUnsavedChanges == true || DiscUserDat?.HasUnsavedChanges == true;
 
         /// <summary>Writes META.DAT, BACK.DAT, DISCART.DAT and INFO.DAT where they changed. Returns the errors, if any.</summary>
         public string SaveScrapedData()
@@ -264,6 +279,18 @@ namespace GDMENUCardManager.Core
                     var (ok, error) = DiscArtDat.BackupAndSave(GetDiscArtDatPath(), GetDatBackupFolder(), true);
                     if (!ok || !string.IsNullOrEmpty(error))
                         errors.Add($"DISCART.DAT: {error}");
+                }
+                if (SpineDat?.HasUnsavedChanges == true)
+                {
+                    var (ok, error) = SpineDat.BackupAndSave(GetSpineDatPath(), GetDatBackupFolder(), true);
+                    if (!ok || !string.IsNullOrEmpty(error))
+                        errors.Add($"SPINE.DAT: {error}");
+                }
+                if (DiscUserDat?.HasUnsavedChanges == true)
+                {
+                    var (ok, error) = DiscUserDat.BackupAndSave(GetDiscUserDatPath(), GetDatBackupFolder(), true);
+                    if (!ok || !string.IsNullOrEmpty(error))
+                        errors.Add($"DISCUSER.DAT: {error}");
                 }
                 if (InfoDat?.HasUnsavedChanges == true)
                     InfoDat.Save(GetInfoDatPath());
@@ -346,8 +373,14 @@ namespace GDMENUCardManager.Core
                 FolderArtDat = new FolderArtDatManager();
             }
 
-            BackDat ??= new BoxDatManager();
+            BackDat ??= new BoxDatManager(BoxDatManager.EntrySize, BackDatFileName);
             DiscArtDat ??= new IconDatManager();
+            SpineDat ??= new BoxDatManager((uint)PvrEncoder.TotalSpinePvrSize, SpineDatFileName);
+            DiscUserDat ??= new IconDatManager();
+            if (File.Exists(GetSpineDatPath()))
+                SpineDat.Load(GetSpineDatPath());
+            if (File.Exists(GetDiscUserDatPath()))
+                DiscUserDat.Load(GetDiscUserDatPath());
             InfoDat ??= new InfoDatManager();
             if (File.Exists(GetBackDatPath()))
                 BackDat.Load(GetBackDatPath());
@@ -3034,6 +3067,22 @@ namespace GDMENUCardManager.Core
         {
             var labels = new IconDatManager();
             int added = 0;
+
+            // Disc labels chosen by hand (DISCUSER.DAT) come first
+            if (DiscUserDat != null)
+            {
+                foreach (var item in ItemList.ToList())
+                {
+                    if (item.IsMenuItem || string.IsNullOrWhiteSpace(item.ProductNumber) || labels.HasIconForSerial(item.ProductNumber))
+                        continue;
+                    var chosen = DiscUserDat.GetPvrDataForSerial(item.ProductNumber);
+                    if (chosen == null)
+                        continue;
+                    labels.SetIconForSerial(item.ProductNumber, chosen);
+                    added++;
+                }
+            }
+
             foreach (var item in ItemList.ToList())
             {
                 try
@@ -3153,9 +3202,10 @@ namespace GDMENUCardManager.Core
                 // On macOS, user data files live in Application Support, not the bundle.
                 // Exclude them from the bulk bundle copy so they don't overwrite user data.
                 var excludeFromBundle = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP", BackDatFileName, InfoDatFileName }
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP", BackDatFileName, InfoDatFileName, SpineDatFileName }
                     : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 excludeFromBundle.Add(DiscArtDatFileName); // goes into DISC.DAT below, not onto the card as it is
+                excludeFromBundle.Add(DiscUserDatFileName); // the same
                 await Helper.CopyDirectoryAsync(menuDataSrc, dataPath, excludeFromBundle);
 
                 // Copy DATs from their authoritative source (Application Support on macOS, bundle on others).
@@ -3177,6 +3227,8 @@ namespace GDMENUCardManager.Core
                     File.Copy(GetBgmPath(), Path.Combine(dataPath, "BGM.ADP"), overwrite: true);
                 if (File.Exists(GetBackDatPath()))
                     File.Copy(GetBackDatPath(), Path.Combine(dataPath, BackDatFileName), overwrite: true);
+                if (File.Exists(GetSpineDatPath()))
+                    File.Copy(GetSpineDatPath(), Path.Combine(dataPath, SpineDatFileName), overwrite: true);
                 if (File.Exists(GetInfoDatPath()))
                     File.Copy(GetInfoDatPath(), Path.Combine(dataPath, InfoDatFileName), overwrite: true);
 
@@ -3249,8 +3301,11 @@ namespace GDMENUCardManager.Core
             bool metaChanged = MetaDat?.HasUnsavedChanges == true;
             bool backChanged = BackDat?.HasUnsavedChanges == true;
             bool infoChanged = InfoDat?.HasUnsavedChanges == true;
+            bool spineChanged = SpineDat?.HasUnsavedChanges == true;
             try
             {
+                if (spineChanged)
+                    SpineDat.Save(Path.Combine(dataPath, SpineDatFileName));
                 if (metaChanged)
                     MetaDat.Save(Path.Combine(dataPath, "META.DAT"));
                 if (backChanged)
@@ -3280,6 +3335,8 @@ namespace GDMENUCardManager.Core
                     BackDat.HasUnsavedChanges = true;
                 if (infoChanged)
                     InfoDat.HasUnsavedChanges = true;
+                if (spineChanged)
+                    SpineDat.HasUnsavedChanges = true;
             }
         }
 

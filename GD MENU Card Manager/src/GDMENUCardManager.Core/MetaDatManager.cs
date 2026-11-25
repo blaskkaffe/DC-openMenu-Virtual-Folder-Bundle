@@ -11,13 +11,23 @@ namespace GDMENUCardManager.Core
         public string Name { get; set; } = string.Empty;
         public uint FileNumber { get; set; }
 
-        // Metadata fields (8 bytes of structured data + 376 bytes description)
+        // Metadata fields (8 bytes of structured data + 376 bytes description), as openMenu's db_item:
+        // 0 players, 1 VMU blocks, 2 accessories (bits 0-7), 3 network (bit 0 modem, bit 1 BBA), 4-5 genre,
+        // 6 accessories bits 8-15, 7 links (bit 0 W5500, bit 1 serial). Bytes 6 and 7 were padding: 0 in older files.
         public byte NumPlayers { get; set; }
         public byte VmuBlocks { get; set; }
+        /// <summary>All sixteen accessory flags (jump pack 1 ... modem 0x2000), from bytes 2 and 6.</summary>
         public ushort Accessories { get; set; }
+        /// <summary>Bit 0 modem, bit 1 broadband adapter.</summary>
         public byte Network { get; set; }
         public ushort Genre { get; set; }
-        public byte Padding { get; set; }
+        /// <summary>Patched or homebrew ways to connect: bit 0 W5500, bit 1 serial.</summary>
+        public byte Links { get; set; }
+
+        public const int ConnectModem = 1, ConnectBba = 2, ConnectW5500 = 4, ConnectSerial = 8;
+
+        /// <summary>Every way the game connects, one bit each (ConnectModem ... ConnectSerial): none or any combination.</summary>
+        public int Connections => (Network & 3) | ((Links & 0x3F) << 2);
         public string Description { get; set; } = string.Empty;
 
         /// <summary>
@@ -170,10 +180,10 @@ namespace GDMENUCardManager.Core
 
             entry.NumPlayers = entry.RawData[0];
             entry.VmuBlocks = entry.RawData[1];
-            entry.Accessories = BitConverter.ToUInt16(entry.RawData, 2);
-            entry.Network = entry.RawData[4];
-            entry.Genre = BitConverter.ToUInt16(entry.RawData, 5);
-            entry.Padding = entry.RawData[7];
+            entry.Accessories = (ushort)(entry.RawData[2] | entry.RawData[6] << 8);
+            entry.Network = entry.RawData[3];
+            entry.Genre = BitConverter.ToUInt16(entry.RawData, 4);
+            entry.Links = entry.RawData[7];
 
             // Description occupies the remaining 376 bytes from offset 8, NUL-terminated.
             int descEnd = 8;
