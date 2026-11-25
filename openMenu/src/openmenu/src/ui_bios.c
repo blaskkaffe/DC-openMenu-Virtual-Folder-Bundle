@@ -1034,6 +1034,9 @@ draw_viewer(void) {
             viewer_scroll = 0;
         }
         y += 6.0f;
+        if (y > bottom - 10.0f - INFO_LINE_H) { /* the logos filled the box: one line of the text is kept at its foot */
+            y = bottom - 10.0f - INFO_LINE_H;
+        }
         int visible = (int)((bottom - 10.0f - y) / INFO_LINE_H);
         visible = visible < 1 ? 1 : visible;
         viewer_lines_max = info_count > visible ? info_count - visible : 0;
