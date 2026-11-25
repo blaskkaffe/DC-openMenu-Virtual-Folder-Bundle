@@ -22,8 +22,8 @@ NAMES = {'P1': '1 Player', 'P2': '2 Players', 'P12': '1-2 Players', 'P14': '1-4 
          'VMU': 'Visual Memory', 'VIB': 'Vibration Pack', 'STICK': 'Arcade Stick', 'GUN': 'Dreamcast Gun', 'WHEEL': 'Race Controller',
          'KEYBOARD': 'Keyboard', 'VGA': 'VGA', 'FISHING': 'Fishing Controller', 'MIC': 'Microphone', 'MOUSE': 'Mouse', 'MARACAS': 'Maracas',
          'DREAMEYE': 'Dreameye', 'MODEM': 'Modem', 'BBA': 'Broadband Adapter', 'DISC': 'Discs'}
-H_LOGO = 30
-H_PILL = 17  # height of the PAL and US logos
+H_LOGO = 34
+H_PILL = 20  # height of the PAL and US logos
 H_JP = 26
 
 def load(k):
