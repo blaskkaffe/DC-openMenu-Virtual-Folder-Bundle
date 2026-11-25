@@ -974,7 +974,7 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
 
 /* The number the menu writes into a badge (the Visual Memory blocks, the disc count), at the badge's top left (bx, by). */
 static void
-draw_badge_number(const gd_item* cur, const struct db_item* meta, int region, int key, float bx, float by) {
+draw_badge_number(const gd_item* cur, const struct db_item* meta, int region, int key, float bx, float by, float s) {
     const feature_badge* b = &feature_badges[region][key];
     if (b->num_x < 0) {
         return;
@@ -989,7 +989,7 @@ draw_badge_number(const gd_item* cur, const struct db_item* meta, int region, in
     } else if (key == FB_DISC) {
         snprintf(t, sizeof(t), "%d", gd_item_disc_total(cur->disc) > 0 ? gd_item_disc_total(cur->disc) : 1);
     }
-    gfx_text_scaled(t, bx + (float)b->num_x, by + (float)b->num_y, 0.5f, 0xFF000000u, 0.45f);
+    gfx_text_scaled(t, bx + (float)b->num_x * s, by + (float)b->num_y * s, 0.5f, 0xFF000000u, 0.45f * s);
 }
 
 /* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
@@ -1023,7 +1023,7 @@ draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
             break;
         }
         gfx_image(id, x + cx, y + cy, (float)pw, (float)ph, PANE_Z + 0.00008f);
-        draw_badge_number(cur, meta, region, keys[i], x + cx, y + cy);
+        draw_badge_number(cur, meta, region, keys[i], x + cx, y + cy, 1.0f);
         cx += (float)b->w + gap;
         row_h = row_h > (float)b->h ? row_h : (float)b->h;
     }
@@ -1153,9 +1153,7 @@ draw_feature_strip(const gd_item* cur, float x, float y, float w, int full) {
                 const float bh = (float)fb->h * s;
                 const float bx = x + pad + cx, by = ry + (row_h * s - bh) / 2.0f;
                 gfx_image(id, bx, by, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
-                if (s == 1.0f) {
-                    draw_badge_number(cur, meta, region, keys[i], bx, by);
-                }
+                draw_badge_number(cur, meta, region, keys[i], bx, by, s);
                 cx += ww + gap * s;
                 continue;
             }

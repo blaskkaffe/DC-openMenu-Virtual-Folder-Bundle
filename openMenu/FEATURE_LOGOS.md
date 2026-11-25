@@ -20,13 +20,15 @@ Status per region. Send better scans for anything marked POOR QUALITY or PLACEHO
 | Race Controller | real logo |
 | Keyboard | real logo |
 | VGA | real logo |
-| Fishing Controller | real logo, POOR QUALITY (replace with a better scan) |
+| Fishing Controller | PLACEHOLDER (the old crop of a Bass Fishing back caught the CRI ADX logo) |
 | Microphone | PLACEHOLDER (drawn by the generator) |
 | Mouse | PLACEHOLDER (drawn by the generator) |
 | Maracas | PLACEHOLDER (drawn by the generator) |
 | Dreameye | PLACEHOLDER (drawn by the generator) |
 | Modem | PLACEHOLDER (drawn by the generator) |
 | Broadband Adapter | PLACEHOLDER (drawn by the generator) |
+| W5500 Ethernet (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
+| Serial Link (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
 
 ## US (NTSC-U)
 
@@ -52,6 +54,8 @@ Status per region. Send better scans for anything marked POOR QUALITY or PLACEHO
 | Dreameye | PLACEHOLDER (drawn by the generator) |
 | Modem | real logo, POOR QUALITY (replace with a better scan) |
 | Broadband Adapter | PLACEHOLDER (drawn by the generator) |
+| W5500 Ethernet (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
+| Serial Link (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
 
 ## Japan (NTSC-J)
 
@@ -77,6 +81,8 @@ Status per region. Send better scans for anything marked POOR QUALITY or PLACEHO
 | Dreameye | PLACEHOLDER (drawn by the generator) |
 | Modem | PLACEHOLDER (drawn by the generator) |
 | Broadband Adapter | PLACEHOLDER (drawn by the generator) |
+| W5500 Ethernet (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
+| Serial Link (patched) | PLACEHOLDER: there is no official logo, so the drawn tag is the design |
 | Disc count (Japan only) | real logo |
 
 ## Missing / wanted
@@ -86,3 +92,10 @@ Status per region. Send better scans for anything marked POOR QUALITY or PLACEHO
 - **Japan:** the wording of the boxes for Online / Network, Arcade Stick, Light Gun, Race Controller, Keyboard, Mouse, Maracas, Dreameye, Modem and Broadband Adapter (shown in English as placeholders). Known wording: 1 PLAYER, メモリーバックアップ N ブロック, ぶるぶるぱっく対応, VGA対応, マイクデバイス対応, つりコントローラ対応, ディスクN枚.
 
 The player pills for "2 players" use 1-2 Players on PAL and Japan (the database stores only the maximum); US 2 uses its own placeholder.
+
+## Where to find better scans
+
+- **Sega's own artwork.** The back-inlay guideline ([Dreamcast3rdPartyGuidelines_BACKINLA.pdf](https://segaretro.org/images/1/10/Dreamcast3rdPartyGuidelines_BACKINLA.pdf)) only shows a box marked "Peripheral Compatibility Icons. Graphics supplied." The supplied graphics are most likely Sega's [Graphic Kit for Dreamcast](https://segaretro.org/Graphic_Kit_for_Dreamcast) (Sega Retro blocks automated readers: open it in a browser).
+- **The European 3rd party guide disc**: `finaleur.pdf` on [Dreamcast 3rd Party Guides & Black Isle Ad (Europe)](https://discmaster.textfiles.com/file/19162/Dreamcast%203rd%20Party%20Guides%20%26%20Black%20Isle%20Ad%20(Europe).bin/finaleur.pdf). Probably the PAL packaging guide with the icons in it.
+- **High-resolution back covers** of games that use each accessory: crop the logo from a 600 dpi scan. Sega Retro's box scan categories (for example [Good Dreamcast FR box scans](https://segaretro.org/Category:Good_Dreamcast_FR_box_scans)) and the LaunchBox [Dreamcast fronts, backs, logos, spines](https://forums.launchbox-app.com/files/file/4431-dreamcast-fronts-backs-logos-spines) pack (1.7 GB, needs a sign-in).
+- Games to look for, per logo: Mouse (Quake III Arena), Maracas (Samba de Amigo), Microphone (Seaman, Alien Front Online), Dreameye (Japan only: Dreameye's own disc), Modem and Broadband Adapter (Phantasy Star Online ver. 2, Quake III Arena), Fishing Controller (Sega Bass Fishing / Sega Marine Fishing PAL backs), Keyboard (Typing of the Dead).
