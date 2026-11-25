@@ -21,6 +21,7 @@ typedef struct gd_item {
     char vga[1];
     char folder[512];
     char type[8];
+    char casestyle[12]; /* N.casestyle= in OPENMENU.INI: white, dark, clearwhite, clearblack or pal; empty: by region */
 } gd_item;
 
 /* Identity hash for the recently played history. Built from serial, title,

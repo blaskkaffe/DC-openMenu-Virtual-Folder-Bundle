@@ -541,6 +541,10 @@ mul_argb(uint32_t c, uint32_t t) {
 /* The label quads of the cases are 120 mm tall (the pictures have a 1:1 pixel ratio: front 120 x 120, back about 139 x 120, spine 7 / 15.5 x 120):
  * the model's labels are moved to those sizes. The front of the NTSC cases is the 120 mm square at the right edge; the hinge side
  * beside it is a plain quad (below). */
+/* where the NTSC cases' 120 mm front cover starts: 14.5 mm in from the hinge edge, as on the real jewel cases (the clear
+ * front spine beside it shows the inner label) */
+#define NTSC_FRONT_X0 -56.5f
+
 static float
 remap_f(float v, float o0, float o1, float n0, float n1) {
     return o1 > o0 ? n0 + (v - o0) / (o1 - o0) * (n1 - n0) : v;
@@ -559,9 +563,11 @@ fit_label(dc_vertex_t v[4], const char* name, int pal) {
         const float hh = strstr(name, "label_rear") ? 59.5f : 60.0f; /* Sega's guidelines: front inlay 120 x 120 mm, back inlay 119 mm tall */
         v[i].y = v[i].y > 0.0f ? hh : -hh;
         if (strstr(name, "label_front")) {
-            v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : -50.0f, pal ? 67.0f : 70.0f);
+            v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : NTSC_FRONT_X0, pal ? 67.0f : NTSC_FRONT_X0 + 120.0f);
         } else if (strstr(name, "label_spine")) {
             v[i].z = remap_f(v[i].z, z0, z1, pal ? -8.5f : -3.77f, pal ? 7.0f : 3.27f);
+            v[i].u = 1.0f - v[i].u; /* the spine labels read the other way round (turned 180 degrees) */
+            v[i].v = 1.0f - v[i].v;
             if (pal) {
                 v[i].x = -71.03f; /* on the outside of the side wall, from the back edge to where the hinge's curve starts (it covered the front band) */
             }
@@ -594,9 +600,7 @@ build_pal_bar(builder* b, float S) {
 /* The PAL case's inside: the blue tray fills the space between the front and rear labels (and shows beside the hinge bar), so the clear shell
  * is not see-through. A box slightly inside the shell; the faces at the top, bottom and right edges are a little darker, as seen at a slant. */
 static void
-build_pal_tray(builder* b, float S) {
-    const float x0 = -69.6f, x1 = 66.8f, yt = 61.0f, yb = -61.0f, zf = 7.8f, zr = -7.8f;
-    const uint32_t blue = 0xFF2A4D9Cu;
+build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf, float zr, uint32_t blue) {
     int f = poly_new(b, -1, blue, 0), e = poly_new(b, -1, blue, 0); /* lit */
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
@@ -607,18 +611,25 @@ build_pal_tray(builder* b, float S) {
 }
 
 static void
-build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
+build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
     const float S = BMODEL_CASE_HEIGHT / 125.0f;
-    const int ribbed = m != &dc_model_dreamcast_pal_case_blue;
+    const int ntsc = m != &dc_model_dreamcast_pal_case_blue;
+    const int ribbed = ntsc && !clear; /* the white and dark grey NTSC cases; the clear ones (1 white tray, 2 black) have no ribs */
 #define RIB_MM 9.1f
-    if (!ribbed) {
-        build_pal_tray(b, S);
+    if (!ntsc) {
+        build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 7.8f, -7.8f, 0xFF2A4D9Cu);
+    } else if (clear) {
+        /* the clear cases: the tray (white or black) inside, behind the front cover, seen through the clear edges */
+        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 4.0f, -4.4f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u);
     }
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
             const dc_part_t* part = &m->parts[pi];
             if (part->translucent != pass) {
                 continue;
+            }
+            if (clear && !strcmp(part->name, "ribs_front_strip")) {
+                continue; /* clear plastic: no ribs */
             }
             if (!strcmp(part->name, "hinge_pill")) {
                 build_pal_bar(b, S); /* the pill and the carrier: one flat box */
@@ -628,16 +639,24 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
             const dc_vertex_t* part_verts = part->verts;
             if (strstr(part->name, "label_") && part->nstrips == 1 && part->strip_len[0] == 4) {
                 memcpy(lab, part->verts, sizeof(lab));
-                fit_label(lab, part->name, !ribbed);
+                fit_label(lab, part->name, !ntsc);
                 part_verts = lab;
-                if (ribbed && strstr(part->name, "label_front")) {
-                    /* the hinge side beside the 120 mm front: the inner label seen through the clear front spine (white with
-                     * the colour logo, or black with a dark grey one; the picture is made by gfx, BMODEL_TEX_PILL) */
-                    static const float huv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-                    int hp = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
+                if (ntsc && strstr(part->name, "label_front")) {
                     const float zf = lab[0].z;
-                    quad(b, hp, v3m(-70.5f * S, 60.0f * S, zf * S), v3m(-50.0f * S, 60.0f * S, zf * S), v3m(-50.0f * S, -60.0f * S, zf * S),
-                         v3m(-70.5f * S, -60.0f * S, zf * S), huv, v3m(0, 0, 1));
+                    if (ribbed) { /* the hinge side beside the front: plain, the case's colour */
+                        const uint32_t fill = m == &dc_model_cd_case_white ? 0xFFD8D8D8u : 0xFF2E2E2Eu;
+                        int hp = poly_new(b, -1, fill, STRIP_IGNORE_LIGHT);
+                        quad(b, hp, v3m(-70.5f * S, 60.0f * S, zf * S), v3m(NTSC_FRONT_X0 * S, 60.0f * S, zf * S),
+                             v3m(NTSC_FRONT_X0 * S, -60.0f * S, zf * S), v3m(-70.5f * S, -60.0f * S, zf * S), NULL, v3m(0, 0, 1));
+                    } else {
+                        /* the clear cases: the inner label at the back of the case, seen through the clear front spine (white with
+                         * the colour logo, or black with a dark grey one; the picture is made by gfx, BMODEL_TEX_PILL) */
+                        static const float huv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+                        int hp = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
+                        const float zb = -4.4f;
+                        quad(b, hp, v3m(-70.5f * S, 60.0f * S, zb * S), v3m(NTSC_FRONT_X0 * S, 60.0f * S, zb * S),
+                             v3m(NTSC_FRONT_X0 * S, -60.0f * S, zb * S), v3m(-70.5f * S, -60.0f * S, zb * S), huv, v3m(0, 0, 1));
+                    }
                 }
             }
             int tex = -1;
@@ -696,13 +715,13 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     }
                 }
                 uint32_t srcc = src[0].argb;
-                if (!ribbed && (srcc >> 24) == 0xFFu && ((srcc >> 16) & 0xFF) < 0x40 && (srcc & 0xFF) > 0x40) {
+                if (!ntsc && (srcc >> 24) == 0xFFu && ((srcc >> 16) & 0xFF) < 0x40 && (srcc & 0xFF) > 0x40) {
                     /* the PAL case's opaque blues (the curved hinge sections and the like): the case's blue, shaded as the original was */
                     srcc = srcc == 0xFF1E48ADu ? 0xFF4268B4u : 0xFF2A4D9Cu; /* the pill's blue and the case's: flat, the light shades them */
                 }
                 uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
-                if (ribbed && !strcmp(part->name, "hinge_strip") && st == 0) {
-                    col = (col & 0x00FFFFFFu) | 0x58000000u; /* the front of the hinge is clear plastic: the inner label shows through its ribs */
+                if (clear && (!strcmp(part->name, "case_shell") || !strcmp(part->name, "hinge_strip")) && tex < 0) {
+                    col = 0x40C4CCD4u; /* clear plastic */
                 }
                 int g = first;
                 while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
@@ -716,7 +735,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     bpoly* np = &b->polys[b->npolys++];
                     np->tex = stex;
                     np->diffuse = col;
-                    np->flags = (!ribbed && !strcmp(part->name, "hinge_strip")) ? 0 : STRIP_IGNORE_LIGHT; /* the PAL hinge sections are lit; one-sided: a back face (the rear label seen from the front) must not take part in the PVR's per-triangle sort */
+                    np->flags = (!ntsc && !strcmp(part->name, "hinge_strip")) ? 0 : STRIP_IGNORE_LIGHT; /* the PAL hinge sections are lit; one-sided: a back face (the rear label seen from the front) must not take part in the PVR's per-triangle sort */
                     np->ntris = 0;
                     np->corners = (nj_corner*)calloc((size_t)ntri * 3, sizeof(nj_corner));
                     if (!np->corners) {
@@ -779,9 +798,11 @@ bmodel_build(int id, nj_object* out) {
         case BMODEL_PHONE: build_phone(&b); break;
         case BMODEL_GLOBE: build_globe(&b); break;
         case BMODEL_PODIUM: build_podium(&b); break;
-        case BMODEL_CASE_WHITE: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u); break;
-        case BMODEL_CASE_DARK: build_case(&b, &dc_model_cd_case_darkgray, 0xFF292D31u); break;
-        case BMODEL_CASE_PAL: build_case(&b, &dc_model_dreamcast_pal_case_blue, 0xFF20419Bu); break;
+        case BMODEL_CASE_WHITE: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u, 0); break;
+        case BMODEL_CASE_DARK: build_case(&b, &dc_model_cd_case_darkgray, 0xFF292D31u, 0); break;
+        case BMODEL_CASE_CLEAR_WHITE: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u, 1); break;
+        case BMODEL_CASE_CLEAR_BLACK: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u, 2); break;
+        case BMODEL_CASE_PAL: build_case(&b, &dc_model_dreamcast_pal_case_blue, 0xFF20419Bu, 0); break;
         default:
             builder_free(&b);
             return -1;

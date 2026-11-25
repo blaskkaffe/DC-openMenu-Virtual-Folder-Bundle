@@ -9,4 +9,5 @@ CFG(ITEMS, date, "19990909")
 CFG(ITEMS, product, "T-0000A")
 CFG(ITEMS, folder, "")
 CFG(ITEMS, type, "game")
+CFG(ITEMS, casestyle, "")
 #undef CFG

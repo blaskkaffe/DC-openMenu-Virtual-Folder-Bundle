@@ -1108,7 +1108,7 @@ text_coverage(const char* str, int* tw) {
 }
 
 /* The NTSC cases' hinge side beside the front (BMODEL_TEX_PILL on those cases): the inner label seen through the clear
- * front spine, 20.5 x 120 mm. White cases: a white label with the logo in colour (SEGA, the orange swirl, Dreamcast)
+ * front spine, 14 x 120 mm. White cases: a white label with the logo in colour (SEGA, the orange swirl, Dreamcast)
  * reading upwards; dark cases: a black label with the logo and text in dark grey. 64 x 512. */
 static rom_tex hinge_tex[2];
 static rom_tex*
@@ -1145,7 +1145,7 @@ hinge_texture(int dark) {
     const float* bg = bgs[dark];
     const float* ink = inks[dark];
     const float* sw = swirls[dark];
-    const float ppm_x = (float)W / 20.5f, ppm_y = (float)H / 120.0f;
+    const float ppm_x = (float)W / 14.0f, ppm_y = (float)H / 120.0f;
     const float s = x1 >= x0 ? 7.0f / (float)(y1 - y0 + 1) : 1.0f; /* mm per logo pixel: the logo is 7 mm across */
     const float L = x1 >= x0 ? (float)(x1 - x0 + 1) * s : 0.0f;
     const float sg = 5.0f / 18.0f, Ls = sega ? (float)tw * sg : 0.0f, gap = sega ? 2.0f : 0.0f; /* SEGA: 5 mm capitals */
@@ -1156,7 +1156,7 @@ hinge_texture(int dark) {
             float r = bg[0], g = bg[1], b = bg[2];
             for (int k = 0; k < 4; k++) { /* 2 x 2 samples */
                 const float fx = (float)x + 0.25f + 0.5f * (float)(k & 1), fy = (float)y + 0.25f + 0.5f * (float)(k >> 1);
-                const float along = ((float)H - fy) / ppm_y, across = fx / ppm_x - 10.25f; /* mm: up from the bottom; right of the middle (as the PAL pill: the tops of the letters face left) */
+                const float along = ((float)H - fy) / ppm_y, across = fx / ppm_x - 7.0f; /* mm: up from the bottom; right of the middle (as the PAL pill: the tops of the letters face left) */
                 float a = 0.0f;
                 const float* c = ink;
                 if (sega && along >= a0 && along < a0 + Ls) {
@@ -1383,7 +1383,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_PILL) { /* the PAL hinge bar, or the NTSC cases' inner label behind the clear front spine */
-            rom_tex* r = ref.a == BMODEL_CASE_PAL ? pill_texture() : hinge_texture(ref.a == BMODEL_CASE_DARK);
+            rom_tex* r = ref.a == BMODEL_CASE_PAL ? pill_texture() : hinge_texture(ref.a == BMODEL_CASE_CLEAR_BLACK);
             if (r) {
                 return r;
             }
