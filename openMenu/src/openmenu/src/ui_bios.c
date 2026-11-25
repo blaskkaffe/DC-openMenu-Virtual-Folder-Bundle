@@ -53,7 +53,7 @@
 #include "bg_palette.h"
 #include "ui_settings.h"
 #include "video.h"
-#include "feature_icons.h"
+#include "feature_badges.h"
 
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
 
@@ -881,74 +881,125 @@ info_build(const gd_item* cur, int width_px) {
     }
 }
 
-/* ---- Feature pictograms and the players pill, like the logos on the back of the PAL cases ---- */
-static int feat_id[FEAT_COUNT];
-static int feat_made;
+/* ---- The feature logos of the back of the case (players, Visual Memory, Vibration / Jump / puru puru Pack, ...), drawn in the style of
+ * the game's region: PAL logo tiles, the American arrow tags, the Japanese white boxes. Pictures are in feature_badges.h (made by
+ * tools/gen_badges.py; openMenu/FEATURE_LOGOS.md lists which are real logos, which a poor scan and which only placeholders). ---- */
+static int fb_id[3][FB_COUNT];
+static unsigned char fb_made[3][FB_COUNT];
 
-static void
-feat_icon(int i, float x, float y, float size) {
-    if (!feat_made || !gfx_dyn_valid(feat_id[i])) {
-        for (int k = 0; k < FEAT_COUNT; k++) {
-            feat_id[k] = gfx_dyn_create(feature_icons[k], FEAT_SIZE, FEAT_SIZE);
-        }
-        feat_made = 1;
+static int
+fb_pow2(int v) {
+    int p = 8;
+    while (p < v) {
+        p <<= 1;
     }
-    gfx_image_tint(feat_id[i], x, y, size, size, PANE_Z + 0.00008f, 0xFFFFFFFFu);
+    return p;
+}
+
+/* The picture of a badge (made on first use, padded to the power of two sizes the PVR needs); -1 when there is none. */
+static int
+fb_get(int region, int key, int* pw, int* ph) {
+    const feature_badge* b = &feature_badges[region][key];
+    if (!b->px || b->w <= 0 || b->w > 256 || b->h <= 0 || b->h > 64) {
+        return -1;
+    }
+    *pw = fb_pow2(b->w);
+    *ph = fb_pow2(b->h);
+    if (!fb_made[region][key] || !gfx_dyn_valid(fb_id[region][key])) {
+        static unsigned short buf[256 * 64];
+        memset(buf, 0, (size_t)*pw * (size_t)*ph * 2u);
+        for (int y = 0; y < b->h; y++) {
+            memcpy(&buf[y * *pw], &b->px[y * b->w], (size_t)b->w * 2u);
+        }
+        fb_id[region][key] = gfx_dyn_create(buf, *pw, *ph);
+        fb_made[region][key] = fb_id[region][key] >= 0;
+    }
+    return fb_made[region][key] ? fb_id[region][key] : -1;
 }
 
 static void
-feat_pill(const char* text, float x, float y, float w) {
-    gfx_rrect(x, y, w, 26.0f, 12.0f, PANE_Z + 0.00004f, 0xFF376AA0u);
-    gfx_text(text, x + (w - (float)gfx_text_width(text)) / 2.0f, y - 3.0f, 0.5f, 0xFFFFFFFFu, 1);
+fb_free_all(void) {
+    for (int r = 0; r < 3; r++) {
+        for (int k = 0; k < FB_COUNT; k++) {
+            if (fb_made[r][k]) {
+                gfx_dyn_free(fb_id[r][k]);
+                fb_made[r][k] = 0;
+            }
+        }
+    }
 }
 
-/* Draws the game's players pill(s) and the pictograms of what it supports from `y`; returns the height used. */
+/* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
 static float
 draw_features(const gd_item* cur, float x, float y, float width) {
+    static const gd_item* last;
+    if (cur != last) { /* another game: the pictures of the last one are let go */
+        fb_free_all();
+        last = cur;
+    }
     struct db_item* meta = NULL;
     if (!cur || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
         return 0.0f;
     }
-    float h = 0.0f;
-    if (meta->num_players > 0) {
-        char t[16];
-        if (meta->num_players == 1) {
-            snprintf(t, sizeof(t), "1 Player");
-        } else {
-            snprintf(t, sizeof(t), "1-%d Players", meta->num_players);
-        }
-        feat_pill(t, x, y, (float)gfx_text_width(t) + 16.0f);
-        h = 30.0f;
+    int region = FB_REGION_JP;
+    if (serial_is_pal(cur->product) || (strchr(cur->region, 'E') && !strchr(cur->region, 'U') && !strchr(cur->region, 'J'))) {
+        region = FB_REGION_PAL;
+    } else if (strchr(cur->region, 'U')) {
+        region = FB_REGION_US;
     }
-    if (meta->network & 3) {
-        const char* t = "Online Multi-play";
-        float w = (float)gfx_text_width(t) + 16.0f;
-        if (w > width) {
-            t = "Online";
-            w = (float)gfx_text_width(t) + 16.0f;
-        }
-        feat_pill(t, x, y + h, w);
-        h += 30.0f;
+    int keys[FB_COUNT], n = 0;
+    const int np = meta->num_players;
+    if (np > 0) {
+        keys[n++] = np == 1 ? FB_P1 : np == 2 ? (region == FB_REGION_US ? FB_P2 : FB_P12) : np <= 4 ? FB_P14 : FB_P16;
     }
-    int list[FEAT_COUNT], n = 0;
-    if (meta->vmu_blocks) list[n++] = FEAT_VMU;
-    if (meta->accessories & ACCESORIES_JUMP_PACK) list[n++] = FEAT_VIBRATION;
-    if (meta->accessories & ACCESORIES_ARCADE_STICK) list[n++] = FEAT_STICK;
-    if (meta->accessories & ACCESORIES_LIGHTGUN) list[n++] = FEAT_GUN;
-    if (meta->accessories & ACCESORIES_RACING_WHEEL) list[n++] = FEAT_WHEEL;
-    if (meta->accessories & ACCESORIES_KEYBOARD) list[n++] = FEAT_KEYBOARD;
-    if (meta->accessories & ACCESORIES_VGA) list[n++] = FEAT_VGA;
-    if (meta->network & 3) list[n++] = FEAT_NET;
-    const float size = 26.0f, gap = 4.0f;
-    int per_row = (int)((width + gap) / (size + gap));
-    per_row = per_row < 1 ? 1 : per_row;
+    if (meta->network & 3) keys[n++] = FB_ONLINE;
+    if (meta->vmu_blocks) keys[n++] = FB_VMU;
+    const unsigned acc = meta->accessories;
+    if (acc & ACCESORIES_JUMP_PACK) keys[n++] = FB_VIB;
+    if (acc & ACCESORIES_FISHING_ROD) keys[n++] = FB_FISHING;
+    if (acc & ACCESORIES_ARCADE_STICK) keys[n++] = FB_STICK;
+    if (acc & ACCESORIES_LIGHTGUN) keys[n++] = FB_GUN;
+    if (acc & ACCESORIES_RACING_WHEEL) keys[n++] = FB_WHEEL;
+    if (acc & ACCESORIES_KEYBOARD) keys[n++] = FB_KEYBOARD;
+    if (acc & ACCESORIES_VGA) keys[n++] = FB_VGA;
+    if (acc & ACCESORIES_MICROPHONE) keys[n++] = FB_MIC;
+    if (acc & ACCESORIES_MOUSE) keys[n++] = FB_MOUSE;
+    if (acc & ACCESORIES_MARACAS) keys[n++] = FB_MARACAS;
+    if (acc & ACCESORIES_DREAMEYE) keys[n++] = FB_DREAMEYE;
+    if (acc & ACCESORIES_MODEM) keys[n++] = FB_MODEM;
+    if (acc & ACCESORIES_BBA) keys[n++] = FB_BBA;
+    if (region == FB_REGION_JP) keys[n++] = FB_DISC;
+
+    const float gap = 4.0f;
+    float cx = 0.0f, cy = 0.0f, row_h = 0.0f;
     for (int i = 0; i < n; i++) {
-        feat_icon(list[i], x + (float)(i % per_row) * (size + gap), y + h + (float)(i / per_row) * (size + gap), size);
+        const feature_badge* b = &feature_badges[region][keys[i]];
+        int pw, ph, id = fb_get(region, keys[i], &pw, &ph);
+        if (id < 0) {
+            continue;
+        }
+        if (cx > 0.0f && cx + (float)b->w > width) { /* next row */
+            cy += row_h + gap;
+            cx = row_h = 0.0f;
+        }
+        gfx_image(id, x + cx, y + cy, (float)pw, (float)ph, PANE_Z + 0.00008f);
+        if (b->num_x >= 0) { /* the number the menu writes into the badge */
+            char t[16] = "";
+            if (keys[i] == FB_VMU) {
+                if (region == FB_REGION_US) {
+                    snprintf(t, sizeof(t), "%d blocks", meta->vmu_blocks);
+                } else {
+                    snprintf(t, sizeof(t), "%d", meta->vmu_blocks);
+                }
+            } else if (keys[i] == FB_DISC) {
+                snprintf(t, sizeof(t), "%d", gd_item_disc_total(cur->disc) > 0 ? gd_item_disc_total(cur->disc) : 1);
+            }
+            gfx_text_scaled(t, x + cx + (float)b->num_x, y + cy + (float)b->num_y, 0.5f, 0xFF000000u, 0.45f);
+        }
+        cx += (float)b->w + gap;
+        row_h = row_h > (float)b->h ? row_h : (float)b->h;
     }
-    if (n) {
-        h += (float)((n + per_row - 1) / per_row) * (size + gap);
-    }
-    return h;
+    return n ? cy + row_h + gap : 0.0f;
 }
 
 static void
