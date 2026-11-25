@@ -191,6 +191,10 @@ lookup(bscene_texref ref) {
             snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_%d", ref.a - 0x1000);
         } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_FRONT) {
             snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE");
+        } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_BACK) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE_BACK");
+        } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_SPINE) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE_SPINE");
         }
         const char* val = name[0] ? getenv(name) : NULL;
         if (val && (!strcmp(val, "pal") || !strcmp(val, "ntsc"))) {

@@ -555,7 +555,8 @@ fit_label(dc_vertex_t v[4], const char* name, int pal) {
         z1 = v[i].z > z1 ? v[i].z : z1;
     }
     for (int i = 0; i < 4; i++) {
-        v[i].y = v[i].y > 0.0f ? 60.0f : -60.0f;
+        const float hh = strstr(name, "label_rear") ? 59.5f : 60.0f; /* Sega's guidelines: front inlay 120 x 120 mm, back inlay 119 mm tall */
+        v[i].y = v[i].y > 0.0f ? hh : -hh;
         if (strstr(name, "label_front")) {
             v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : -50.0f, pal ? 67.0f : 70.0f);
         } else if (strstr(name, "label_spine")) {
