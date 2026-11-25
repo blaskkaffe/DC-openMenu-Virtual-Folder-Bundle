@@ -834,6 +834,23 @@ pack4444(float r, float g, float b) {
     return (unsigned short)(0xF000u | c[0] << 8 | c[1] << 4 | c[2]);
 }
 
+/* The same for a colour given as it should look on screen (0..255 per channel; a 4-bit channel shows as level * 17): the levels are ordered-dithered
+ * (4 x 4) over the picture, so a flat area shows its colour on average instead of the nearest of 16 levels. */
+static unsigned short
+pack4444_dither(float r, float g, float b, int x, int y) {
+    static const unsigned char bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+    const float t = ((float)bayer[y & 3][x & 3] + 0.5f) / 16.0f;
+    const float v[3] = {r, g, b};
+    unsigned c[3];
+    for (int i = 0; i < 3; i++) {
+        float l = v[i] / 17.0f;
+        unsigned lo = (unsigned)l;
+        c[i] = lo + ((l - (float)lo) > t ? 1u : 0u);
+        c[i] = c[i] > 15u ? 15u : c[i];
+    }
+    return (unsigned short)(0xF000u | c[0] << 8 | c[1] << 4 | c[2]);
+}
+
 /* The cases' fronts and backs for a game without box art, from the BIOS's own disc picture (it has the stacked Dreamcast logo with the
  * word under the swirl): the front is the disc's blue (PAL) or red (NTSC) with the logo in white, the back is white with the logo in its
  * own colours. 128 x 128, the logo's width is `frac` of the picture. */
@@ -992,12 +1009,12 @@ pill_texture(void) {
     const float pt = (61.5f - 25.5f) * ppm_y;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 0x2A, g = 0x4D, b = 0x9C; /* the carrier: the case's blue */
+            float r = 40, g = 73, b = 149; /* the carrier: the case's blue, as the curved hinge sections show it */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             if (fy >= pt && fy < pt + (float)PILL_MASK_H && fx >= 1.5f && fx < 1.5f + (float)PILL_MASK_W) {
                 /* the pill has the shape of the menu's "1-4 Players" banner, turned to read upwards */
                 const float m = (float)pill_mask[(int)(fy - pt) * PILL_MASK_W + (int)(fx - 1.5f)] / 255.0f;
-                r += (0x42 - r) * m, g += (0x68 - g) * m, b += (0xB4 - b) * m; /* the pill, lighter (the spine's pill is the same) */
+                r += (68 - r) * m, g += (119 - g) * m, b += (187 - b) * m; /* the pill, lighter (the spine's pill is the same) */
             }
             float a = 0.0f; /* the text's coverage: 3 x 3 samples */
             for (int sy = 0; sy < 3; sy++) {
@@ -1010,8 +1027,8 @@ pill_texture(void) {
                     }
                 }
             }
-            r += (0x12 - r) * a, g += (0x1E - g) * a, b += (0x48 - b) * a; /* dark navy lettering */
-            px[y * W + x] = pack4444(r, g, b);
+            r += (17 - r) * a, g += (34 - g) * a, b += (85 - b) * a; /* dark navy lettering */
+            px[y * W + x] = pack4444_dither(r, g, b, x, y);
         }
     }
     upload_argb4444(px, W, H, &pill_tex);
@@ -1081,7 +1098,7 @@ spine_texture(int kind) {
     }
     /* background, patch, ink, band colours */
     static const float col[SPINE_KINDS][4][3] = {
-        {{0x2A, 0x4D, 0x9C}, {0x42, 0x68, 0xB4}, {0xF8, 0xF8, 0xFF}, {0x2A, 0x4D, 0x9C}},
+        {{40, 73, 149}, {68, 119, 187}, {0xF8, 0xF8, 0xFF}, {40, 73, 149}},
         {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
         {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
     static uint32_t* logo;
@@ -1212,7 +1229,8 @@ spine_texture(int kind) {
         return NULL;
     }
     for (int i = 0; i < W * H; i++) {
-        px[i] = pack4444(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+        px[i] = kind == SPINE_PAL ? pack4444_dither(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], i % W, i / W)
+                                  : pack4444(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
     }
     free(rgb);
     /* into the other slot; the old picture may still be on the PVR's frame, so it is freed a build later */
