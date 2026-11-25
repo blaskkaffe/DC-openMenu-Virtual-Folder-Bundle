@@ -557,11 +557,11 @@ draw_round_face(const nj_mesh* mesh, const nj_poly* poly, const nj_mat4* m, uint
 
 void
 bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink) {
-    bscene_draw_model_alpha(s, model, cx, cy, scale, rot_deg, 0.0f, sink);
+    bscene_draw_model_alpha(s, model, cx, cy, scale, rot_deg, 0.0f, 0.0f, sink);
 }
 
 void
-bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], float alpha_off, const bscene_sink* sink) {
+bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], float alpha_off, float dz, const bscene_sink* sink) {
     float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
     bvm_obj o;
     memset(&o, 0, sizeof(o));
@@ -575,7 +575,7 @@ bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, c
     o.texlist = model;
     o.pos[0] = (cx - 320.0f) * units_per_px;
     o.pos[1] = (240.0f - cy) * units_per_px;
-    o.pos[2] = BSCENE_PANEL_Z;
+    o.pos[2] = BSCENE_PANEL_Z - dz;
     o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = scale;
     for (int k = 0; k < 3; k++) {
         o.rot[k] = (int32_t)(rot_deg[k] * (65536.0f / 360.0f));

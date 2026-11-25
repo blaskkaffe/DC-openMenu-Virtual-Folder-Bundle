@@ -154,8 +154,8 @@ void bscene_draw_frame(bscene* s, float x, float y, float w, float h, float row_
  * pixel (cx, cy) as it looks at BSCENE_PANEL_Z; `scale` multiplies the model's own units, `rot_deg` is
  * the rotation about x, y, z in degrees. Submitted immediately, like bscene_draw_panel(). */
 void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink);
-/* The same with a constant alpha offset (negative: more see-through), for the second, larger and semi-transparent copy the menu's icons have. */
-void bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], float alpha_off, const bscene_sink* sink);
+/* The same with a constant alpha offset (negative: more see-through), for the second, larger and semi-transparent copy the menu's icons have, moved `dz` units farther. */
+void bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], float alpha_off, float dz, const bscene_sink* sink);
 
 /* A node of a loaded model, for the effects that change a model in place (the free-space gauge of the memory
  * card plate scales one). NULL if the model cannot be loaded. Call bscene_cache_clear() after changing it. */
