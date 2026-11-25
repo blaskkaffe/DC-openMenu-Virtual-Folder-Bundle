@@ -1123,7 +1123,7 @@ test_models(const bios_rom* rom) {
             total += m->polys[p].ntris;
         }
         CHECK(total <= 330); /* budget: about what the main screen icons use (234 to 486 triangles) */
-        if (id == BMODEL_CASE_WHITE || id == BMODEL_CASE_PAL || id == BMODEL_CASE_DARK) {
+        if (id == BMODEL_CASE_WHITE || id == BMODEL_CASE_PAL || id == BMODEL_CASE_DARK || id == BMODEL_CASE_CLEAR_WHITE || id == BMODEL_CASE_CLEAR_BLACK) {
             CHECK(front_tris == 2 && back_tris == 2); /* one picture slot on the front, one on the back */
         } else {
             CHECK(front_tris == 0 && back_tris == 0);
