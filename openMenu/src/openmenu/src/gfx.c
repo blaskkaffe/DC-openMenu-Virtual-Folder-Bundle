@@ -949,8 +949,8 @@ generic_cover(int pal, int back) {
     return out->valid ? out : NULL;
 }
 
-/* The PAL case's hinge bar (BMODEL_TEX_PILL): 8 x 123 mm, dark blue; the lighter rounded pill (full width, 51 mm tall, corners of 3.2 mm) in
- * the middle with the swirl of the BIOS's logo in white on it. 32 x 512. */
+/* The PAL case's hinge bar (BMODEL_TEX_PILL): 8 x 123 mm, muted blue; the lighter rounded pill (full width, 51 mm tall, corners of 3.2 mm) in
+ * the middle with the BIOS logo's "Dreamcast" wordmark in dark lettering on it (the PAL cases have the text, not the swirl). 32 x 512. */
 static rom_tex pill_tex;
 static rom_tex*
 pill_texture(void) {
@@ -968,38 +968,51 @@ pill_texture(void) {
         free(px);
         return NULL;
     }
-    int y0 = LOGO_H, y1 = 0;
+    /* the wordmark "Dreamcast" of the BIOS's logo (right of the swirl), found by its opaque pixels */
+    int wx0 = LOGO_W, wx1 = 0, wy0 = LOGO_H, wy1 = 0;
     for (int y = 0; y < LOGO_H; y++) {
-        for (int x = 0; x < LOGO_SWIRL_W; x++) {
+        for (int x = LOGO_SWIRL_W + 1; x < LOGO_W; x++) {
             if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
-                y0 = y < y0 ? y : y0;
-                y1 = y > y1 ? y : y1;
+                wx0 = x < wx0 ? x : wx0, wx1 = x > wx1 ? x : wx1;
+                wy0 = y < wy0 ? y : wy0, wy1 = y > wy1 ? y : wy1;
             }
         }
     }
-    const float sh = (float)(y1 - y0 + 1), sw = (float)LOGO_SWIRL_W;
+    if (wx1 <= wx0) {
+        free(logo);
+        free(px);
+        return NULL;
+    }
+    const float ww = (float)(wx1 - wx0 + 1), wh = (float)(wy1 - wy0 + 1);
     const float ppm_x = (float)W / 8.0f, ppm_y = (float)H / 123.0f; /* picture pixels per mm */
-    const float swirl_mm = 6.0f;
-    const float sx = swirl_mm * ppm_x / sw, sy = swirl_mm * ppm_y / (sw > sh ? sw : sh); /* picture pixels per logo pixel, each way */
-    const float cx = (float)W / 2.0f, cy = (61.5f - 0.0f) * ppm_y; /* the middle of the bar */
+    const float text_mm = 36.0f;            /* the text's length along the pill: it reads from the bottom up, like the real case's spine */
+    const float s = text_mm / ww;           /* mm per logo pixel */
+    const float cx = (float)W / 2.0f, cy = 61.5f * ppm_y; /* the middle of the bar */
     const float pt = (61.5f - 25.5f) * ppm_y, pb = (61.5f + 25.5f) * ppm_y, rad = 3.2f * ppm_x;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 0x0D, g = 0x2C, b = 0x89;
+            float r = 0x2F, g = 0x4C, b = 0x8E; /* the carrier: a muted blue */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             if (fy >= pt && fy <= pb && fx >= 1.5f && fx <= (float)W - 1.5f) {
                 float dx = fx < 1.5f + rad ? 1.5f + rad - fx : (fx > (float)W - 1.5f - rad ? fx - ((float)W - 1.5f - rad) : 0.0f);
                 float dy = fy < pt + rad ? pt + rad - fy : (fy > pb - rad ? fy - (pb - rad) : 0.0f);
                 if (dx * dx + dy * dy <= rad * rad) {
-                    r = 0x1E, g = 0x48, b = 0xAD;
+                    r = 0x43, g = 0x63, b = 0xA8; /* the pill, lighter */
                 }
             }
-            const float lx = sw / 2.0f + (fx - cx) / sx, ly = (float)y0 + sh / 2.0f + (fy - cy) / sy;
-            if (lx >= 0 && lx < (float)LOGO_SWIRL_W && ly >= (float)y0 && ly <= (float)y1) {
-                float a = (float)(logo[(int)ly * LOGO_W + (int)lx] >> 24) / 255.0f;
-                r += (255.0f - r) * a, g += (255.0f - g) * a, b += (255.0f - b) * a;
+            float a = 0.0f; /* the text's coverage: 3 x 3 samples */
+            for (int sy = 0; sy < 3; sy++) {
+                for (int sx = 0; sx < 3; sx++) {
+                    const float px_ = fx + ((float)sx - 1.0f) / 3.0f, py_ = fy + ((float)sy - 1.0f) / 3.0f;
+                    const float along = (cy - py_) / ppm_y, across = (px_ - cx) / ppm_x; /* mm: up the pill, and to the right */
+                    const float lx = (float)wx0 + ww / 2.0f + along / s, ly = (float)wy0 + wh / 2.0f + across / s;
+                    if (lx >= (float)wx0 && lx < (float)wx1 + 1.0f && ly >= (float)wy0 && ly < (float)wy1 + 1.0f) {
+                        a += (float)(logo[(int)ly * LOGO_W + (int)lx] >> 24) / 255.0f / 9.0f;
+                    }
+                }
             }
-            px[y * W + x] = pack4444(r * 16.0f / 16.0f, g, b);
+            r += (0x12 - r) * a, g += (0x1E - g) * a, b += (0x48 - b) * a; /* dark navy lettering */
+            px[y * W + x] = pack4444(r, g, b);
         }
     }
     upload_argb4444(px, W, H, &pill_tex);

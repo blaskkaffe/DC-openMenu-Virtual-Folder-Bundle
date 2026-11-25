@@ -574,7 +574,7 @@ build_pal_bar(builder* b, float S) {
     static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
     int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
     quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
-    int q = poly_new(b, -1, 0xFF0D2C89u, STRIP_IGNORE_LIGHT);
+    int q = poly_new(b, -1, 0xFF2F4C8Eu, STRIP_IGNORE_LIGHT);
     const v3 A0 = v3m(x0 * S, yt * S, zb * S), B0 = v3m(x1 * S, yt * S, zb * S), C0 = v3m(x1 * S, yb * S, zb * S), D0 = v3m(x0 * S, yb * S, zb * S);
     quad(b, q, A0, A, D, D0, NULL, v3m(-1, 0, 0));
     quad(b, q, B, B0, C0, C, NULL, v3m(1, 0, 0));
@@ -582,11 +582,29 @@ build_pal_bar(builder* b, float S) {
     quad(b, q, D, C, C0, D0, NULL, v3m(0, -1, 0));
 }
 
+/* The PAL case's inside: the blue tray fills the space between the front and rear labels (and shows beside the hinge bar), so the clear shell
+ * is not see-through. A box slightly inside the shell; the faces at the top, bottom and right edges are a little darker, as seen at a slant. */
+static void
+build_pal_tray(builder* b, float S) {
+    const float x0 = -69.6f, x1 = 66.8f, yt = 61.0f, yb = -61.0f, zf = 7.8f, zr = -7.8f;
+    const uint32_t blue = 0xFF3A5A9Cu, side = 0xFF2F4A82u;
+    int f = poly_new(b, -1, blue, STRIP_IGNORE_LIGHT), e = poly_new(b, -1, side, STRIP_IGNORE_LIGHT);
+    const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
+    const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
+    quad(b, f, A, B, C, D, NULL, v3m(0, 0, 1));
+    quad(b, e, A0, B0, B, A, NULL, v3m(0, 1, 0));
+    quad(b, e, D, C, C0, D0, NULL, v3m(0, -1, 0));
+    quad(b, e, B, B0, C0, C, NULL, v3m(1, 0, 0));
+}
+
 static void
 build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
     const float S = BMODEL_CASE_HEIGHT / 125.0f;
     const int ribbed = m != &dc_model_dreamcast_pal_case_blue;
 #define RIB_MM 9.1f
+    if (!ribbed) {
+        build_pal_tray(b, S);
+    }
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
             const dc_part_t* part = &m->parts[pi];
