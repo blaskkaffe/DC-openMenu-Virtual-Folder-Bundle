@@ -991,13 +991,13 @@ pill_texture(void) {
     const float pt = (61.5f - 25.5f) * ppm_y, pb = (61.5f + 25.5f) * ppm_y, rad = 3.2f * ppm_x;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 0x2F, g = 0x4C, b = 0x8E; /* the carrier: a muted blue */
+            float r = 0x2A, g = 0x4D, b = 0x9C; /* the carrier: the case's blue */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             if (fy >= pt && fy <= pb && fx >= 1.5f && fx <= (float)W - 1.5f) {
                 float dx = fx < 1.5f + rad ? 1.5f + rad - fx : (fx > (float)W - 1.5f - rad ? fx - ((float)W - 1.5f - rad) : 0.0f);
                 float dy = fy < pt + rad ? pt + rad - fy : (fy > pb - rad ? fy - (pb - rad) : 0.0f);
                 if (dx * dx + dy * dy <= rad * rad) {
-                    r = 0x43, g = 0x63, b = 0xA8; /* the pill, lighter */
+                    r = 0x42, g = 0x68, b = 0xB4; /* the pill, lighter (the spine's pill is the same) */
                 }
             }
             float a = 0.0f; /* the text's coverage: 3 x 3 samples */
@@ -1082,7 +1082,7 @@ spine_texture(int kind) {
     }
     /* background, patch, ink, band colours */
     static const float col[SPINE_KINDS][4][3] = {
-        {{0x20, 0x41, 0x9B}, {0x2C, 0x52, 0xB4}, {0xF8, 0xF8, 0xFF}, {0x20, 0x41, 0x9B}},
+        {{0x2A, 0x4D, 0x9C}, {0x42, 0x68, 0xB4}, {0xF8, 0xF8, 0xFF}, {0x2A, 0x4D, 0x9C}},
         {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
         {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
     static uint32_t* logo;

@@ -574,7 +574,7 @@ build_pal_bar(builder* b, float S) {
     static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
     int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
     quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
-    int q = poly_new(b, -1, 0xFF2F4C8Eu, STRIP_IGNORE_LIGHT);
+    int q = poly_new(b, -1, 0xFF2A4D9Cu, STRIP_IGNORE_LIGHT);
     const v3 A0 = v3m(x0 * S, yt * S, zb * S), B0 = v3m(x1 * S, yt * S, zb * S), C0 = v3m(x1 * S, yb * S, zb * S), D0 = v3m(x0 * S, yb * S, zb * S);
     quad(b, q, A0, A, D, D0, NULL, v3m(-1, 0, 0));
     quad(b, q, B, B0, C0, C, NULL, v3m(1, 0, 0));
@@ -587,7 +587,7 @@ build_pal_bar(builder* b, float S) {
 static void
 build_pal_tray(builder* b, float S) {
     const float x0 = -69.6f, x1 = 66.8f, yt = 61.0f, yb = -61.0f, zf = 7.8f, zr = -7.8f;
-    const uint32_t blue = 0xFF3A5A9Cu, side = 0xFF2F4A82u;
+    const uint32_t blue = 0xFF2A4D9Cu, side = 0xFF264794u;
     int f = poly_new(b, -1, blue, STRIP_IGNORE_LIGHT), e = poly_new(b, -1, side, STRIP_IGNORE_LIGHT);
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
@@ -684,7 +684,11 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                         cax = -1;
                     }
                 }
-                const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(src[0].argb, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
+                uint32_t srcc = src[0].argb;
+                if (!ribbed && !strcmp(part->name, "hinge_strip")) { /* the curved hinge sections: the same blue as the bar and the tray */
+                    srcc = srcc == 0xFF0D2C89u ? 0xFF2A4D9Cu : srcc == 0xFF0C297Fu ? 0xFF264794u : srcc;
+                }
+                const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
                 while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
                     g++;
