@@ -225,17 +225,20 @@ class P
         var meta = ScrapeText.BuildMeta(null, g, false);
         Eq(meta.Length, 384, "meta size");
         Eq(meta[0], (byte)1, "meta players");
-        Eq(BitConverter.ToUInt16(meta, 5), (ushort)9, "meta genre");
+        Eq(BitConverter.ToUInt16(meta, 4), (ushort)9, "meta genre (offset 4, as db_item)");
+        Eq(meta[6] == 0 && meta[7] == 0, true, "meta bytes 6 and 7 (accessories high byte, links) untouched");
         var desc = System.Text.Encoding.ASCII.GetString(meta, 8, Array.IndexOf(meta, (byte)0, 8) - 8);
         Eq(desc, "Tokyo-to is ruled by gangs. Beat's crew, the GGs, tag the city's streets - and the police don't like it.", "meta description");
         // existing entry: VMU blocks, accessories and an existing description are kept without Overwrite
         var old = new byte[384];
-        old[1] = 13; old[2] = 0x05; old[4] = 1;
+        old[1] = 13; old[2] = 0x05; old[3] = 1; old[6] = 0x01; old[7] = 0x02; // network: modem; light gun; serial
         System.Text.Encoding.ASCII.GetBytes("Mine.").CopyTo(old, 8);
         var merged = ScrapeText.BuildMeta(old, g, false);
         Eq(merged[1], (byte)13, "vmu kept");
         Eq(merged[2], (byte)5, "accessories kept");
-        Eq(merged[4], (byte)1, "network kept");
+        Eq(merged[3], (byte)1, "network kept");
+        Eq(merged[6], (byte)1, "accessories high byte kept");
+        Eq(merged[7], (byte)2, "links (W5500, serial) kept");
         Eq(System.Text.Encoding.ASCII.GetString(merged, 8, 5), "Mine.", "description kept");
         var over = ScrapeText.BuildMeta(old, g, true);
         Check(System.Text.Encoding.ASCII.GetString(over, 8, 8) == "Tokyo-to", "description overwritten");

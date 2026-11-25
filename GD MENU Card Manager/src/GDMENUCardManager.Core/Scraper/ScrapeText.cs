@@ -20,8 +20,10 @@ namespace GDMENUCardManager.Core.Scraper
             if (players > 0 && (overwrite || raw[0] == 0))
                 raw[0] = (byte)Math.Min(players, 255);
             ushort genre = GenreBits(g.Genres);
-            if (genre != 0 && (overwrite || BitConverter.ToUInt16(raw, 5) == 0))
-                BitConverter.GetBytes(genre).CopyTo(raw, 5);
+            // genre is the little-endian short at offset 4 (db_item: players, VMU blocks, accessories, network, genre);
+            // byte 6 holds the accessories' high byte and byte 7 the patched ways to connect, so nothing may spill there
+            if (genre != 0 && (overwrite || BitConverter.ToUInt16(raw, 4) == 0))
+                BitConverter.GetBytes(genre).CopyTo(raw, 4);
             bool hasDescription = raw[8] != 0;
             var synopsis = CleanSynopsis(g.Synopsis, MetaDatManager.DescriptionLength - 1);
             if (synopsis.Length > 0 && (overwrite || !hasDescription))

@@ -20,6 +20,12 @@ namespace GDMENUCardManager.Core
         public const int IconPixelDataSize = IconWidth * IconHeight * 2;     // 32,768 bytes
         public const int TotalIconPvrSize = TotalHeaderSize + IconPixelDataSize;  // 32,800 bytes
 
+        // SPINE.DAT constants (32x256, not twiddled: the spine label of the 3D case, 120 mm tall)
+        public const int SpineWidth = 32;
+        public const int SpineHeight = 256;
+        public const int SpinePixelDataSize = SpineWidth * SpineHeight * 2;  // 16,384 bytes
+        public const int TotalSpinePvrSize = TotalHeaderSize + SpinePixelDataSize;  // 16,416 bytes (0x4020)
+
         // Common constants
         public const uint GlobalIndex = 1001;
         public const int GbixHeaderSize = 16;  // GBIX(4) + size(4) + index(4) + pad(4)
@@ -31,6 +37,7 @@ namespace GDMENUCardManager.Core
         private const byte PixelFormatRgb565 = 0x01;
         private const byte PixelFormatArgb4444 = 0x02;
         private const byte DataFormatSquareTwiddled = 0x01;
+        private const byte DataFormatRectangle = 0x09;
 
         /// <summary>
         /// Resizes to 256x256 without preserving aspect ratio. Pixel format is chosen from the
@@ -82,7 +89,30 @@ namespace GDMENUCardManager.Core
             return EncodeFromImage(image, IconWidth, IconHeight);
         }
 
-        private static byte[] EncodeFromImage(Image<Bgra32> image, int targetWidth, int targetHeight)
+        /// <summary>
+        /// A spine label for SPINE.DAT: 32x256, read upwards. A picture wider than it is tall is turned a quarter to the
+        /// left first (a spine scanned lying down, reading left to right, then reads upwards).
+        /// </summary>
+        public static byte[] EncodeSpineFromFile(string imagePath)
+        {
+            using var image = Image.Load<Bgra32>(imagePath);
+            return EncodeSpineFromImage(image);
+        }
+
+        public static byte[] EncodeSpineFromPixels(byte[] bgraPixels, int width, int height)
+        {
+            using var image = Image.LoadPixelData<Bgra32>(bgraPixels, width, height);
+            return EncodeSpineFromImage(image);
+        }
+
+        private static byte[] EncodeSpineFromImage(Image<Bgra32> image)
+        {
+            if (image.Width > image.Height)
+                image.Mutate(ctx => ctx.Rotate(RotateMode.Rotate270));
+            return EncodeFromImage(image, SpineWidth, SpineHeight, twiddle: false);
+        }
+
+        private static byte[] EncodeFromImage(Image<Bgra32> image, int targetWidth, int targetHeight, bool twiddle = true)
         {
             // Forced resize. Aspect ratio is deliberately not preserved.
             image.Mutate(ctx => ctx.Resize(targetWidth, targetHeight));
@@ -109,11 +139,11 @@ namespace GDMENUCardManager.Core
                 }
             });
 
-            // Twiddle the pixel data
-            var twiddledData = TwiddleTexture(pixelData, targetWidth, targetHeight);
+            // Twiddle the pixel data (square pictures; the spine's stays in rows)
+            var outData = twiddle ? TwiddleTexture(pixelData, targetWidth, targetHeight) : pixelData;
 
             // Build the PVR file
-            return BuildPvrFile(twiddledData, targetWidth, targetHeight, pixelFormat);
+            return BuildPvrFile(outData, targetWidth, targetHeight, pixelFormat, twiddle ? DataFormatSquareTwiddled : DataFormatRectangle);
         }
 
         /// <summary>
@@ -219,7 +249,7 @@ namespace GDMENUCardManager.Core
             return x;
         }
 
-        private static byte[] BuildPvrFile(ushort[] twiddledData, int width, int height, byte pixelFormat)
+        private static byte[] BuildPvrFile(ushort[] twiddledData, int width, int height, byte pixelFormat, byte dataFormat = DataFormatSquareTwiddled)
         {
             int pixelDataSize = width * height * 2;
             int totalSize = TotalHeaderSize + pixelDataSize;
@@ -244,7 +274,7 @@ namespace GDMENUCardManager.Core
             writer.Write((byte)'T');
             writer.Write((uint)(pixelDataSize + 8));  // Data size (pixel data + 8 for format info)
             writer.Write(pixelFormat);                // Pixel format (1 byte)
-            writer.Write(DataFormatSquareTwiddled);   // Data format (1 byte)
+            writer.Write(dataFormat);                 // Data format (1 byte)
             writer.Write((ushort)0);                   // Padding
             writer.Write((ushort)width);               // Width
             writer.Write((ushort)height);              // Height
@@ -297,13 +327,14 @@ namespace GDMENUCardManager.Core
             bool isKnownPixelFormat = pixelFormat == PixelFormatRgb565 ||
                                       pixelFormat == PixelFormatArgb1555 ||
                                       pixelFormat == PixelFormatArgb4444;
-            if (!isKnownPixelFormat || dataFormat != DataFormatSquareTwiddled)
+            bool isSpine = dataFormat == DataFormatRectangle && width == SpineWidth && height == SpineHeight;
+            if (!isKnownPixelFormat || (dataFormat != DataFormatSquareTwiddled && !isSpine))
                 return null;
 
-            // Validate supported dimensions (256x256 for BOX or 128x128 for ICON)
+            // Validate supported dimensions (256x256 for BOX or 128x128 for ICON, 32x256 in rows for SPINE)
             bool isValidBox = (width == TextureWidth && height == TextureHeight);
             bool isValidIcon = (width == IconWidth && height == IconHeight);
-            if (!isValidBox && !isValidIcon)
+            if (!isValidBox && !isValidIcon && !isSpine)
                 return null;
 
             // Validate data length
@@ -319,8 +350,8 @@ namespace GDMENUCardManager.Core
                 twiddledData[i] = reader.ReadUInt16();
             }
 
-            // Untwiddle
-            var linearData = UntwiddleTexture(twiddledData, width, height);
+            // Untwiddle (the spine's picture is in rows already)
+            var linearData = isSpine ? twiddledData : UntwiddleTexture(twiddledData, width, height);
 
             // Convert to BGRA32
             var pixels = new byte[width * height * 4];

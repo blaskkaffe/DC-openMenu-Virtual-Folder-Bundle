@@ -4,10 +4,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="{Binding WindowTitle}" Height="450" Width="420" ResizeMode="NoResize"
+        Title="{Binding WindowTitle}" Height="510" Width="420" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="1*"/>
             <RowDefinition Height="Auto"/>
@@ -18,8 +19,20 @@
         <TextBlock Grid.Row="0" Text="{Binding Serial}" FontWeight="Bold" Foreground="Black"
                    HorizontalAlignment="Center" Margin="0,0,0,10"/>
 
+        <!-- Which picture: the front cover, or the rest of the 3D case -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+            <RadioButton GroupName="ArtSlot" Content="Front" Tag="Front" IsChecked="True" Click="Slot_Click" Margin="0,0,14,0"
+                         ToolTip="Front cover (BOX.DAT and ICON.DAT)"/>
+            <RadioButton GroupName="ArtSlot" Content="Back" Tag="Back" Click="Slot_Click" Margin="0,0,14,0"
+                         ToolTip="Back cover (BACK.DAT)"/>
+            <RadioButton GroupName="ArtSlot" Content="Spine" Tag="Spine" Click="Slot_Click" Margin="0,0,14,0"
+                         ToolTip="Spine label (SPINE.DAT)"/>
+            <RadioButton GroupName="ArtSlot" Content="Disc" Tag="Disc" Click="Slot_Click"
+                         ToolTip="Disc label: the disc's own (from the GDI) or a picture of your choice"/>
+        </StackPanel>
+
 <!-- Preview -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Button Click="NavigatePrev_Click"
                     IsEnabled="{Binding CanNavigatePrev}"
                     ToolTip="Show previous game's artwork"
@@ -31,7 +44,7 @@
             <Border BorderBrush="Gray" BorderThickness="1"
                     Width="260" Height="260" VerticalAlignment="Center" Margin="0,0,32,0">
                 <Grid>
-                    <TextBlock Text="No artwork assigned" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding EmptyText}" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -68,12 +81,13 @@
         </StackPanel>
 
         <!-- Info Label -->
-        <TextBlock Grid.Row="2" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="Black">
+        <TextBlock Grid.Row="3" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="Black">
+            <Run Text="{Binding SlotHint, Mode=OneWay}"/><LineBreak/>
             <Run Text="Artwork changes aren't written to DAT files until clicking "/><Run Text="Save Changes" FontWeight="Bold"/><Run Text=" in the main window."/>
         </TextBlock>
 
         <!-- Buttons -->
-        <StackPanel x:Name="ButtonRow" Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+        <StackPanel x:Name="ButtonRow" Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
             <Button Content="Browse for Image" Click="BrowseImage_Click" Margin="0,0,10,0" Padding="15,8"
                     ToolTip="Choose a PNG, JPG, or BMP file to use as artwork for this game"/>
             <Button Content="Import From Disc" Click="ImportFromDisc_Click" Margin="0,0,10,0" Padding="15,8"

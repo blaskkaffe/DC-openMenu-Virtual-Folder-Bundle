@@ -16,7 +16,21 @@ namespace GDMENUCardManager.Core
     public class BoxDatManager
     {
         // Constants
-        public const uint EntrySize = 0x20020;  // 131,104 bytes
+        public const uint EntrySize = 0x20020;  // 131,104 bytes (BOX.DAT, BACK.DAT)
+
+        /// <summary>The entry size of this file: BOX.DAT's by default; SPINE.DAT holds 32x256 pictures (0x4020).</summary>
+        public uint EntryBytes { get; }
+
+        /// <summary>The file's name in messages ("BOX.DAT", "BACK.DAT", "SPINE.DAT").</summary>
+        public string FileLabel { get; }
+
+        public BoxDatManager() : this(EntrySize, "BOX.DAT") { }
+
+        public BoxDatManager(uint entryBytes, string fileLabel)
+        {
+            EntryBytes = entryBytes;
+            FileLabel = fileLabel;
+        }
         public const int HeaderSize = 16;
         public const int EntryIndexSize = 16;
         public const int NameFieldLength = 10;
@@ -64,7 +78,7 @@ namespace GDMENUCardManager.Core
             {
                 if (!File.Exists(boxDatPath))
                 {
-                    LoadError = "BOX.DAT file not found";
+                    LoadError = $"{FileLabel} file not found";
                     return;
                 }
 
@@ -88,9 +102,9 @@ namespace GDMENUCardManager.Core
                 uint fileCount = reader.ReadUInt32();
                 uint reserved = reader.ReadUInt32();
 
-                if (entrySize != EntrySize)
+                if (entrySize != EntryBytes)
                 {
-                    LoadError = $"Unexpected entry size 0x{entrySize:X} (expected 0x{EntrySize:X})";
+                    LoadError = $"Unexpected entry size 0x{entrySize:X} (expected 0x{EntryBytes:X})";
                     return;
                 }
 
@@ -178,8 +192,8 @@ namespace GDMENUCardManager.Core
             if (string.IsNullOrEmpty(normalized))
                 throw new ArgumentException("Serial cannot be empty");
 
-            if (pvrData == null || pvrData.Length != EntrySize)
-                throw new ArgumentException($"PVR data must be exactly {EntrySize} bytes");
+            if (pvrData == null || pvrData.Length != EntryBytes)
+                throw new ArgumentException($"PVR data must be exactly {EntryBytes} bytes");
 
             var existingEntry = _entries.FirstOrDefault(e =>
                 e.Name.Equals(normalized, StringComparison.OrdinalIgnoreCase));
@@ -238,13 +252,13 @@ namespace GDMENUCardManager.Core
             // The first data offset (EntrySize * fileNum) has to clear the header and index area.
             long indexAreaSize = HeaderSize + (_entries.Count * EntryIndexSize);
             uint startingFileNum = (uint)Math.Max(StartingFileNumber,
-                (int)Math.Ceiling((double)indexAreaSize / EntrySize));
+                (int)Math.Ceiling((double)indexAreaSize / EntryBytes));
 
             writer.Write((byte)'D');
             writer.Write((byte)'A');
             writer.Write((byte)'T');
             writer.Write((byte)0x01);
-            writer.Write(EntrySize);
+            writer.Write(EntryBytes);
             writer.Write((uint)_entries.Count);
             writer.Write((uint)0);  // Reserved
 
@@ -261,7 +275,7 @@ namespace GDMENUCardManager.Core
                 writer.Write(_entries[i].FileNumber);
             }
 
-            long firstDataOffset = EntrySize * startingFileNum;
+            long firstDataOffset = EntryBytes * startingFileNum;
             long currentPos = fs.Position;
             if (currentPos < firstDataOffset)
             {
@@ -271,7 +285,7 @@ namespace GDMENUCardManager.Core
 
             for (int i = 0; i < _entries.Count; i++)
             {
-                long expectedOffset = EntrySize * _entries[i].FileNumber;
+                long expectedOffset = EntryBytes * _entries[i].FileNumber;
                 fs.Seek(expectedOffset, SeekOrigin.Begin);
                 writer.Write(_entries[i].Data);
             }
@@ -317,11 +331,11 @@ namespace GDMENUCardManager.Core
             try
             {
                 Save(boxDatPath);
-                return (true, backupSuccess ? string.Empty : $"Warning: Backup failed ({backupError}), but BOX.DAT was saved.");
+                return (true, backupSuccess ? string.Empty : $"Warning: Backup failed ({backupError}), but {FileLabel} was saved.");
             }
             catch (Exception ex)
             {
-                return (false, $"Failed to save BOX.DAT: {ex.Message}");
+                return (false, $"Failed to save {FileLabel}: {ex.Message}");
             }
         }
 
@@ -343,7 +357,9 @@ namespace GDMENUCardManager.Core
         /// <summary>
         /// Writes a valid header with no entries. Overwrites any existing file.
         /// </summary>
-        public static void CreateEmptyFile(string outputPath)
+        public static void CreateEmptyFile(string outputPath) => CreateEmptyFile(outputPath, EntrySize);
+
+        public static void CreateEmptyFile(string outputPath, uint entryBytes)
         {
             if (File.Exists(outputPath))
                 Helper.TryMakeWritable(outputPath);
@@ -355,7 +371,7 @@ namespace GDMENUCardManager.Core
             writer.Write((byte)'A');
             writer.Write((byte)'T');
             writer.Write((byte)0x01);
-            writer.Write(EntrySize);   // 0x20020 - standard entry size
+            writer.Write(entryBytes);   // 0x20020 for BOX.DAT
             writer.Write((uint)0);     // file_count = 0
             writer.Write((uint)0);     // Reserved
         }
