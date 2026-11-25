@@ -39,6 +39,18 @@ def cutout(img):
     rgba = np.dstack([np.asarray(img), np.where(bg, 0, 255).astype(np.uint8)])
     return Image.fromarray(rgba, 'RGBA')
 
+def cutout_tile(img, thr=200, grow=2):
+    """The logos' white tiles: the outline may have small gaps, so the barrier is widened before the outside is found; the pixels the widening
+    took back from the outside are given back, so only the area outside the outline is transparent and everything inside stays."""
+    a = np.asarray(img.convert('L'))
+    barrier = ndimage.binary_dilation(a < thr, iterations=grow)
+    lab, n = ndimage.label(~barrier)
+    border = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
+    bg = np.isin(lab, list(border))
+    bg = ndimage.binary_dilation(bg, iterations=grow + 1) & (a >= thr - 40)
+    rgba = np.dstack([np.asarray(img), np.where(bg, 0, 255).astype(np.uint8)])
+    return Image.fromarray(rgba, 'RGBA')
+
 def rounded(img, frac=0.18):
     img = img.convert('RGBA')
     m = Image.new('L', (img.width * 4, img.height * 4), 0)
@@ -77,10 +89,10 @@ def build_pal():
         if k == 'ONLINE_NET':
             continue
         im = crop(src, box)
-        out[k] = cutout(im) if k.startswith('P') or k == 'ONLINE' else rounded(im, 0.08)   # the pills are cut out; the logos keep their white tile
+        out[k] = cutout(im) if k.startswith('P') or k == 'ONLINE' else cutout_tile(im)   # everything outside the outline is transparent, the inside stays white
     # Fishing Controller: only the small label of a European Bass Fishing back (low quality)
     pb = load('palbass')
-    out['FISHING'] = rounded(pb.crop((395, 462, 482, 520)).resize((87 * 4, 58 * 4), Image.LANCZOS), 0.08)
+    out['FISHING'] = cutout_tile(pb.crop((395, 462, 482, 520)).resize((87 * 4, 58 * 4), Image.LANCZOS))
     LOW.add(('PAL', 'FISHING'))
     return out
 
