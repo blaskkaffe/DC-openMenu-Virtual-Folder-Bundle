@@ -643,15 +643,23 @@ static int viewer_open;
 #define SBAR_Y 24.0f
 #define SBAR_H 38.0f
 
+/* the title strip's look (also the strip of the feature icons under the card) */
+static void
+draw_strip_bg(float y) {
+    const float z = PANE_Z;
+    gfx_rrect(CARD_X, y, CARD_W, SBAR_H, 8.0f, z, 0xFF404963u);
+    gfx_rrect(CARD_X, y, CARD_W, SBAR_H - 5.0f, 8.0f, z + 0.00004f, 0xFF4B5776u);
+    gfx_rrect(CARD_X, y, CARD_W, 5.0f, 3.0f, z + 0.00008f, 0xFF5C688Cu);
+    gfx_rect(CARD_X, y + 4.0f, CARD_W, SBAR_H - 9.0f, z + 0.00008f, 0xFF4B5776u);
+}
+
+static void draw_feature_strip(const gd_item* cur);
+
 static void
 draw_side_card(const gd_item* cur) {
     char count[24];
-    const float z = PANE_Z;
     /* top row */
-    gfx_rrect(CARD_X, SBAR_Y, CARD_W, SBAR_H, 8.0f, z, 0xFF404963u);
-    gfx_rrect(CARD_X, SBAR_Y, CARD_W, SBAR_H - 5.0f, 8.0f, z + 0.00004f, 0xFF4B5776u);
-    gfx_rrect(CARD_X, SBAR_Y, CARD_W, 5.0f, 3.0f, z + 0.00008f, 0xFF5C688Cu);
-    gfx_rect(CARD_X, SBAR_Y + 4.0f, CARD_W, SBAR_H - 9.0f, z + 0.00008f, 0xFF4B5776u);
+    draw_strip_bg(SBAR_Y);
     {
         list_view view;
         list_view_get(&view);
@@ -682,6 +690,7 @@ draw_side_card(const gd_item* cur) {
     } else if (cur) {
         gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
+    draw_feature_strip(cur);
 }
 
 static void
@@ -929,25 +938,16 @@ fb_free_all(void) {
     }
 }
 
-/* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
-static float
-draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
-    static const gd_item* last;
-    if (cur != last) { /* another game: the pictures of the last one are let go */
-        fb_free_all();
-        last = cur;
-    }
-    struct db_item* meta = NULL;
-    if (!cur || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
-        return 0.0f;
-    }
+/* The logos' keys of what the game supports, in the order of the case's back; the region's style in *region. */
+static int
+feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* region_out) {
     int region = FB_REGION_JP;
     if (serial_is_pal(cur->product) || (strchr(cur->region, 'E') && !strchr(cur->region, 'U') && !strchr(cur->region, 'J'))) {
         region = FB_REGION_PAL;
     } else if (strchr(cur->region, 'U')) {
         region = FB_REGION_US;
     }
-    int keys[FB_COUNT], n = 0;
+    int n = 0;
     const int np = meta->num_players;
     if (np > 0) {
         keys[n++] = np == 1 ? FB_P1 : np == 2 ? (region == FB_REGION_US ? FB_P2 : FB_P12) : np <= 4 ? FB_P14 : FB_P16;
@@ -969,6 +969,25 @@ draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
     if (acc & ACCESORIES_MODEM) keys[n++] = FB_MODEM;
     if (acc & ACCESORIES_BBA) keys[n++] = FB_BBA;
     if (region == FB_REGION_JP) keys[n++] = FB_DISC;
+
+    *region_out = region;
+    return n;
+}
+
+/* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
+static float
+draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
+    static const gd_item* last;
+    if (cur != last) { /* another game: the pictures of the last one are let go */
+        fb_free_all();
+        last = cur;
+    }
+    struct db_item* meta = NULL;
+    if (!cur || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
+        return 0.0f;
+    }
+    int region, keys[FB_COUNT];
+    const int n = feature_keys(cur, meta, keys, &region);
 
     const float gap = 4.0f;
     float cx = 0.0f, cy = 0.0f, row_h = 0.0f;
@@ -1003,6 +1022,105 @@ draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
         row_h = row_h > (float)b->h ? row_h : (float)b->h;
     }
     return n ? cy + row_h + gap : 0.0f;
+}
+
+/* The strip under the card in the list: the game's features as small icons in a row (the device drawings of the PAL logos; the others as small
+ * labelled tags), in the title strip's look. They shrink together when they do not all fit. */
+static int fi_id[FB_COUNT];
+static unsigned char fi_made[FB_COUNT];
+
+static int
+fi_get(int key, int* pw, int* ph) {
+    const feature_icon* ic = &feature_icons[key];
+    if (!ic->px || ic->w <= 0 || ic->w > 64 || ic->h <= 0 || ic->h > 32) {
+        return -1;
+    }
+    *pw = fb_pow2(ic->w);
+    *ph = fb_pow2(ic->h);
+    if (!fi_made[key] || !gfx_dyn_valid(fi_id[key])) {
+        static unsigned short buf[64 * 32];
+        memset(buf, 0, (size_t)*pw * (size_t)*ph * 2u);
+        for (int y = 0; y < ic->h; y++) {
+            memcpy(&buf[y * *pw], &ic->px[y * ic->w], (size_t)ic->w * 2u);
+        }
+        fi_id[key] = gfx_dyn_create(buf, *pw, *ph);
+        fi_made[key] = fi_id[key] >= 0;
+    }
+    return fi_made[key] ? fi_id[key] : -1;
+}
+
+static void
+fi_free_all(void) {
+    for (int k = 0; k < FB_COUNT; k++) {
+        if (fi_made[k]) {
+            gfx_dyn_free(fi_id[k]);
+            fi_made[k] = 0;
+        }
+    }
+}
+
+static const char*
+fi_label(int key) {
+    switch (key) {
+        case FB_P1: return "1P";
+        case FB_P2: return "2P";
+        case FB_P12: return "1-2P";
+        case FB_P14: return "1-4P";
+        case FB_P16: return "1-6P";
+        case FB_ONLINE: return "NET";
+        case FB_FISHING: return "FSH";
+        case FB_MIC: return "MIC";
+        case FB_MOUSE: return "MSE";
+        case FB_MARACAS: return "MRC";
+        case FB_DREAMEYE: return "EYE";
+        case FB_MODEM: return "MDM";
+        case FB_BBA: return "BBA";
+        case FB_DISC: return "DISC";
+        default: return "?";
+    }
+}
+
+static void
+draw_feature_strip(const gd_item* cur) {
+    static const gd_item* last;
+    if (cur != last) {
+        fi_free_all();
+        last = cur;
+    }
+    struct db_item* meta = NULL;
+    if (!cur || uil_is_folder(cur) || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
+        return;
+    }
+    int region, keys[FB_COUNT];
+    const int n = feature_keys(cur, meta, keys, &region);
+    if (n <= 0) {
+        return;
+    }
+    const float y0 = CARD_Y + CARD_H + 8.0f, avail = CARD_W - 16.0f, gap = 5.0f, text_s = 0.55f;
+    float w[FB_COUNT], total = -gap;
+    for (int i = 0; i < n; i++) {
+        const feature_icon* ic = &feature_icons[keys[i]];
+        w[i] = ic->px ? (float)ic->w : (float)gfx_text_width(fi_label(keys[i])) * text_s + 10.0f;
+        total += w[i] + gap;
+    }
+    const float s = total > avail ? avail / total : 1.0f;
+    draw_strip_bg(y0);
+    float x = CARD_X + 8.0f + (avail - total * s) / 2.0f;
+    for (int i = 0; i < n; i++) {
+        const feature_icon* ic = &feature_icons[keys[i]];
+        const float ww = w[i] * s;
+        int pw, ph, id = ic->px ? fi_get(keys[i], &pw, &ph) : -1;
+        if (id >= 0) {
+            const float ih = (float)ic->h * s;
+            gfx_image(id, x, y0 + (SBAR_H - ih) / 2.0f, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
+        } else {
+            const float ph_ = 20.0f * s;
+            const int blue = keys[i] <= FB_ONLINE;
+            gfx_rrect(x, y0 + (SBAR_H - ph_) / 2.0f, ww, ph_, 5.0f * s, PANE_Z + 0.00012f, blue ? 0xFF2E6FB0u : 0xFF727C9Cu);
+            gfx_text_scaled(fi_label(keys[i]), x + 5.0f * s, y0 + (SBAR_H - ph_) / 2.0f + ph_ / 2.0f - 12.0f * text_s * s, 0.5f, 0xFFFFFFFFu, text_s * s);
+        }
+        x += ww + gap * s;
+    }
 }
 
 static void
