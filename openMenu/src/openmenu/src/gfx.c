@@ -850,6 +850,15 @@ pack4444_dither(float r, float g, float b, int x, int y) {
     return (unsigned short)(0xF000u | c[0] << 8 | c[1] << 4 | c[2]);
 }
 
+/* pack4444_dither with an alpha (0..1). */
+static unsigned short
+pack4444_dither_a(float r, float g, float b, float a, int x, int y) {
+    const unsigned short c = pack4444_dither(r, g, b, x, y);
+    unsigned al = (unsigned)(a * 15.0f + 0.5f);
+    al = al > 15u ? 15u : al;
+    return (unsigned short)((c & 0x0FFFu) | al << 12);
+}
+
 /* The cases' fronts and backs for a game without box art, from the BIOS's own disc picture (it has the stacked Dreamcast logo with the
  * word under the swirl): the front is the disc's blue (PAL) or red (NTSC) with the logo in white, the back is white with the logo in its
  * own colours. 128 x 128, the logo's width is `frac` of the picture. */
@@ -1008,7 +1017,7 @@ pill_texture(void) {
     const float pt = (61.5f - 25.5f) * ppm_y;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 40, g = 73, b = 149; /* the carrier: the case's blue, as the curved hinge sections show it */
+            float r = 68, g = 119, b = 187; float cov = 0.0f; /* the pill's blue; the rest of the picture is clear (the bar's face under it is plain) */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             {
                 /* the pill: the menu's "1-4 Players" banner turned to read upwards: a rectangle 7.25 x 51 mm whose top right and bottom left corners
@@ -1027,7 +1036,7 @@ pill_texture(void) {
                         m += in ? 1.0f / 9.0f : 0.0f;
                     }
                 }
-                r += (68 - r) * m, g += (119 - g) * m, b += (187 - b) * m; /* the pill, lighter (the spine's pill is the same) */
+                cov = m;
             }
             float a = 0.0f; /* the text's coverage: 3 x 3 samples */
             for (int sy = 0; sy < 3; sy++) {
@@ -1041,7 +1050,10 @@ pill_texture(void) {
                 }
             }
             r += (17 - r) * a, g += (34 - g) * a, b += (85 - b) * a; /* dark navy lettering */
-            px[y * W + x] = pack4444_dither(r, g, b, x, y);
+            if (a > cov) {
+                cov = a;
+            }
+            px[y * W + x] = pack4444_dither_a(r, g, b, cov, x, y);
         }
     }
     upload_argb4444(px, W, H, &pill_tex);

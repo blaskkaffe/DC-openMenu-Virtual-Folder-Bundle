@@ -573,6 +573,11 @@ build_pal_bar(builder* b, float S) {
     const float x0 = -66.0f, x1 = -58.0f, yt = 61.5f, yb = -61.5f, zb = 8.5f, zf = 8.9f;
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    { /* the carrier: a plain lit face of the same blue as the hinge sections beside it (the picture above it is clear except the pill and its text) */
+        int c0 = poly_new(b, -1, 0xFF2A4D9Cu, 0);
+        const float zc = zf - 0.15f;
+        quad(b, c0, v3m(x0 * S, yt * S, zc * S), v3m(x1 * S, yt * S, zc * S), v3m(x1 * S, yb * S, zc * S), v3m(x0 * S, yb * S, zc * S), NULL, v3m(0, 0, 1));
+    }
     int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_SPECULAR); /* lit like the menu's icons, but no shine: it is the same blue as the sections beside it */
     quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
     int q = poly_new(b, -1, 0xFF2A4D9Cu, 0);
