@@ -26,6 +26,7 @@
 #include <texture/serial_sanitize.h>
 
 #include "gfx.h"
+#include "pill_mask.h"
 
 #ifndef GFX_REGION_BYTE /* the console's region byte, set by the BIOS (gfx_host_test has its own) */
 #define GFX_REGION_BYTE (*(volatile uint8_t*)0x8C000072)
@@ -988,17 +989,15 @@ pill_texture(void) {
     const float text_mm = 36.0f;            /* the text's length along the pill: it reads from the bottom up, like the real case's spine */
     const float s = text_mm / ww;           /* mm per logo pixel */
     const float cx = (float)W / 2.0f, cy = 61.5f * ppm_y; /* the middle of the bar */
-    const float pt = (61.5f - 25.5f) * ppm_y, pb = (61.5f + 25.5f) * ppm_y, rad = 3.2f * ppm_x;
+    const float pt = (61.5f - 25.5f) * ppm_y;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
             float r = 0x2A, g = 0x4D, b = 0x9C; /* the carrier: the case's blue */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
-            if (fy >= pt && fy <= pb && fx >= 1.5f && fx <= (float)W - 1.5f) {
-                float dx = fx < 1.5f + rad ? 1.5f + rad - fx : (fx > (float)W - 1.5f - rad ? fx - ((float)W - 1.5f - rad) : 0.0f);
-                float dy = fy < pt + rad ? pt + rad - fy : (fy > pb - rad ? fy - (pb - rad) : 0.0f);
-                if (dx * dx + dy * dy <= rad * rad) {
-                    r = 0x42, g = 0x68, b = 0xB4; /* the pill, lighter (the spine's pill is the same) */
-                }
+            if (fy >= pt && fy < pt + (float)PILL_MASK_H && fx >= 1.5f && fx < 1.5f + (float)PILL_MASK_W) {
+                /* the pill has the shape of the menu's "1-4 Players" banner, turned to read upwards */
+                const float m = (float)pill_mask[(int)(fy - pt) * PILL_MASK_W + (int)(fx - 1.5f)] / 255.0f;
+                r += (0x42 - r) * m, g += (0x68 - g) * m, b += (0xB4 - b) * m; /* the pill, lighter (the spine's pill is the same) */
             }
             float a = 0.0f; /* the text's coverage: 3 x 3 samples */
             for (int sy = 0; sy < 3; sy++) {
