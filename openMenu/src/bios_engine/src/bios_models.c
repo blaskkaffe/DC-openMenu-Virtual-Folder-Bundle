@@ -601,11 +601,16 @@ build_pal_bar(builder* b, float S) {
 /* The PAL case's inside: the blue tray fills the space between the front and rear labels (and shows beside the hinge bar), so the clear shell
  * is not see-through. A box slightly inside the shell; the faces at the top, bottom and right edges are a little darker, as seen at a slant. */
 static void
-build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf, float zr, uint32_t blue) {
+build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf, float zr, uint32_t blue, float front_x1) {
     int f = poly_new(b, -1, blue, STRIP_INNER), e = poly_new(b, -1, blue, STRIP_INNER); /* lit */
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
-    quad(b, f, A, B, C, D, NULL, v3m(0, 0, 1));
+    if (front_x1 > x0) { /* the front face only where the cover does not hide it (a big face behind the cover can cut through it in the
+                          * per-triangle sort) */
+        const v3 Bf = v3m(front_x1 * S, yt * S, zf * S), Cf = v3m(front_x1 * S, yb * S, zf * S);
+        quad(b, f, A, Bf, Cf, D, NULL, v3m(0, 0, 1));
+    }
+    (void)C;
     quad(b, e, A0, B0, B, A, NULL, v3m(0, 1, 0));
     quad(b, e, D, C, C0, D0, NULL, v3m(0, -1, 0));
     quad(b, e, B, B0, C0, C, NULL, v3m(1, 0, 0));
@@ -618,10 +623,10 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
     const int ribbed = ntsc && !clear; /* the white and dark grey NTSC cases; the clear ones (1 white tray, 2 black) have no ribs */
 #define RIB_MM 9.1f
     if (!ntsc) {
-        build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 6.0f, -7.8f, 0xFF2A4D9Cu); /* its front well behind the cover's (8.0): small on the list's card, nearer let it cut through the art */
+        build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 6.0f, -7.8f, 0xFF2A4D9Cu, -52.0f); /* its front well behind the cover's (8.0): small on the list's card, nearer let it cut through the art */
     } else if (clear) {
         /* the clear cases: the tray (white or black) inside, behind the front cover, seen through the clear edges */
-        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 3.0f, -4.0f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u);
+        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 3.0f, -4.0f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u, -55.0f);
     }
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
