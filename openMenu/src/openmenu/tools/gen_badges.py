@@ -273,6 +273,25 @@ def main():
                     nx, ny = int(fx * im.width), int(fy * im.height)
                 f.write('    {%d, %d, %d, %d, fb_%s_%s},\n' % (im.width, im.height, nx, ny, rn, k))
             f.write('  },\n')
+        f.write('};\n')
+        # the strip's icons: the pictogram (the device drawing) at the left of the PAL tiles, 22 px tall, the same for every region
+        FR = {'VMU': 0.27, 'VIB': 0.24, 'STICK': 0.45, 'GUN': 0.40, 'WHEEL': 0.41, 'KEYBOARD': 0.40, 'VGA': 0.38}
+        pal_tiles = build_pal()
+        f.write('typedef struct { unsigned short w, h; const unsigned short* px; } feature_icon;\n')
+        icons = {}
+        for k, fr in FR.items():
+            t = pal_tiles[k]
+            t = t.crop((0, 0, int(t.width * fr), t.height))
+            bb = t.split()[3].getbbox()
+            t = t.crop(bb)
+            icons[k] = t.resize((max(8, round(t.width * 22 / t.height)), 22), Image.LANCZOS)
+            f.write('static const unsigned short fi_%s[] = {%s};\n' % (k, ','.join('0x%04X' % v for v in argb4444(icons[k]).flatten())))
+        f.write('static const feature_icon feature_icons[FB_COUNT] = {\n')
+        for k in KEYS:
+            if k in icons:
+                f.write('    {%d, %d, fi_%s},\n' % (icons[k].width, icons[k].height, k))
+            else:
+                f.write('    {0, 0, 0},\n')
         f.write('};\n#endif\n')
     with open(out_h + '.status', 'w') as f:
         for (rn, k), st in sorted(status.items()):
