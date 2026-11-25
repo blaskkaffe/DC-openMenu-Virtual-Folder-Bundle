@@ -1017,7 +1017,7 @@ pill_texture(void) {
     const float pt = (61.5f - 25.5f) * ppm_y;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 68, g = 119, b = 187; float cov = 0.0f; /* the pill's blue; the rest of the picture is clear (the bar's face under it is plain) */
+            float r = 47, g = 86, b = 175; float cov = 0.0f; /* the pill: the bar's blue a little lighter; the rest of the picture is clear (the bar's face under it is plain) */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             {
                 /* the pill: the menu's "1-4 Players" banner turned to read upwards: a rectangle 7.25 x 51 mm whose top right and bottom left corners
@@ -1123,7 +1123,7 @@ spine_texture(int kind) {
     }
     /* background, patch, ink, band colours */
     static const float col[SPINE_KINDS][4][3] = {
-        {{40, 73, 149}, {68, 119, 187}, {0xF8, 0xF8, 0xFF}, {40, 73, 149}},
+        {{40, 73, 149}, {45, 82, 167}, {0xF8, 0xF8, 0xFF}, {40, 73, 149}},
         {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
         {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
     static uint32_t* logo;
@@ -1159,7 +1159,7 @@ spine_texture(int kind) {
     const float* band = col[kind][3];
     /* The label is depth x 120 mm (7 mm on the NTSC cases, 15.4 on the PAL one): picture pixels per mm across over those along. The logo and
      * the letters are drawn that much wider across than along, so they are not stretched on the case. */
-    const float depth_mm = kind == SPINE_PAL ? 15.4f : 7.03f;
+    const float depth_mm = kind == SPINE_PAL ? 15.5f : 7.03f;
     const float ra = ((float)W / depth_mm) / ((float)H / 120.0f);
     const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
     for (int y = 0; y < H; y++) {

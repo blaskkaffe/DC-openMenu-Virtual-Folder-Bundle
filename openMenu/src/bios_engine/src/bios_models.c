@@ -538,7 +538,7 @@ mul_argb(uint32_t c, uint32_t t) {
     return r;
 }
 
-/* The label quads of the cases are 120 mm tall (the pictures have a 1:1 pixel ratio: front 120 x 120, back about 139 x 120, spine 7 / 15.4 x 120):
+/* The label quads of the cases are 120 mm tall (the pictures have a 1:1 pixel ratio: front 120 x 120, back about 139 x 120, spine 7 / 15.5 x 120):
  * the model's labels are moved to those sizes. The front of the NTSC cases is the 120 mm square at the right edge; the hinge side
  * beside it is a plain quad (below). */
 static float
@@ -561,7 +561,10 @@ fit_label(dc_vertex_t v[4], const char* name, int pal) {
         if (strstr(name, "label_front")) {
             v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : -50.0f, pal ? 67.0f : 70.0f);
         } else if (strstr(name, "label_spine")) {
-            v[i].z = remap_f(v[i].z, z0, z1, pal ? -8.4f : -3.77f, pal ? 7.0f : 3.27f);
+            v[i].z = remap_f(v[i].z, z0, z1, pal ? -8.5f : -3.77f, pal ? 7.0f : 3.27f);
+            if (pal) {
+                v[i].x = -71.03f; /* on the outside of the side wall, from the back edge to where the hinge's curve starts (it covered the front band) */
+            }
         }
     }
 }

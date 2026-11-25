@@ -357,7 +357,7 @@ build_games(void) {
         }
         int n = online_games_players(g);
         struct db_item* meta = NULL;
-        if (n > 0 || (have_meta && !db_get_meta(g->product, &meta) && meta && (meta->network & 3))) {
+        if (n > 0 || (have_meta && !db_get_meta(g->product, &meta) && meta && db_item_connections(meta))) {
             games[ngames].item = g;
             games[ngames].players = n;
             games[ngames++].browser = 0;
@@ -3030,9 +3030,15 @@ draw_footer(void) {
         struct db_item* meta = NULL;
         if (g->browser) {
             text = "A: start the browser";
-        } else if (have_meta && !db_get_meta(g->item->product, &meta) && meta && (meta->network & 3)) { /* what META.DAT says about its connections */
-            static const char* const how[] = {"", "modem", "broadband adapter", "modem or broadband adapter"};
-            snprintf(line, sizeof(line), "Connects by: %s", how[meta->network & 3]);
+        } else if (have_meta && !db_get_meta(g->item->product, &meta) && meta && db_item_connections(meta)) { /* what META.DAT says about its connections */
+            static const char* const how[4] = {"modem", "BBA", "W5500", "serial"};
+            const unsigned c = db_item_connections(meta);
+            size_t at = (size_t)snprintf(line, sizeof(line), "Connects by:");
+            for (int k = 0; k < 4 && at < sizeof(line); k++) {
+                if (c & (1u << k)) {
+                    at += (size_t)snprintf(line + at, sizeof(line) - at, " %s", how[k]);
+                }
+            }
             text = line;
         } else {
             text = "A: start  Y: star";

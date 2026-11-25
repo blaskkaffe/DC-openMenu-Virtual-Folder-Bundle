@@ -120,8 +120,8 @@ write_ini(const char* filename, const char* players, const char* vmu_blocks, con
                                 "network=0\n"
                                 "genre=%s\n"
                                 "description=%s\n"
-                                "padding1=0\n"
-                                "padding2=0\n";
+                                "accessories_hi=0\n"
+                                "links=0\n";
     fprintf(ini_fd, meta_template, _players, _vmu_blocks, _accessories, _genre, _synopsis);
 
     fclose(ini_fd);

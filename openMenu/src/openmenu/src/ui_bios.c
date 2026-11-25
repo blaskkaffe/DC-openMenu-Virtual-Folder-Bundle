@@ -585,7 +585,7 @@ game_info_lines(const gd_item* cur, char out[2][24]) {
     struct db_item* meta = NULL;
     if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
         players = meta->num_players;
-        net = meta->network != 0;
+        net = db_item_connections(meta) != 0;
     }
     char p[12] = "";
     if (players) {
@@ -865,7 +865,7 @@ info_build(const gd_item* cur, int width_px) {
     static const char* const extras[14] = {"Jump Pack", "Keyboard", "VGA",          "Mouse",  "Maracas",  "Wheel",
                                            "Microphone", "Arcade stick", "Light gun", "BBA",   "Fishing rod", "ASCII pad",
                                            "Dreameye",  "Modem"};
-    static const char* const nets[4] = {"", "modem", "broadband adapter", "modem or broadband adapter"};
+    static const char* const nets[4] = {"modem", "broadband adapter", "W5500 (patched)", "serial (patched)"};
     info_item = cur;
     info_count = 0;
     struct db_item* meta = NULL;
@@ -874,13 +874,8 @@ info_build(const gd_item* cur, int width_px) {
         return;
     }
     info_add_flags("Genre: ", meta->genre, genres, 16, width_px);
-    if (meta->network & 3) {
-        char t[64];
-        snprintf(t, sizeof(t), "Online: %s", nets[meta->network & 3]);
-        info_add_text(t, width_px);
-    }
-    /* accessories is one byte in db_item: only the first eight flags fit */
-    info_add_flags("Uses: ", meta->accessories, extras, 8, width_px);
+    info_add_flags("Connects by: ", db_item_connections(meta), nets, 4, width_px);
+    info_add_flags("Uses: ", db_item_accessories(meta), extras, 14, width_px);
     if (meta->description[0] && info_count < INFO_MAX_LINES) {
         char desc[sizeof(meta->description) + 1];
         memcpy(desc, meta->description, sizeof(meta->description));
@@ -952,9 +947,10 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
     if (np > 0) {
         keys[n++] = np == 1 ? FB_P1 : np == 2 ? (region == FB_REGION_US ? FB_P2 : FB_P12) : np <= 4 ? FB_P14 : FB_P16;
     }
-    if (meta->network & 3) keys[n++] = FB_ONLINE;
+    const unsigned conn = db_item_connections(meta); /* modem, BBA, W5500, serial: none or any combination */
+    if (conn) keys[n++] = FB_ONLINE;
     if (meta->vmu_blocks) keys[n++] = FB_VMU;
-    const unsigned acc = meta->accessories;
+    const unsigned acc = db_item_accessories(meta); /* all sixteen flags (the high byte is new; 0 in older files) */
     if (acc & ACCESORIES_JUMP_PACK) keys[n++] = FB_VIB;
     if (acc & ACCESORIES_FISHING_ROD) keys[n++] = FB_FISHING;
     if (acc & ACCESORIES_ARCADE_STICK) keys[n++] = FB_STICK;
@@ -966,8 +962,10 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
     if (acc & ACCESORIES_MOUSE) keys[n++] = FB_MOUSE;
     if (acc & ACCESORIES_MARACAS) keys[n++] = FB_MARACAS;
     if (acc & ACCESORIES_DREAMEYE) keys[n++] = FB_DREAMEYE;
-    if (acc & ACCESORIES_MODEM) keys[n++] = FB_MODEM;
-    if (acc & ACCESORIES_BBA) keys[n++] = FB_BBA;
+    if ((acc & ACCESORIES_MODEM) || (conn & CONNECT_MODEM)) keys[n++] = FB_MODEM;
+    if ((acc & ACCESORIES_BBA) || (conn & CONNECT_BBA)) keys[n++] = FB_BBA;
+    if (conn & CONNECT_W5500) keys[n++] = FB_W5500;
+    if (conn & CONNECT_SERIAL) keys[n++] = FB_SERIAL;
     if (region == FB_REGION_JP) keys[n++] = FB_DISC;
 
     *region_out = region;
@@ -1083,6 +1081,8 @@ fi_label(int key) {
         case FB_DREAMEYE: return "EYE";
         case FB_MODEM: return "MDM";
         case FB_BBA: return "BBA";
+        case FB_W5500: return "W5500";
+        case FB_SERIAL: return "SER";
         case FB_DISC: return "DISC";
         default: return "?";
     }

@@ -14,10 +14,12 @@ JP P12 ok
 JP P14 ok
 JP P16 ok
 JP P2 ok
+JP SERIAL placeholder
 JP STICK placeholder
 JP VGA ok
 JP VIB ok
 JP VMU ok
+JP W5500 placeholder
 JP WHEEL placeholder
 PAL BBA placeholder
 PAL DREAMEYE placeholder
@@ -34,10 +36,12 @@ PAL P12 ok
 PAL P14 ok
 PAL P16 ok
 PAL P2 ok
+PAL SERIAL placeholder
 PAL STICK ok
 PAL VGA ok
 PAL VIB ok
 PAL VMU ok
+PAL W5500 placeholder
 PAL WHEEL ok
 US BBA placeholder
 US DREAMEYE placeholder
@@ -54,8 +58,10 @@ US P12 placeholder
 US P14 ok
 US P16 placeholder
 US P2 placeholder
+US SERIAL placeholder
 US STICK placeholder
 US VGA low
 US VIB ok
 US VMU ok
+US W5500 placeholder
 US WHEEL placeholder
