@@ -306,13 +306,24 @@ static bcase gcase;
 static int gcase_prev_cursor = -1;
 static const gd_item* gcase_prev_item;
 
-static char case_title[64]; /* the title of the game the case shows, for its spine */
+/* The titles of the games the cases show, for their spines: the new case's and the one flying out (both are drawn while they fly) */
+static char case_title[64], case_title_old[64];
+static char case_tag[16], case_tag_old[16];
 
 static void
 case_bind(void* user, const char* tag) {
     (void)user;
     gfx_model_bind_front(tag);
-    gfx_model_bind_title(case_title, tag);
+    gfx_model_bind_title(!strcmp(tag, case_tag) || strcmp(tag, case_tag_old) ? case_title : case_title_old, tag);
+}
+
+/* the case about to be shown: the one shown so far becomes the old one */
+static void
+case_titles_shift(const char* title, const char* tag) {
+    memcpy(case_title_old, case_title, sizeof(case_title));
+    memcpy(case_tag_old, case_tag, sizeof(case_tag));
+    snprintf(case_title, sizeof(case_title), "%s", title);
+    snprintf(case_tag, sizeof(case_tag), "%s", tag);
 }
 
 /* A new case waits for its box art (at most CASE_ART_WAIT frames), so its front does not pop in after it has
@@ -361,9 +372,10 @@ case_update(void) {
                     model = styles[k].model;
                 }
             }
-            snprintf(case_title, sizeof(case_title), "%s", cur->name);
+            case_titles_shift(cur->name, cur->product);
             bcase_show(&gcase, model, cur->product, dir);
         } else {
+            case_titles_shift("", "");
             bcase_show(&gcase, -1, "", dir);
         }
         gcase_prev_cursor = cursor;
