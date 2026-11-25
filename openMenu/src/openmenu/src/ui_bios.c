@@ -667,9 +667,7 @@ draw_side_card(const gd_item* cur) {
         gfx_text(count, CARD_X + CARD_W - 8.0f - (float)gfx_text_width(count), SBAR_Y + 3.0f, 0.5f, 0xFFCCCCCCu, 1);
     }
     /* the card */
-    gfx_rrect(CARD_X, CARD_Y + 3.0f, CARD_W, CARD_H, 6.0f, z, 0xFF455076u);
-    gfx_rrect(CARD_X, CARD_Y, CARD_W, CARD_H, 6.0f, z + 0.00004f, 0xFF4D4FAAu);
-    gfx_rrect(CARD_X + 2.0f, CARD_Y + 2.0f, CARD_W - 4.0f, CARD_H - 4.0f, 5.0f, z + 0.00008f, 0xFF5254B6u);
+    bscene_draw_plate(&menu.scene, CARD_X, CARD_Y, CARD_W, CARD_H, -357.0f, gfx_sink()); /* the File screen's blue memory card plate */
     bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
                118.0f * (1.0f + (float)BLIST_SIDE_CASE_PCT / 100.0f), case_bind, NULL,
                near_sink(gfx_sink()));
@@ -692,12 +690,11 @@ draw_games(void) {
         draw_viewer();
         return;
     }
-    if (glist.side) { /* the list's field: the card's corners and colours, over the whole height */
+    if (glist.side) { /* the list's field: the File screen's card grid frame (BIOS model 15) without its A to D tabs, its two lines around the selected game */
         const float lx = 40.0f + 196.5f, lw = blist_row_right_px() - 40.0f, ly = 24.0f, lh = 420.0f;
-        const float pz = PANE_Z - 0.00006f; /* the rows are at 1/353.5 = 0.00283: the field stays behind them */
-        gfx_rrect(lx, ly + 3.0f, lw, lh, 6.0f, pz, 0xFF3F4A88u);
-        gfx_rrect(lx, ly, lw, lh, 6.0f, pz + 0.00004f, 0xFF646F95u);
-        gfx_rrect(lx + 2.0f, ly + 2.0f, lw - 4.0f, lh - 4.0f, 5.0f, pz + 0.00008f, 0xFF535C90u);
+        float rtop, rh;
+        blist_selected_row_px(&glist, &rtop, &rh);
+        bscene_draw_frame(&menu.scene, lx, ly, lw, lh, rtop, rh, -355.5f, gfx_sink()); /* the rows are at -353.5: the frame stays behind them */
     }
     blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {

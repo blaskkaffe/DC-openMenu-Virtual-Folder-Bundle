@@ -146,6 +146,8 @@ typedef struct {
     int small_left;
     int no_decals, panel_on, fullbright;
     float panel_fx, panel_fy;
+    int fit_kind;
+    float fit_p[6];
     uint32_t panel_accent;
     uint32_t header_bar_argb;
     int ovr_n;
@@ -273,6 +275,10 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     k->small_left = s->small_left;
     k->no_decals = s->no_decals;
     k->fullbright = s->fullbright;
+    if (s->fit_kind) {
+        k->fit_kind = s->fit_kind;
+        memcpy(k->fit_p, s->fit_p, sizeof(k->fit_p));
+    }
     if (s->panel_on) {
         k->panel_on = 1;
         k->panel_fx = s->panel_fx;
@@ -442,6 +448,58 @@ bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent
     bscene_draw_object(s, &o, sink);
     s->parts = saved;
     s->panel_on = 0;
+}
+
+
+/* The BIOS draws these objects at about 0.85 of the model's units (the plate: 11 units = 112 px at the File screen). */
+#define FIT_SCALE 0.85f
+
+void
+bscene_draw_plate(bscene* s, float x, float y, float w, float h, float z, const bscene_sink* sink) {
+    const float upp = -z / 4000.0f, pxu = FIT_SCALE / upp; /* pixels per model unit */
+    bvm_obj o;
+    memset(&o, 0, sizeof(o));
+    o.active = 1;
+    o.flags = BVM_F_MODEL;
+    o.model = 18;
+    o.pos[0] = (x + w / 2.0f - 320.0f) * upp;
+    o.pos[1] = (240.0f - (y + h / 2.0f)) * upp + 1.5f * FIT_SCALE; /* the model's centre is at y = -1.5 */
+    o.pos[2] = z;
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = FIT_SCALE;
+    s->fit_kind = 1;
+    s->fit_p[0] = w / 2.0f / pxu - 5.5f;
+    s->fit_p[1] = h / 2.0f / pxu - 5.5f;
+    unsigned saved = s->parts;
+    s->parts = BSCENE_PART_MODEL;
+    bscene_draw_object(s, &o, sink);
+    s->parts = saved;
+    s->fit_kind = 0;
+}
+
+void
+bscene_draw_frame(bscene* s, float x, float y, float w, float h, float row_y, float row_h, float z, const bscene_sink* sink) {
+    const float upp = -z / 4000.0f, pxu = FIT_SCALE / upp;
+    const float cy = y + h / 2.0f;
+    bvm_obj o;
+    memset(&o, 0, sizeof(o));
+    o.active = 1;
+    o.flags = BVM_F_MODEL;
+    o.model = 15;
+    o.pos[0] = (x + w / 2.0f - 320.0f) * upp;
+    /* vertex y 17.5 (the middle of the body) with the node's offset of -4 sits on the rectangle's centre */
+    o.pos[1] = (240.0f - cy) * upp - 13.5f * FIT_SCALE;
+    o.pos[2] = z;
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = FIT_SCALE;
+    s->fit_kind = 2;
+    s->fit_p[0] = w / 2.0f / pxu - 26.8f;
+    s->fit_p[1] = h / 2.0f / pxu - 6.5f;
+    s->fit_p[2] = 17.5f - (row_y + row_h - cy) / pxu; /* the lower line: the row's bottom */
+    s->fit_p[3] = 17.5f - (row_y - cy) / pxu;         /* the upper line: the row's top */
+    unsigned saved = s->parts;
+    s->parts = BSCENE_PART_MODEL;
+    bscene_draw_object(s, &o, sink);
+    s->parts = saved;
+    s->fit_kind = 0;
 }
 
 /* The face of a row disc is a square with the picture mapped over it. Game pictures are square, so
@@ -630,6 +688,26 @@ transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
                 int q = i / 37;
                 src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
                 src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
+            }
+            if (s->fit_kind == 1 && mesh->nverts == 24) { /* the plate: its four corners apart (centre at y = -1.5) */
+                src.x += src.x > 0.0f ? s->fit_p[0] : -s->fit_p[0];
+                src.y += src.y > -1.5f ? s->fit_p[1] : -s->fit_p[1];
+            } else if (s->fit_kind == 2 && mesh->nverts == 104) {
+                /* the frame: the bottom tabs are flattened into the straight edge, the top and bottom corners move apart rigidly and
+                 * the two groove lines (y 12.5 / 13.0 and 15.75 / 16.25) go to the borders of the selected row */
+                if (i >= 40) {
+                    src.y = src.z > 0.75f ? 11.5f : 11.0f;
+                }
+                src.x += src.x > 0.0f ? s->fit_p[0] : -s->fit_p[0];
+                if (src.y > 20.0f) {
+                    src.y += s->fit_p[1];
+                } else if (src.y < 12.4f) {
+                    src.y -= s->fit_p[1];
+                } else if (src.y < 14.4f) { /* the lower line */
+                    src.y = s->fit_p[2] - (src.y < 12.75f ? 0.5f : 0.0f);
+                } else { /* the upper line */
+                    src.y = s->fit_p[3] + (src.y > 16.0f ? 0.5f : 0.0f);
+                }
             }
             if (s->small_left && mesh->nverts == 23 && i < 13) { /* model 41: the left cap's outline points */
                 /* corner arc of radius 1.0 as the right end's (offsets from the corner), then the straight edge */
@@ -843,7 +921,7 @@ draw_model(bscene* s, const bvm_obj* o, const nj_mat4* obj_m, const float* offs,
     s->invw_mul = o->depth_mul > 0.0f ? o->depth_mul : 1.0f;
     for (int n = 0; n < obj->count; n++) {
         const nj_mesh* mesh = obj->nodes[n].mesh;
-        if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE)) {
+        if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE) || (s->fit_kind && n > 0)) {
             continue;
         }
         nj_mat4 m;
