@@ -617,10 +617,10 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
     const int ribbed = ntsc && !clear; /* the white and dark grey NTSC cases; the clear ones (1 white tray, 2 black) have no ribs */
 #define RIB_MM 9.1f
     if (!ntsc) {
-        build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 7.8f, -7.8f, 0xFF2A4D9Cu);
+        build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 6.0f, -7.8f, 0xFF2A4D9Cu); /* its front well behind the cover's (8.0): small on the list's card, nearer let it cut through the art */
     } else if (clear) {
         /* the clear cases: the tray (white or black) inside, behind the front cover, seen through the clear edges */
-        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 4.0f, -4.4f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u);
+        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 3.0f, -4.0f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u);
     }
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
