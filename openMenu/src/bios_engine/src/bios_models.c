@@ -685,8 +685,15 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     }
                 }
                 uint32_t srcc = src[0].argb;
-                if (!ribbed && !strcmp(part->name, "hinge_strip")) { /* the curved hinge sections: the same blue as the bar and the tray */
-                    srcc = srcc == 0xFF0D2C89u ? 0xFF2A4D9Cu : srcc == 0xFF0C297Fu ? 0xFF264794u : srcc;
+                if (!ribbed && (srcc >> 24) == 0xFFu && ((srcc >> 16) & 0xFF) < 0x40 && (srcc & 0xFF) > 0x40) {
+                    /* the PAL case's opaque blues (the curved hinge sections and the like): the case's blue, shaded as the original was */
+                    if (srcc == 0xFF1E48ADu) {
+                        srcc = 0xFF4268B4u; /* the lighter blue: the pill's */
+                    } else {
+                        const float k = (float)(srcc & 0xFF) / (float)0x89;
+                        const uint32_t r = (uint32_t)fminf(255.0f, 0x2A * k), g = (uint32_t)fminf(255.0f, 0x4D * k), bl = (uint32_t)fminf(255.0f, 0x9C * k);
+                        srcc = 0xFF000000u | r << 16 | g << 8 | bl;
+                    }
                 }
                 const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
