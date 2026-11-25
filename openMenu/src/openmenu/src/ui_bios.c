@@ -901,8 +901,8 @@ feat_icon(int i, float x, float y, float size) {
 
 static void
 feat_pill(const char* text, float x, float y, float w) {
-    gfx_rrect(x, y, w, 18.0f, 8.0f, PANE_Z + 0.00004f, 0xFF376AA0u);
-    gfx_text(text, x + (w - (float)gfx_text_width(text)) / 2.0f, y + 1.0f, 0.5f, 0xFFFFFFFFu, 1);
+    gfx_rrect(x, y, w, 26.0f, 12.0f, PANE_Z + 0.00004f, 0xFF376AA0u);
+    gfx_text(text, x + (w - (float)gfx_text_width(text)) / 2.0f, y - 3.0f, 0.5f, 0xFFFFFFFFu, 1);
 }
 
 /* Draws the game's players pill(s) and the pictograms of what it supports from `y`; returns the height used. */
@@ -921,7 +921,7 @@ draw_features(const gd_item* cur, float x, float y, float width) {
             snprintf(t, sizeof(t), "1-%d Players", meta->num_players);
         }
         feat_pill(t, x, y, (float)gfx_text_width(t) + 16.0f);
-        h = 22.0f;
+        h = 30.0f;
     }
     if (meta->network & 3) {
         const char* t = "Online Multi-play";
@@ -931,7 +931,7 @@ draw_features(const gd_item* cur, float x, float y, float width) {
             w = (float)gfx_text_width(t) + 16.0f;
         }
         feat_pill(t, x, y + h, w);
-        h += 22.0f;
+        h += 30.0f;
     }
     int list[FEAT_COUNT], n = 0;
     if (meta->vmu_blocks) list[n++] = FEAT_VMU;
