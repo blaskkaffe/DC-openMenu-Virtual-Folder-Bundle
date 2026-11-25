@@ -99,6 +99,9 @@ typedef struct bscene {
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;
     float panel_fx, panel_fy;
+    /* fit modes (see bscene_draw_plate / bscene_draw_frame): 1 = the memory card plate (model 18), 2 = the card grid's frame (model 15) */
+    int fit_kind;
+    float fit_p[6];
     uint32_t panel_accent;
     /* material colours replaced while an object of `model` is drawn (the BIOS script effects that recolour a model:
      * the BACK marker's arrow and frame). node and poly index into the model. */
@@ -139,6 +142,13 @@ void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
 #define BSCENE_PANE_ARGB 0xB2444479u
 #define BSCENE_PANEL_MODEL 39
 void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
+
+/* The File screen's blue memory card plate (model 18, node 0 only: no free-blocks bar) fitted to the pixel rectangle x, y, w, h by moving its
+ * corners apart, so the rim, bevel and translucency are the BIOS's own at any size. `z` is the (negative) view depth it is drawn at. */
+void bscene_draw_plate(bscene* s, float x, float y, float w, float h, float z, const bscene_sink* sink);
+/* The File screen's card grid frame (model 15, body only: no A to D tabs) fitted to the pixel rectangle x, y, w, h; its two groove lines
+ * enclose the band row_y .. row_y + row_h (pixels). */
+void bscene_draw_frame(bscene* s, float x, float y, float w, float h, float row_y, float row_h, float z, const bscene_sink* sink);
 
 /* Draw model `model` (a ROM index or a BMODEL_* id, whose texlist is the same number) centred on the
  * pixel (cx, cy) as it looks at BSCENE_PANEL_Z; `scale` multiplies the model's own units, `rot_deg` is

@@ -267,6 +267,19 @@ blist_rows_extent_px(const blist* l, float* top, float* bottom) {
     *bottom = BBOT(l);
 }
 
+void
+blist_selected_row_px(const blist* l, float* top, float* height) {
+    int slot = (l->slots - 1) / 2;
+    for (int s2 = 0; s2 < l->slots; s2++) {
+        if (blist_row_in_slot(l, s2) == l->cursor) {
+            slot = s2;
+        }
+    }
+    const float pitch = pitch_px(l);
+    *height = pitch;
+    *top = 240.0f - row_y(l, slot) * PX_PER_UNIT - pitch / 2.0f;
+}
+
 float
 blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
