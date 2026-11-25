@@ -19,6 +19,7 @@
 
 #define STRIP_IGNORE_LIGHT 0x01
 #define STRIP_IGNORE_SPECULAR 0x02
+#define STRIP_INNER 0x80 /* inside the case (the tray): left out of the semi-transparent second copy */
 #define STRIP_DOUBLE_SIDED 0x10
 
 typedef struct {
@@ -601,7 +602,7 @@ build_pal_bar(builder* b, float S) {
  * is not see-through. A box slightly inside the shell; the faces at the top, bottom and right edges are a little darker, as seen at a slant. */
 static void
 build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf, float zr, uint32_t blue) {
-    int f = poly_new(b, -1, blue, 0), e = poly_new(b, -1, blue, 0); /* lit */
+    int f = poly_new(b, -1, blue, STRIP_INNER), e = poly_new(b, -1, blue, STRIP_INNER); /* lit */
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
     quad(b, f, A, B, C, D, NULL, v3m(0, 0, 1));
