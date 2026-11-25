@@ -53,6 +53,7 @@
 #include "bg_palette.h"
 #include "ui_settings.h"
 #include "video.h"
+#include "feature_icons.h"
 
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
 
@@ -883,6 +884,76 @@ info_build(const gd_item* cur, int width_px) {
     }
 }
 
+/* ---- Feature pictograms and the players pill, like the logos on the back of the PAL cases ---- */
+static int feat_id[FEAT_COUNT];
+static int feat_made;
+
+static void
+feat_icon(int i, float x, float y, float size) {
+    if (!feat_made || !gfx_dyn_valid(feat_id[i])) {
+        for (int k = 0; k < FEAT_COUNT; k++) {
+            feat_id[k] = gfx_dyn_create(feature_icons[k], FEAT_SIZE, FEAT_SIZE);
+        }
+        feat_made = 1;
+    }
+    gfx_image_tint(feat_id[i], x, y, size, size, PANE_Z + 0.00008f, 0xFFFFFFFFu);
+}
+
+static void
+feat_pill(const char* text, float x, float y, float w) {
+    gfx_rrect(x, y, w, 18.0f, 8.0f, PANE_Z + 0.00004f, 0xFF376AA0u);
+    gfx_text(text, x + (w - (float)gfx_text_width(text)) / 2.0f, y + 1.0f, 0.5f, 0xFFFFFFFFu, 1);
+}
+
+/* Draws the game's players pill(s) and the pictograms of what it supports from `y`; returns the height used. */
+static float
+draw_features(const gd_item* cur, float x, float y, float width) {
+    struct db_item* meta = NULL;
+    if (!cur || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
+        return 0.0f;
+    }
+    float h = 0.0f;
+    if (meta->num_players > 0) {
+        char t[16];
+        if (meta->num_players == 1) {
+            snprintf(t, sizeof(t), "1 Player");
+        } else {
+            snprintf(t, sizeof(t), "1-%d Players", meta->num_players);
+        }
+        feat_pill(t, x, y, (float)gfx_text_width(t) + 16.0f);
+        h = 22.0f;
+    }
+    if (meta->network & 3) {
+        const char* t = "Online Multi-play";
+        float w = (float)gfx_text_width(t) + 16.0f;
+        if (w > width) {
+            t = "Online";
+            w = (float)gfx_text_width(t) + 16.0f;
+        }
+        feat_pill(t, x, y + h, w);
+        h += 22.0f;
+    }
+    int list[FEAT_COUNT], n = 0;
+    if (meta->vmu_blocks) list[n++] = FEAT_VMU;
+    if (meta->accessories & ACCESORIES_JUMP_PACK) list[n++] = FEAT_VIBRATION;
+    if (meta->accessories & ACCESORIES_ARCADE_STICK) list[n++] = FEAT_STICK;
+    if (meta->accessories & ACCESORIES_LIGHTGUN) list[n++] = FEAT_GUN;
+    if (meta->accessories & ACCESORIES_RACING_WHEEL) list[n++] = FEAT_WHEEL;
+    if (meta->accessories & ACCESORIES_KEYBOARD) list[n++] = FEAT_KEYBOARD;
+    if (meta->accessories & ACCESORIES_VGA) list[n++] = FEAT_VGA;
+    if (meta->network & 3) list[n++] = FEAT_NET;
+    const float size = 26.0f, gap = 4.0f;
+    int per_row = (int)((width + gap) / (size + gap));
+    per_row = per_row < 1 ? 1 : per_row;
+    for (int i = 0; i < n; i++) {
+        feat_icon(list[i], x + (float)(i % per_row) * (size + gap), y + h + (float)(i / per_row) * (size + gap), size);
+    }
+    if (n) {
+        h += (float)((n + per_row - 1) / per_row) * (size + gap);
+    }
+    return h;
+}
+
 static void
 draw_viewer(void) {
     char lines[3][20];
@@ -904,6 +975,8 @@ draw_viewer(void) {
             gfx_text(info[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFC0C0C0u, 1);
             y += GFX_LINE_H - 4.0f;
         }
+        y += 2.0f;
+        y += draw_features(cur, VIEW_PANE_X + 10.0f, y, VIEW_PANE_W - 20.0f);
         /* the scrolling information (Up/Down) */
         if (cur != info_item) {
             info_build(cur, (int)VIEW_PANE_W - 24);
