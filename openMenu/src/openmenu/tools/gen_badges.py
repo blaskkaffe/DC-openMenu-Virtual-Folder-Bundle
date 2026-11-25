@@ -205,7 +205,6 @@ def write_pill_mask(path):
 
 def main():
     out_h, prev = sys.argv[1], sys.argv[2]
-    write_pill_mask(os.path.join(os.path.dirname(out_h), 'pill_mask.h'))
     regions = {}
     pal = build_pal()
     us = build_us()

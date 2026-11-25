@@ -26,7 +26,6 @@
 #include <texture/serial_sanitize.h>
 
 #include "gfx.h"
-#include "pill_mask.h"
 
 #ifndef GFX_REGION_BYTE /* the console's region byte, set by the BIOS (gfx_host_test has its own) */
 #define GFX_REGION_BYTE (*(volatile uint8_t*)0x8C000072)
@@ -1011,9 +1010,23 @@ pill_texture(void) {
         for (int x = 0; x < W; x++) {
             float r = 40, g = 73, b = 149; /* the carrier: the case's blue, as the curved hinge sections show it */
             const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
-            if (fy >= pt && fy < pt + (float)PILL_MASK_H && fx >= 1.5f && fx < 1.5f + (float)PILL_MASK_W) {
-                /* the pill has the shape of the menu's "1-4 Players" banner, turned to read upwards */
-                const float m = (float)pill_mask[(int)(fy - pt) * PILL_MASK_W + (int)(fx - 1.5f)] / 255.0f;
+            {
+                /* the pill: the menu's "1-4 Players" banner turned to read upwards: a rectangle 7.25 x 51 mm whose top right and bottom left corners
+                 * are round with one radius (circular in mm, so not stretched), the other two square. 3 x 3 samples. */
+                const float PW = 7.25f, PH = 51.0f, R = 3.0f;
+                float m = 0.0f;
+                for (int sy = 0; sy < 3; sy++) {
+                    for (int sx = 0; sx < 3; sx++) {
+                        const float u = (fx + ((float)sx - 1.0f) / 3.0f - 1.5f) / ppm_x, v = (fy + ((float)sy - 1.0f) / 3.0f - pt) / ppm_y;
+                        int in = u >= 0.0f && u <= PW && v >= 0.0f && v <= PH;
+                        if (in && u > PW - R && v < R) {
+                            in = (u - (PW - R)) * (u - (PW - R)) + (v - R) * (v - R) <= R * R;
+                        } else if (in && u < R && v > PH - R) {
+                            in = (u - R) * (u - R) + (v - (PH - R)) * (v - (PH - R)) <= R * R;
+                        }
+                        m += in ? 1.0f / 9.0f : 0.0f;
+                    }
+                }
                 r += (68 - r) * m, g += (119 - g) * m, b += (187 - b) * m; /* the pill, lighter (the spine's pill is the same) */
             }
             float a = 0.0f; /* the text's coverage: 3 x 3 samples */
