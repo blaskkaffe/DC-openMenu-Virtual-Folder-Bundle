@@ -22,7 +22,8 @@ NAMES = {'P1': '1 Player', 'P2': '2 Players', 'P12': '1-2 Players', 'P14': '1-4 
          'VMU': 'Visual Memory', 'VIB': 'Vibration Pack', 'STICK': 'Arcade Stick', 'GUN': 'Dreamcast Gun', 'WHEEL': 'Race Controller',
          'KEYBOARD': 'Keyboard', 'VGA': 'VGA', 'FISHING': 'Fishing Controller', 'MIC': 'Microphone', 'MOUSE': 'Mouse', 'MARACAS': 'Maracas',
          'DREAMEYE': 'Dreameye', 'MODEM': 'Modem', 'BBA': 'Broadband Adapter', 'DISC': 'Discs'}
-H_LOGO = 44  # height of the PAL and US logos
+H_LOGO = 38
+H_PILL = 28  # height of the PAL and US logos
 H_JP = 26
 
 def load(k):
@@ -194,7 +195,7 @@ def main():
             if k == 'DISC' and rn != 'JP':
                 continue
             if k in have:
-                im = fit_h(have[k], h if not (rn == 'JP') else have[k].height)
+                im = fit_h(have[k], (H_PILL if (rn == 'PAL' and (k.startswith('P') and k != 'PAL' or k == 'ONLINE') and k in ('P1','P2','P12','P14','P16','ONLINE')) else h) if rn != 'JP' else have[k].height)
                 st = 'low' if (rn, k) in LOW else 'ok'
             elif rn == 'PAL' and k == 'ONLINE':
                 continue
