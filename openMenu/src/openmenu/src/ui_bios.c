@@ -643,23 +643,23 @@ static int viewer_open;
 #define SBAR_Y 24.0f
 #define SBAR_H 38.0f
 
-/* the title strip's look (also the strip of the feature icons under the card) */
+/* the title strip's look (also the strip of the feature icons: x, y, width, height) */
 static void
-draw_strip_bg(float y) {
+draw_strip_bg(float x, float y, float w, float h) {
     const float z = PANE_Z;
-    gfx_rrect(CARD_X, y, CARD_W, SBAR_H, 8.0f, z, 0xFF404963u);
-    gfx_rrect(CARD_X, y, CARD_W, SBAR_H - 5.0f, 8.0f, z + 0.00004f, 0xFF4B5776u);
-    gfx_rrect(CARD_X, y, CARD_W, 5.0f, 3.0f, z + 0.00008f, 0xFF5C688Cu);
-    gfx_rect(CARD_X, y + 4.0f, CARD_W, SBAR_H - 9.0f, z + 0.00008f, 0xFF4B5776u);
+    gfx_rrect(x, y, w, h, 8.0f, z, 0xFF404963u);
+    gfx_rrect(x, y, w, h - 5.0f, 8.0f, z + 0.00004f, 0xFF4B5776u);
+    gfx_rrect(x, y, w, 5.0f, 3.0f, z + 0.00008f, 0xFF5C688Cu);
+    gfx_rect(x, y + 4.0f, w, h - 9.0f, z + 0.00008f, 0xFF4B5776u);
 }
 
-static void draw_feature_strip(const gd_item* cur);
+static float draw_feature_strip(const gd_item* cur, float x, float y, float w);
 
 static void
 draw_side_card(const gd_item* cur) {
     char count[24];
     /* top row */
-    draw_strip_bg(SBAR_Y);
+    draw_strip_bg(CARD_X, SBAR_Y, CARD_W, SBAR_H);
     {
         list_view view;
         list_view_get(&view);
@@ -690,7 +690,7 @@ draw_side_card(const gd_item* cur) {
     } else if (cur) {
         gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
-    draw_feature_strip(cur);
+    draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W);
 }
 
 static void
@@ -1032,13 +1032,13 @@ static unsigned char fi_made[FB_COUNT];
 static int
 fi_get(int key, int* pw, int* ph) {
     const feature_icon* ic = &feature_icons[key];
-    if (!ic->px || ic->w <= 0 || ic->w > 64 || ic->h <= 0 || ic->h > 32) {
+    if (!ic->px || ic->w <= 0 || ic->w > 64 || ic->h <= 0 || ic->h > 64) {
         return -1;
     }
     *pw = fb_pow2(ic->w);
     *ph = fb_pow2(ic->h);
     if (!fi_made[key] || !gfx_dyn_valid(fi_id[key])) {
-        static unsigned short buf[64 * 32];
+        static unsigned short buf[64 * 64];
         memset(buf, 0, (size_t)*pw * (size_t)*ph * 2u);
         for (int y = 0; y < ic->h; y++) {
             memcpy(&buf[y * *pw], &ic->px[y * ic->w], (size_t)ic->w * 2u);
@@ -1080,8 +1080,10 @@ fi_label(int key) {
     }
 }
 
-static void
-draw_feature_strip(const gd_item* cur) {
+/* Draws the strip at (x, y), `w` wide: the icons at the logos' own size in a row, a second row when they do not fit (the strip grows to it);
+ * returns its height (0 when the game has nothing to show). The icons shrink only if even two rows are not enough. */
+static float
+draw_feature_strip(const gd_item* cur, float x, float y, float w) {
     static const gd_item* last;
     if (cur != last) {
         fi_free_all();
@@ -1089,38 +1091,64 @@ draw_feature_strip(const gd_item* cur) {
     }
     struct db_item* meta = NULL;
     if (!cur || uil_is_folder(cur) || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
-        return;
+        return 0.0f;
     }
     int region, keys[FB_COUNT];
     const int n = feature_keys(cur, meta, keys, &region);
     if (n <= 0) {
-        return;
+        return 0.0f;
     }
-    const float y0 = CARD_Y + CARD_H + 8.0f, avail = CARD_W - 16.0f, gap = 5.0f, text_s = 0.55f;
-    float w[FB_COUNT], total = -gap;
+    const float pad = 8.0f, vpad = 3.0f, gap = 6.0f, row_h = 34.0f, tag_h = 20.0f, text_s = 0.55f, avail = w - 2.0f * pad;
+    float iw[FB_COUNT], s = 1.0f;
+    int rows = 1, row_of[FB_COUNT];
     for (int i = 0; i < n; i++) {
         const feature_icon* ic = &feature_icons[keys[i]];
-        w[i] = ic->px ? (float)ic->w : (float)gfx_text_width(fi_label(keys[i])) * text_s + 10.0f;
-        total += w[i] + gap;
+        iw[i] = ic->px ? (float)ic->w : (float)gfx_text_width(fi_label(keys[i])) * text_s + 10.0f;
     }
-    const float s = total > avail ? avail / total : 1.0f;
-    draw_strip_bg(y0);
-    float x = CARD_X + 8.0f + (avail - total * s) / 2.0f;
+    for (;; s -= 0.05f) { /* flow the icons into rows; two rows at most */
+        float cx = 0.0f;
+        rows = 1;
+        for (int i = 0; i < n; i++) {
+            const float ww = iw[i] * s;
+            if (cx > 0.0f && cx + ww > avail) {
+                rows++;
+                cx = 0.0f;
+            }
+            row_of[i] = rows - 1;
+            cx += ww + gap * s;
+        }
+        if (rows <= 2 || s <= 0.6f) {
+            break;
+        }
+    }
+    const float h = 2.0f * vpad + (float)rows * row_h * s + (float)(rows - 1) * 2.0f;
+    draw_strip_bg(x, y, w, h);
+    float cx = 0.0f;
+    int row = 0;
     for (int i = 0; i < n; i++) {
         const feature_icon* ic = &feature_icons[keys[i]];
-        const float ww = w[i] * s;
+        const float ww = iw[i] * s;
+        if (row_of[i] != row) {
+            row = row_of[i];
+            cx = 0.0f;
+        }
+        if (row >= 2) {
+            break; /* no room: the rest is left out */
+        }
+        const float ry = y + vpad + (float)row * (row_h * s + 2.0f);
         int pw, ph, id = ic->px ? fi_get(keys[i], &pw, &ph) : -1;
         if (id >= 0) {
             const float ih = (float)ic->h * s;
-            gfx_image(id, x, y0 + (SBAR_H - ih) / 2.0f, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
+            gfx_image(id, x + pad + cx, ry + (row_h * s - ih) / 2.0f, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
         } else {
-            const float ph_ = 20.0f * s;
+            const float th = tag_h * s, ty = ry + (row_h * s - th) / 2.0f;
             const int blue = keys[i] <= FB_ONLINE;
-            gfx_rrect(x, y0 + (SBAR_H - ph_) / 2.0f, ww, ph_, 5.0f * s, PANE_Z + 0.00012f, blue ? 0xFF2E6FB0u : 0xFF727C9Cu);
-            gfx_text_scaled(fi_label(keys[i]), x + 5.0f * s, y0 + (SBAR_H - ph_) / 2.0f + ph_ / 2.0f - 12.0f * text_s * s, 0.5f, 0xFFFFFFFFu, text_s * s);
+            gfx_rrect(x + pad + cx, ty, ww, th, 5.0f * s, PANE_Z + 0.00012f, blue ? 0xFF2E6FB0u : 0xFF727C9Cu);
+            gfx_text_scaled(fi_label(keys[i]), x + pad + cx + 5.0f * s, ty + th / 2.0f - 12.0f * text_s * s, 0.5f, 0xFFFFFFFFu, text_s * s);
         }
-        x += ww + gap * s;
+        cx += ww + gap * s;
     }
+    return h;
 }
 
 static void
@@ -1171,6 +1199,7 @@ draw_viewer(void) {
                             INFO_SCALE);
         }
     }
+    draw_feature_strip(cur, 140.0f, 372.0f, 460.0f);
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));
