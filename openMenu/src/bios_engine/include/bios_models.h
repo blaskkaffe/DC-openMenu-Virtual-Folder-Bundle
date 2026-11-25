@@ -35,7 +35,7 @@ enum {
 #define BMODEL_TEX_FRONT 0
 #define BMODEL_TEX_BACK 1
 #define BMODEL_TEX_SPINE 3 /* the PAL case's spine label: blue with a lighter patch and the BIOS wordmark, along the spine (made by gfx) */
-#define BMODEL_TEX_PILL 4 /* the PAL case's hinge bar: dark blue with the lighter rounded pill and the swirl (made by gfx) */
+#define BMODEL_TEX_PILL 4 /* the PAL case's hinge bar, or the NTSC cases' inner label behind the clear front spine (made by gfx) */
 #define BMODEL_TEX_RIBS 2 /* the cases' ribbed edges: grey stripes that modulate the face colour (made by gfx) */
 #define BMODEL_NOTE_COLOR 0xFF7F66FFu /* material colour of the music note (ROM model 2) */
 

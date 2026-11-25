@@ -630,12 +630,14 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                 memcpy(lab, part->verts, sizeof(lab));
                 fit_label(lab, part->name, !ribbed);
                 part_verts = lab;
-                if (ribbed && strstr(part->name, "label_front")) { /* the hinge side beside the 120 mm front: plain */
-                    const uint32_t fill = m == &dc_model_cd_case_white ? 0xFFD8D8D8u : 0xFF2E2E2Eu;
-                    int hp = poly_new(b, -1, fill, STRIP_IGNORE_LIGHT);
+                if (ribbed && strstr(part->name, "label_front")) {
+                    /* the hinge side beside the 120 mm front: the inner label seen through the clear front spine (white with
+                     * the colour logo, or black with a dark grey one; the picture is made by gfx, BMODEL_TEX_PILL) */
+                    static const float huv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+                    int hp = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
                     const float zf = lab[0].z;
                     quad(b, hp, v3m(-70.5f * S, 60.0f * S, zf * S), v3m(-50.0f * S, 60.0f * S, zf * S), v3m(-50.0f * S, -60.0f * S, zf * S),
-                         v3m(-70.5f * S, -60.0f * S, zf * S), NULL, v3m(0, 0, 1));
+                         v3m(-70.5f * S, -60.0f * S, zf * S), huv, v3m(0, 0, 1));
                 }
             }
             int tex = -1;

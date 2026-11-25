@@ -1107,6 +1107,82 @@ text_coverage(const char* str, int* tw) {
     return cov;
 }
 
+/* The NTSC cases' hinge side beside the front (BMODEL_TEX_PILL on those cases): the inner label seen through the clear
+ * front spine, 20.5 x 120 mm. White cases: a white label with the logo in colour (SEGA, the orange swirl, Dreamcast)
+ * reading upwards; dark cases: a black label with the logo and text in dark grey. 64 x 512. */
+static rom_tex hinge_tex[2];
+static rom_tex*
+hinge_texture(int dark) {
+    enum { W = 64, H = 512 };
+    static int tried[2];
+    dark = dark ? 1 : 0;
+    if (hinge_tex[dark].valid || tried[dark] || !g_rom) {
+        return hinge_tex[dark].valid ? &hinge_tex[dark] : NULL;
+    }
+    tried[dark] = 1;
+    bios_texture t;
+    uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
+    if (!px || !logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+        free(logo);
+        free(px);
+        return NULL;
+    }
+    int x0 = LOGO_W, x1 = -1, y0 = LOGO_H, y1 = -1; /* the whole logo: swirl and wordmark */
+    for (int y = 0; y < LOGO_H; y++) {
+        for (int x = 0; x < LOGO_W; x++) {
+            if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
+                x0 = x < x0 ? x : x0, x1 = x > x1 ? x : x1;
+                y0 = y < y0 ? y : y0, y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    int tw = 0;
+    uint8_t* sega = dark ? NULL : text_coverage("SEGA", &tw);
+    static const float bgs[2][3] = {{238, 238, 234}, {14, 14, 16}};
+    static const float inks[2][3] = {{40, 40, 44}, {62, 62, 66}};
+    static const float swirls[2][3] = {{232, 104, 28}, {62, 62, 66}};
+    const float* bg = bgs[dark];
+    const float* ink = inks[dark];
+    const float* sw = swirls[dark];
+    const float ppm_x = (float)W / 20.5f, ppm_y = (float)H / 120.0f;
+    const float s = x1 >= x0 ? 7.0f / (float)(y1 - y0 + 1) : 1.0f; /* mm per logo pixel: the logo is 7 mm across */
+    const float L = x1 >= x0 ? (float)(x1 - x0 + 1) * s : 0.0f;
+    const float sg = 5.0f / 18.0f, Ls = sega ? (float)tw * sg : 0.0f, gap = sega ? 2.0f : 0.0f; /* SEGA: 5 mm capitals */
+    const float a0 = 60.0f - (Ls + gap + L) / 2.0f, b0 = a0 + Ls + gap; /* where SEGA and the logo start, mm from the bottom */
+    const float lyc = (float)(y0 + y1 + 1) / 2.0f;
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            float r = bg[0], g = bg[1], b = bg[2];
+            for (int k = 0; k < 4; k++) { /* 2 x 2 samples */
+                const float fx = (float)x + 0.25f + 0.5f * (float)(k & 1), fy = (float)y + 0.25f + 0.5f * (float)(k >> 1);
+                const float along = ((float)H - fy) / ppm_y, across = fx / ppm_x - 10.25f; /* mm: up from the bottom; right of the middle */
+                float a = 0.0f;
+                const float* c = ink;
+                if (sega && along >= a0 && along < a0 + Ls) {
+                    const int tx = (int)((along - a0) / sg), ty = (int)(12.0f + across / sg);
+                    if (tx >= 0 && tx < tw && ty >= 0 && ty < GFX_LINE_H) {
+                        a = (float)sega[ty * tw + tx] / 255.0f;
+                    }
+                } else if (x1 >= x0 && along >= b0 && along < b0 + L) {
+                    const int lx = x0 + (int)((along - b0) / s), ly = (int)(lyc + across / s);
+                    if (lx >= 0 && lx < LOGO_W && ly >= 0 && ly < LOGO_H) {
+                        a = (float)(logo[ly * LOGO_W + lx] >> 24) / 255.0f;
+                        c = lx < LOGO_SWIRL_W ? sw : ink;
+                    }
+                }
+                r += (c[0] - bg[0]) * a / 4.0f, g += (c[1] - bg[1]) * a / 4.0f, b += (c[2] - bg[2]) * a / 4.0f;
+            }
+            px[y * W + x] = pack4444_dither(r, g, b, x, y);
+        }
+    }
+    upload_argb4444(px, W, H, &hinge_tex[dark]);
+    free(sega);
+    free(px);
+    free(logo);
+    return hinge_tex[dark].valid ? &hinge_tex[dark] : NULL;
+}
+
 static rom_tex spine_tex[2];
 static int spine_cur, spine_have;
 static char spine_key[64 + 16 + 4];
@@ -1306,8 +1382,8 @@ get_rom_texture_uncached(bscene_texref ref) {
                 return r;
             }
         }
-        if (ref.b == BMODEL_TEX_PILL) {
-            rom_tex* r = pill_texture();
+        if (ref.b == BMODEL_TEX_PILL) { /* the PAL hinge bar, or the NTSC cases' inner label behind the clear front spine */
+            rom_tex* r = ref.a == BMODEL_CASE_PAL ? pill_texture() : hinge_texture(ref.a == BMODEL_CASE_DARK);
             if (r) {
                 return r;
             }
