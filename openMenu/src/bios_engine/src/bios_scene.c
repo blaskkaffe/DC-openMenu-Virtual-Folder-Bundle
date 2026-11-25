@@ -582,7 +582,9 @@ bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, c
     }
     unsigned saved = s->parts;
     s->parts = BSCENE_PART_MODEL;
+    s->flat_ghost = alpha_off < 0.0f;
     bscene_draw_object(s, &o, sink);
+    s->flat_ghost = 0;
     s->parts = saved;
 }
 
@@ -800,6 +802,9 @@ draw_polys(const bscene* s, const bvm_obj* o, int n, const nj_mesh* mesh, const 
             tex.a = o->texlist;
             tex.b = poly->tex;
             tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
+        }
+        if (s->flat_ghost) {
+            tex.kind = BSCENE_TEX_NONE;
         }
         uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
         int forced = 0; /* a colour the scripts pick is shown as it is */
