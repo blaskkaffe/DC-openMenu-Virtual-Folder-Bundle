@@ -71,6 +71,7 @@ bcase_step(bcase* c) {
 }
 
 #define GHOST_SCALE 1.05f /* the second copy: a little larger */
+#define GHOST_BACK (BMODEL_CASE_HEIGHT / 125.0f * 1.6f) /* it sits this far (in model mm, times the scale) behind, so its larger front stays behind the first one's */
 #define GHOST_ALPHA -0.62f /* and semi-transparent (a constant alpha offset) */
 
 static void
@@ -98,7 +99,7 @@ draw_item(const bcase* c, const bcase_item* it, bscene* s, float cx, float cy, f
     }
     float scale = size_px * (-BSCENE_PANEL_Z / 4000.0f) / BMODEL_CASE_HEIGHT;
     /* like the menu's icons: a second, a little larger and semi-transparent copy behind the first */
-    bscene_draw_model_alpha(s, it->model, cx, cy + it->y, scale * GHOST_SCALE, rot, GHOST_ALPHA, sink);
+    bscene_draw_model_alpha(s, it->model, cx, cy + it->y, scale * GHOST_SCALE, rot, GHOST_ALPHA, GHOST_BACK * scale, sink);
     bscene_draw_model(s, it->model, cx, cy + it->y, scale, rot, sink);
 }
 
@@ -120,6 +121,6 @@ bcase_draw_posed(const bcase* c, bscene* s, float cx, float cy, float size_px, c
     }
     float r[3] = {rot[0], rot[1], rot[2]};
     float scale = size_px * (-BSCENE_PANEL_Z / 4000.0f) / BMODEL_CASE_HEIGHT;
-    bscene_draw_model_alpha(s, it->model, cx, cy, scale * GHOST_SCALE, r, GHOST_ALPHA, sink);
+    bscene_draw_model_alpha(s, it->model, cx, cy, scale * GHOST_SCALE, r, GHOST_ALPHA, GHOST_BACK * scale, sink);
     bscene_draw_model(s, it->model, cx, cy, scale, r, sink);
 }
