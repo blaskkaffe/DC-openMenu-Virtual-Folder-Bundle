@@ -748,6 +748,9 @@ transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
                     d = m->m[2][0] * vx->nrm.x + m->m[2][1] * vx->nrm.y + m->m[2][2] * vx->nrm.z;
                     d = d > 0.0f ? d : 0.0f;
                 }
+                if (s->fit_kind == 2 && i >= 40) {
+                    d = 0.85f * m->m[2][2]; /* the flattened tabs: lit like the face next to them, or the stretched fan shows a shaded wedge */
+                }
                 scratch_d[i] = s->fullbright ? 1.0f : d;
             }
             if (!any_env) {
