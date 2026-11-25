@@ -1188,65 +1188,90 @@ hinge_texture(int dark) {
     return hinge_tex[dark].valid ? &hinge_tex[dark] : NULL;
 }
 
-static rom_tex spine_tex[2];
-static int spine_cur, spine_have;
-static char spine_key[64 + 16 + 4];
-static rom_tex*
-spine_texture(int kind) {
-    enum { W = 64, H = 512 };
-    char key[sizeof(spine_key)];
-    snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
-    if (spine_have && !strcmp(key, spine_key) && spine_tex[spine_cur].valid) {
-        return &spine_tex[spine_cur];
+/* The spines are made in two steps. The part every game of a kind shares (background, patch, the logo) is drawn once per kind into
+ * spine_base and also kept as a picture of its own (spine_plain): what a case shows while its own spine is not made yet. The title
+ * and the product code are drawn over a copy of it, only over the rows and columns the letters cover, with integer blending. At
+ * most one spine is made per frame, and the last SPINE_SLOTS made are kept, so a case scrolled back to, and the old and new case
+ * drawn in the same frame while they fly, do not make theirs again. A slot used in this frame or the previous one (the PVR may
+ * still be drawing that one) is never replaced. */
+#define SPINE_SLOTS 4
+typedef struct {
+    rom_tex tex;
+    char key[64 + 16 + 4];
+    uint32_t used;
+} spine_slot;
+static spine_slot spine_slots[SPINE_SLOTS];
+static uint8_t* spine_base[SPINE_KINDS]; /* RGB, 64 x 512 */
+static unsigned short* spine_base_px[SPINE_KINDS]; /* ... packed for the PVR */
+static rom_tex spine_plain[SPINE_KINDS];
+static int spine_base_tried[SPINE_KINDS];
+static uint32_t spine_made_frame = 0xFFFFFFFFu;
+enum { SPINE_W = 64, SPINE_H = 512 };
+/* background, patch, ink, band colours */
+static const uint8_t spine_col[SPINE_KINDS][4][3] = {
+    {{40, 73, 149}, {45, 82, 167}, {0xF8, 0xF8, 0xFF}, {40, 73, 149}},
+    {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
+    {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
+
+/* The label is depth x 120 mm (7 mm on the NTSC cases, 15.4 on the PAL one): picture pixels per mm across over those along. The logo
+ * and the letters are drawn that much wider across than along, so they are not stretched on the case. */
+static float
+spine_ra(int kind) {
+    const float depth_mm = kind == SPINE_PAL ? 15.5f : 7.03f;
+    return ((float)SPINE_W / depth_mm) / ((float)SPINE_H / 120.0f);
+}
+
+/* rgb into px, the box x0..x1, y0..y1 (exclusive ends) */
+static void
+spine_pack(const uint8_t* rgb, int kind, unsigned short* px, int x0, int y0, int x1, int y1) {
+    for (int y = y0; y < y1; y++) {
+        for (int x = x0; x < x1; x++) {
+            const int i = y * SPINE_W + x;
+            const float r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+            px[i] = kind == SPINE_PAL ? pack4444_dither(r, g, b, x, y) : pack4444(r, g, b);
+        }
     }
-    if (!g_rom) {
+}
+
+/* The shared part of a kind's spine; NULL when it cannot be made. */
+static const uint8_t*
+spine_base_of(int kind) {
+    if (spine_base[kind] || spine_base_tried[kind] || !g_rom) {
+        return spine_base[kind];
+    }
+    spine_base_tried[kind] = 1;
+    enum { W = SPINE_W, H = SPINE_H };
+    uint8_t* rgb = malloc((size_t)W * H * 3);
+    uint32_t* logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+    bios_texture t;
+    if (!rgb) {
+        free(logo);
         return NULL;
     }
-    /* background, patch, ink, band colours */
-    static const float col[SPINE_KINDS][4][3] = {
-        {{40, 73, 149}, {45, 82, 167}, {0xF8, 0xF8, 0xFF}, {40, 73, 149}},
-        {{0xEE, 0xEE, 0xEA}, {0xF8, 0xF8, 0xF4}, {0x14, 0x14, 0x18}, {0xE8, 0x6A, 0x28}},
-        {{0x16, 0x16, 0x1A}, {0x24, 0x24, 0x2A}, {0xF4, 0xF4, 0xF4}, {0x16, 0x16, 0x1A}}};
-    static uint32_t* logo;
-    static int logo_x0, logo_x1, logo_y0, logo_y1, logo_tried;
-    if (!logo && !logo_tried) {
-        logo_tried = 1;
-        bios_texture t;
-        logo = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
-        if (!logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
-            free(logo);
-            logo = NULL;
-        } else {
-            logo_x0 = LOGO_W, logo_x1 = 0, logo_y0 = LOGO_H, logo_y1 = 0;
-            for (int y = 0; y < LOGO_H; y++) {
-                for (int x = 0; x < LOGO_W; x++) {
-                    if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
-                        logo_x0 = x < logo_x0 ? x : logo_x0;
-                        logo_x1 = x > logo_x1 ? x : logo_x1;
-                        logo_y0 = y < logo_y0 ? y : logo_y0;
-                        logo_y1 = y > logo_y1 ? y : logo_y1;
-                    }
+    int lx0 = LOGO_W, lx1 = 0, ly0 = LOGO_H, ly1 = 0;
+    if (!logo || bios_header_logo(g_rom, 0, &t) != 0 || t.width != LOGO_W || t.height != LOGO_H || bios_texture_decode(&t, logo) != 0) {
+        free(logo);
+        logo = NULL;
+    } else {
+        for (int y = 0; y < LOGO_H; y++) {
+            for (int x = 0; x < LOGO_W; x++) {
+                if ((logo[y * LOGO_W + x] >> 24) > 0x60) {
+                    lx0 = x < lx0 ? x : lx0, lx1 = x > lx1 ? x : lx1;
+                    ly0 = y < ly0 ? y : ly0, ly1 = y > ly1 ? y : ly1;
                 }
             }
         }
     }
-    float* rgb = malloc(sizeof(float) * W * H * 3);
-    if (!rgb) {
-        return NULL;
-    }
-    const float* bg = col[kind][0];
-    const float* patch = col[kind][1];
-    const float* ink = col[kind][2];
-    const float* band = col[kind][3];
-    /* The label is depth x 120 mm (7 mm on the NTSC cases, 15.4 on the PAL one): picture pixels per mm across over those along. The logo and
-     * the letters are drawn that much wider across than along, so they are not stretched on the case. */
-    const float depth_mm = kind == SPINE_PAL ? 15.5f : 7.03f;
-    const float ra = ((float)W / depth_mm) / ((float)H / 120.0f);
+    const uint8_t* bg = spine_col[kind][0];
+    const uint8_t* patch = spine_col[kind][1];
+    const uint8_t* ink = spine_col[kind][2];
+    const uint8_t* band = spine_col[kind][3];
+    const float ra = spine_ra(kind);
     const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float* o = &rgb[(y * W + x) * 3];
-            o[0] = bg[0], o[1] = bg[1], o[2] = bg[2];
+            uint8_t* o = &rgb[(y * W + x) * 3];
+            const uint8_t* c = bg;
             const float fx = (float)x + 0.5f - mx, fy = (float)y + 0.5f - my, pw = W - 2 * mx, ph = H - 2 * my;
             int inside = fx >= 0 && fx <= pw && fy >= 0 && fy <= ph;
             if (inside) {
@@ -1255,20 +1280,14 @@ spine_texture(int kind) {
                 inside = dx * dx + dy * dy <= cr * cr;
             }
             if (inside) {
-                const float* c = (kind == SPINE_J && (float)y > H - 150.0f) ? band : patch;
-                o[0] = c[0], o[1] = c[1], o[2] = c[2];
+                c = (kind == SPINE_J && (float)y > H - 150.0f) ? band : patch;
             }
+            o[0] = c[0], o[1] = c[1], o[2] = c[2];
         }
     }
-    /* ink over the picture: mix of cover (0..1) at picture pixel (x, y) */
-#define SPINE_INK(x, y, a)                                                            \
-    do {                                                                              \
-        float* o_ = &rgb[((y) * W + (x)) * 3];                                        \
-        o_[0] += (ink[0] - o_[0]) * (a), o_[1] += (ink[1] - o_[1]) * (a), o_[2] += (ink[2] - o_[2]) * (a); \
-    } while (0)
     /* the logo, at the bottom end, turned a quarter to the left (reading upwards): its x runs up the spine */
-    if (logo && logo_x1 > logo_x0) {
-        const float sw = (float)(logo_x1 - logo_x0 + 1), sh = (float)(logo_y1 - logo_y0 + 1);
+    if (logo && lx1 > lx0) {
+        const float sw = (float)(lx1 - lx0 + 1), sh = (float)(ly1 - ly0 + 1);
         float s = 118.0f / sw;
         if (sh * s * ra > 0.6f * (float)W) {
             s = 0.6f * (float)W / (sh * ra);
@@ -1276,84 +1295,158 @@ spine_texture(int kind) {
         const float cy = (float)H - 30.0f - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
-                float lx = (float)logo_x0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)logo_y0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
+                float lx = (float)lx0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)ly0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
                 int ix = (int)lx, iy = (int)ly;
-                if (lx >= (float)logo_x0 && ix <= logo_x1 && ly >= (float)logo_y0 && iy <= logo_y1) {
-                    float a = (float)(logo[iy * LOGO_W + ix] >> 24) / 255.0f;
-                    SPINE_INK(x, y, a);
-                }
-            }
-        }
-    }
-    /* a string, reading upwards: its middle at picture row `mid`, in at most `avail` rows, glyphs `thick` columns tall at best, centred across */
-    for (int pass = 0; pass < 2; pass++) {
-        const char* str = pass == 0 ? spine_title : spine_code;
-        if (!str[0]) {
-            continue;
-        }
-        int tw = 0;
-        uint8_t* cov = text_coverage(str, &tw);
-        if (!cov) {
-            continue;
-        }
-        const float avail = pass == 0 ? 296.0f : 84.0f, mid = pass == 0 ? 212.0f : 52.0f;
-        const float best = pass == 0 ? 0.95f : 0.62f; /* picture pixels per font pixel */
-        float sl = avail / (float)tw; /* along the spine */
-        if (sl > best) {
-            sl = best;
-        }
-        if (sl * ra * 24.0f > 0.55f * (float)W) {
-            sl = 0.55f * (float)W / (24.0f * ra); /* the letters fit across the label */
-        }
-        const float st = sl * ra; /* across it: in proportion */
-        const float cxp = (float)W / 2.0f;
-        for (int y = 0; y < H; y++) {
-            for (int x = 0; x < W; x++) {
-                /* text x runs up the picture, text y runs to the right; the glyph rows 2..22 are centred */
-                float tx = (float)tw / 2.0f + (mid - ((float)y + 0.5f)) / sl, ty = 12.0f + ((float)x + 0.5f - cxp) / st;
-                int ix = (int)tx, iy = (int)ty;
-                if (tx >= 0 && ix < tw && ty >= 0 && iy < GFX_LINE_H) {
-                    /* two by two samples, so a squeezed text does not break up */
-                    float a = 0;
-                    for (int k = 0; k < 4; k++) {
-                        int jx = (int)(tx + (k & 1 ? 0.25f : -0.25f)), jy = (int)(ty + (k & 2 ? 0.25f : -0.25f));
-                        if (jx >= 0 && jx < tw && jy >= 0 && jy < GFX_LINE_H) {
-                            a += (float)cov[jy * tw + jx] / 255.0f / 4.0f;
-                        }
-                    }
-                    if (a > 0) {
-                        SPINE_INK(x, y, a);
+                if (lx >= (float)lx0 && ix <= lx1 && ly >= (float)ly0 && iy <= ly1) {
+                    const int a = (int)(logo[iy * LOGO_W + ix] >> 24);
+                    uint8_t* o = &rgb[(y * W + x) * 3];
+                    for (int k = 0; k < 3; k++) {
+                        o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * a) / 255);
                     }
                 }
             }
         }
-        free(cov);
     }
-    unsigned short* px = calloc((size_t)W * H, sizeof(unsigned short));
+    free(logo);
+    unsigned short* px = malloc(sizeof(unsigned short) * W * H);
     if (!px) {
         free(rgb);
         return NULL;
     }
-    for (int i = 0; i < W * H; i++) {
-        px[i] = kind == SPINE_PAL ? pack4444_dither(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], i % W, i / W)
-                                  : pack4444(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+    spine_pack(rgb, kind, px, 0, 0, W, H);
+    upload_argb4444(px, W, H, &spine_plain[kind]);
+    spine_base[kind] = rgb;
+    spine_base_px[kind] = px;
+    return rgb;
+}
+
+/* The kind's spine without title: shown until the game's own is made. */
+static rom_tex*
+spine_plain_texture(int kind) {
+    spine_base_of(kind);
+    return spine_plain[kind].valid ? &spine_plain[kind] : NULL;
+}
+
+/* A string over the picture, reading upwards: its middle at picture row `mid`, in at most `avail` rows, glyphs at best `best`
+ * picture pixels per font pixel, centred across. Only the rows and columns the letters can cover are visited. */
+static void
+spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, float best, int box[4]) {
+    enum { W = SPINE_W, H = SPINE_H };
+    int tw = 0;
+    uint8_t* cov = str[0] ? text_coverage(str, &tw) : NULL;
+    if (!cov) {
+        return;
     }
-    free(rgb);
-    /* into the other slot; the old picture may still be on the PVR's frame, so it is freed a build later */
-    const int nxt = spine_have ? spine_cur ^ 1 : 0;
-    if (spine_tex[nxt].ptr) {
-        pvr_mem_free(spine_tex[nxt].ptr);
+    const uint8_t* ink = spine_col[kind][2];
+    const float ra = spine_ra(kind);
+    float sl = avail / (float)tw; /* along the spine */
+    if (sl > best) {
+        sl = best;
     }
-    memset(&spine_tex[nxt], 0, sizeof(spine_tex[nxt]));
-    upload_argb4444(px, W, H, &spine_tex[nxt]);
-    free(px);
-    if (!spine_tex[nxt].valid) {
+    if (sl * ra * 24.0f > 0.55f * (float)W) {
+        sl = 0.55f * (float)W / (24.0f * ra); /* the letters fit across the label */
+    }
+    const float st = sl * ra; /* across it: in proportion */
+    const float cxp = (float)W / 2.0f;
+    int ya = (int)(mid - (float)tw / 2.0f * sl) - 2, yb = (int)(mid + (float)tw / 2.0f * sl) + 2;
+    int xa = (int)(cxp - 12.5f * st) - 2, xb = (int)(cxp + 12.5f * st) + 2;
+    ya = ya < 0 ? 0 : ya, yb = yb > H ? H : yb;
+    xa = xa < 0 ? 0 : xa, xb = xb > W ? W : xb;
+    if (xa < xb && ya < yb) { /* what has to be packed again */
+        box[0] = xa < box[0] ? xa : box[0], box[1] = ya < box[1] ? ya : box[1];
+        box[2] = xb > box[2] ? xb : box[2], box[3] = yb > box[3] ? yb : box[3];
+    }
+    const float isl = 1.0f / sl, ist = 1.0f / st;
+    for (int y = ya; y < yb; y++) {
+        /* text x runs up the picture, text y runs to the right; the glyph rows 2..22 are centred */
+        const float tx = (float)tw / 2.0f + (mid - ((float)y + 0.5f)) * isl;
+        if (tx < -0.25f || tx >= (float)tw + 0.25f) {
+            continue;
+        }
+        const int jx0 = (int)(tx - 0.25f), jx1 = (int)(tx + 0.25f);
+        for (int x = xa; x < xb; x++) {
+            const float ty = 12.0f + ((float)x + 0.5f - cxp) * ist;
+            if (ty < -0.25f || ty >= (float)GFX_LINE_H + 0.25f) {
+                continue;
+            }
+            /* two by two samples, so a squeezed text does not break up */
+            const int jy0 = (int)(ty - 0.25f), jy1 = (int)(ty + 0.25f);
+            int a = 0;
+            for (int k = 0; k < 4; k++) {
+                const int jx = k & 1 ? jx1 : jx0, jy = k & 2 ? jy1 : jy0;
+                if (jx >= 0 && jx < tw && jy >= 0 && jy < GFX_LINE_H) {
+                    a += cov[jy * tw + jx];
+                }
+            }
+            if (a) {
+                uint8_t* o = &rgb[(y * W + x) * 3];
+                for (int k = 0; k < 3; k++) {
+                    o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * a) / 1020);
+                }
+            }
+        }
+    }
+    free(cov);
+}
+
+static rom_tex*
+spine_texture(int kind) {
+    enum { W = SPINE_W, H = SPINE_H };
+    char key[sizeof(spine_slots[0].key)];
+    snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
+    for (int i = 0; i < SPINE_SLOTS; i++) {
+        if (spine_slots[i].tex.valid && !strcmp(spine_slots[i].key, key)) {
+            spine_slots[i].used = frame_no;
+            return &spine_slots[i].tex;
+        }
+    }
+    const uint8_t* base = spine_base_of(kind);
+    if (!base) {
         return NULL;
     }
-    spine_cur = nxt;
-    spine_have = 1;
-    strcpy(spine_key, key);
-    return &spine_tex[nxt];
+    if (spine_made_frame == frame_no) {
+        return spine_plain_texture(kind); /* one made this frame already: this one on the next */
+    }
+    spine_slot* victim = NULL;
+    for (int i = 0; i < SPINE_SLOTS; i++) {
+        spine_slot* sl = &spine_slots[i];
+        if (!sl->tex.valid) {
+            victim = sl;
+            break;
+        }
+        if (sl->used + 1 < frame_no && (!victim || sl->used < victim->used)) {
+            victim = sl;
+        }
+    }
+    if (!victim) {
+        return spine_plain_texture(kind); /* all in use on the screen: not now */
+    }
+    uint8_t* rgb = malloc((size_t)W * H * 3);
+    unsigned short* px = rgb ? malloc(sizeof(unsigned short) * W * H) : NULL;
+    if (!px) {
+        free(rgb);
+        return spine_plain_texture(kind);
+    }
+    spine_made_frame = frame_no;
+    memcpy(rgb, base, (size_t)W * H * 3);
+    memcpy(px, spine_base_px[kind], sizeof(unsigned short) * W * H);
+    int box[4] = {W, H, 0, 0};
+    spine_text(rgb, kind, spine_title, 296.0f, 212.0f, 0.95f, box);
+    spine_text(rgb, kind, spine_code, 84.0f, 52.0f, 0.62f, box);
+    spine_pack(rgb, kind, px, box[0], box[1], box[2], box[3]);
+    free(rgb);
+    if (victim->tex.valid) {
+        pvr_mem_free(victim->tex.ptr);
+    }
+    memset(victim, 0, sizeof(*victim));
+    upload_argb4444(px, W, H, &victim->tex);
+    free(px);
+    if (!victim->tex.valid) {
+        return spine_plain_texture(kind);
+    }
+    strcpy(victim->key, key);
+    victim->used = frame_no;
+    return &victim->tex;
 }
 
 static rom_tex*
@@ -1398,7 +1491,14 @@ get_rom_texture_uncached(bscene_texref ref) {
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            rom_tex* r = spine_texture(ref.a == BMODEL_CASE_PAL ? SPINE_PAL : ref.a == BMODEL_CASE_WHITE ? SPINE_J : SPINE_US);
+            const int kind = ref.a == BMODEL_CASE_PAL ? SPINE_PAL : ref.a == BMODEL_CASE_WHITE ? SPINE_J : SPINE_US;
+            if (e && e->loading) {
+                rom_tex* r = spine_plain_texture(kind); /* SPINE.DAT may have one: none is made until it is known */
+                if (r) {
+                    return r;
+                }
+            }
+            rom_tex* r = spine_texture(kind);
             if (r) {
                 return r;
             }
