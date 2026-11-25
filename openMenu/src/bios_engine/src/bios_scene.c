@@ -697,8 +697,10 @@ transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
                  * the two groove lines (y 12.5 / 13.0 and 15.75 / 16.25) go to the borders of the selected row */
                 if (i >= 40) {
                     src.y = src.z > 0.75f ? 11.5f : 11.0f;
+                    src.x *= (26.8f + s->fit_p[0]) / 26.8f; /* inner points follow the width (a corner shift would cross them over when narrower) */
+                } else {
+                    src.x += src.x > 0.0f ? s->fit_p[0] : -s->fit_p[0];
                 }
-                src.x += src.x > 0.0f ? s->fit_p[0] : -s->fit_p[0];
                 if (src.y > 20.0f) {
                     src.y += s->fit_p[1];
                 } else if (src.y < 12.4f) {

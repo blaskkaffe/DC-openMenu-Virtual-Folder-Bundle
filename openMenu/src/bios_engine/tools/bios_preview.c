@@ -1020,6 +1020,12 @@ main(int argc, char** argv) {
         menu.scene.ovr_n = 0;
     } else if (script == -3 || script == -4) {
         bscene_draw_background(&menu.bg, &sink);
+        if (getenv("BIOS_PREVIEW_FRAME")) { /* the list's field as the console draws it (side layout) */
+            float rt, rh;
+            blist_selected_row_px(&list, &rt, &rh);
+            bscene_draw_frame(&menu.scene, 236.5f, 24.0f, 380.0f, 420.0f, rt, rh, -355.5f, &sink);
+            bscene_draw_plate(&menu.scene, 40.0f, 70.0f, 186.0f, 246.0f, -357.0f, &sink);
+        }
         blist_draw(&list, &sink);
         if (getenv("BIOS_PREVIEW_CASE")) { /* the right panel of the game browser with the CD case at rest */
             static bcase bc;
