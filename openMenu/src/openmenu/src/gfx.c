@@ -900,7 +900,7 @@ generic_cover(int pal, int back) {
     const float sc = want / lw;              /* picture pixels per disc pixel, vertically */
     /* the label is lw_mm x 120 mm: the picture is square, so the logo is made narrower to look right once stretched over it */
     const float lw_mm = pal ? (back ? 138.3f : 120.0f) : (back ? 139.6f : 120.0f);
-    const float scx = sc * 120.0f / lw_mm;
+    const float scx = sc * (back ? 119.0f : 120.0f) / lw_mm;
     const float cx = (float)N / 2.0f, cy = (float)N / 2.0f;
     for (int y = 0; y < N; y++) {
         for (int x = 0; x < N; x++) {
