@@ -70,8 +70,8 @@ bcase_step(bcase* c) {
     }
 }
 
-#define GHOST_SCALE 1.05f /* the second copy: a little larger */
-#define GHOST_BACK (BMODEL_CASE_HEIGHT / 125.0f * 1.6f) /* it sits this far (in model mm, times the scale) behind, so its larger front stays behind the first one's */
+#define GHOST_SCALE 1.009f /* the second copy: larger by one or two pixels at the most */
+#define GHOST_BACK (BMODEL_CASE_HEIGHT / 125.0f * 0.4f) /* it sits this far (in model mm, times the scale) behind, so its larger front stays behind the first one's */
 #define GHOST_ALPHA -0.62f /* and semi-transparent (a constant alpha offset) */
 
 static void

@@ -95,6 +95,7 @@ typedef struct bscene {
      * them on all four): the rounded cap's 13 outline points move onto a flat edge with two corner arcs. */
     int small_left;
     float invw_mul; /* set while a model is drawn: the object's depth_mul (bvm_obj), applied to the 1/w of its vertices */
+    int flat_ghost; /* the semi-transparent second copy of a case: no pictures, only the plain colours */
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;
