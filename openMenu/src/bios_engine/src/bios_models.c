@@ -18,6 +18,7 @@
 #define PI_F 3.14159265f
 
 #define STRIP_IGNORE_LIGHT 0x01
+#define STRIP_IGNORE_SPECULAR 0x02
 #define STRIP_DOUBLE_SIDED 0x10
 
 typedef struct {
@@ -572,7 +573,7 @@ build_pal_bar(builder* b, float S) {
     const float x0 = -66.0f, x1 = -58.0f, yt = 61.5f, yb = -61.5f, zb = 8.5f, zf = 8.9f;
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-    int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, 0); /* lit by the scene's light, like the menu's icons */
+    int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_SPECULAR); /* lit like the menu's icons, but no shine: it is the same blue as the sections beside it */
     quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
     int q = poly_new(b, -1, 0xFF2A4D9Cu, 0);
     const v3 A0 = v3m(x0 * S, yt * S, zb * S), B0 = v3m(x1 * S, yt * S, zb * S), C0 = v3m(x1 * S, yb * S, zb * S), D0 = v3m(x0 * S, yb * S, zb * S);
