@@ -700,7 +700,10 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     /* the PAL case's opaque blues (the curved hinge sections and the like): the case's blue, shaded as the original was */
                     srcc = srcc == 0xFF1E48ADu ? 0xFF4268B4u : 0xFF2A4D9Cu; /* the pill's blue and the case's: flat, the light shades them */
                 }
-                const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
+                uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
+                if (ribbed && !strcmp(part->name, "hinge_strip") && st == 0) {
+                    col = (col & 0x00FFFFFFu) | 0x58000000u; /* the front of the hinge is clear plastic: the inner label shows through its ribs */
+                }
                 int g = first;
                 while (g < b->npolys && (b->polys[g].diffuse != col || b->polys[g].tex != stex)) {
                     g++;
