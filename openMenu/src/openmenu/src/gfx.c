@@ -1156,7 +1156,7 @@ hinge_texture(int dark) {
             float r = bg[0], g = bg[1], b = bg[2];
             for (int k = 0; k < 4; k++) { /* 2 x 2 samples */
                 const float fx = (float)x + 0.25f + 0.5f * (float)(k & 1), fy = (float)y + 0.25f + 0.5f * (float)(k >> 1);
-                const float along = ((float)H - fy) / ppm_y, across = fx / ppm_x - 10.25f; /* mm: up from the bottom; right of the middle */
+                const float along = ((float)H - fy) / ppm_y, across = 10.25f - fx / ppm_x; /* mm: up from the bottom; left of the middle (the tops of the letters face left) */
                 float a = 0.0f;
                 const float* c = ink;
                 if (sega && along >= a0 && along < a0 + Ls) {
