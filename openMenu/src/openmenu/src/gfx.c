@@ -1109,7 +1109,7 @@ text_coverage(const char* str, int* tw) {
 
 /* The NTSC cases' hinge side beside the front (BMODEL_TEX_PILL on those cases): the inner label seen through the clear
  * front spine, 14 x 120 mm. White cases: a white label with the logo in colour (SEGA, the orange swirl, Dreamcast)
- * reading upwards; dark cases: a black label with the logo and text in dark grey. 64 x 512. */
+ * reading upwards; dark cases: a black label with the logo repeated in dark grey along it. 64 x 512. */
 static rom_tex hinge_tex[2];
 static rom_tex*
 hinge_texture(int dark) {
@@ -1164,8 +1164,13 @@ hinge_texture(int dark) {
                     if (tx >= 0 && tx < tw && ty >= 0 && ty < GFX_LINE_H) {
                         a = (float)sega[ty * tw + tx] / 255.0f;
                     }
-                } else if (x1 >= x0 && along >= b0 && along < b0 + L) {
-                    const int lx = x0 + (int)((along - b0) / s), ly = (int)(lyc + across / s);
+                } else if (x1 >= x0 && (dark ? along >= 2.0f : (along >= b0 && along < b0 + L))) {
+                    /* white: one logo in the middle; dark: the logo repeated along the whole label, 8 mm apart */
+                    const float kk = dark ? fmodf(along - 2.0f, L + 8.0f) : along - b0;
+                    if (kk >= L) {
+                        continue;
+                    }
+                    const int lx = x0 + (int)(kk / s), ly = (int)(lyc + across / s);
                     if (lx >= 0 && lx < LOGO_W && ly >= 0 && ly < LOGO_H) {
                         a = (float)(logo[ly * LOGO_W + lx] >> 24) / 255.0f;
                         c = lx < LOGO_SWIRL_W ? sw : ink;

@@ -626,7 +626,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
         build_tray(b, S, -69.6f, 66.8f, 61.0f, -61.0f, 6.0f, -7.8f, 0xFF2A4D9Cu, -52.0f); /* its front well behind the cover's (8.0): small on the list's card, nearer let it cut through the art */
     } else if (clear) {
         /* the clear cases: the tray (white or black) inside, behind the front cover, seen through the clear edges */
-        build_tray(b, S, -55.0f, 69.5f, 60.8f, -60.8f, 3.0f, -4.0f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u, -55.0f);
+        build_tray(b, S, NTSC_FRONT_X0, 69.5f, 60.8f, -60.8f, 3.0f, -4.0f, clear == 2 ? 0xFF141416u : 0xFFE6E6E2u, NTSC_FRONT_X0);
     }
     for (int pass = 0; pass < 2; pass++) {
         for (int pi = 0; pi < m->nparts; pi++) {
@@ -660,8 +660,21 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
                         static const float huv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
                         int hp = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
                         const float zb = -4.4f;
-                        quad(b, hp, v3m(-70.5f * S, 60.0f * S, zb * S), v3m(NTSC_FRONT_X0 * S, 60.0f * S, zb * S),
-                             v3m(NTSC_FRONT_X0 * S, -60.0f * S, zb * S), v3m(-70.5f * S, -60.0f * S, zb * S), huv, v3m(0, 0, 1));
+                        quad(b, hp, v3m(-70.4f * S, 60.8f * S, zb * S), v3m(NTSC_FRONT_X0 * S, 60.8f * S, zb * S),
+                             v3m(NTSC_FRONT_X0 * S, -60.8f * S, zb * S), v3m(-70.4f * S, -60.8f * S, zb * S), huv, v3m(0, 0, 1));
+                        /* the well the label lies in: its walls (left, right, top, bottom) in the label's colour, up to the front, so
+                         * no gap shows from the sides */
+                        const uint32_t wc = clear == 2 ? 0xFF0E0E10u : 0xFFEEEEEAu;
+                        int w = poly_new(b, -1, wc, STRIP_IGNORE_LIGHT);
+                        const float wx0 = -70.4f, wx1 = NTSC_FRONT_X0, wy = 60.8f, wz0 = zb, wz1 = 4.2f;
+                        quad(b, w, v3m(wx0 * S, wy * S, wz1 * S), v3m(wx0 * S, wy * S, wz0 * S), v3m(wx0 * S, -wy * S, wz0 * S),
+                             v3m(wx0 * S, -wy * S, wz1 * S), NULL, v3m(1, 0, 0));
+                        quad(b, w, v3m(wx1 * S, wy * S, wz0 * S), v3m(wx1 * S, wy * S, wz1 * S), v3m(wx1 * S, -wy * S, wz1 * S),
+                             v3m(wx1 * S, -wy * S, wz0 * S), NULL, v3m(-1, 0, 0));
+                        quad(b, w, v3m(wx0 * S, wy * S, wz0 * S), v3m(wx0 * S, wy * S, wz1 * S), v3m(wx1 * S, wy * S, wz1 * S),
+                             v3m(wx1 * S, wy * S, wz0 * S), NULL, v3m(0, -1, 0));
+                        quad(b, w, v3m(wx0 * S, -wy * S, wz1 * S), v3m(wx0 * S, -wy * S, wz0 * S), v3m(wx1 * S, -wy * S, wz0 * S),
+                             v3m(wx1 * S, -wy * S, wz1 * S), NULL, v3m(0, 1, 0));
                     }
                 }
             }
