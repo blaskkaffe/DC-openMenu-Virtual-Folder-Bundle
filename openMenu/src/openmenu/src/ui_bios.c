@@ -931,7 +931,7 @@ fb_free_all(void) {
 
 /* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
 static float
-draw_features(const gd_item* cur, float x, float y, float width) {
+draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
     static const gd_item* last;
     if (cur != last) { /* another game: the pictures of the last one are let go */
         fb_free_all();
@@ -982,6 +982,9 @@ draw_features(const gd_item* cur, float x, float y, float width) {
             cy += row_h + gap;
             cx = row_h = 0.0f;
         }
+        if (y + cy + (float)b->h > bottom) { /* no room left in the box */
+            break;
+        }
         gfx_image(id, x + cx, y + cy, (float)pw, (float)ph, PANE_Z + 0.00008f);
         if (b->num_x >= 0) { /* the number the menu writes into the badge */
             char t[16] = "";
@@ -1024,7 +1027,7 @@ draw_viewer(void) {
             y += GFX_LINE_H - 4.0f;
         }
         y += 2.0f;
-        y += draw_features(cur, VIEW_PANE_X + 10.0f, y, VIEW_PANE_W - 20.0f);
+        y += draw_features(cur, VIEW_PANE_X + 10.0f, y, VIEW_PANE_W - 20.0f, bottom - 8.0f);
         /* the scrolling information (Up/Down) */
         if (cur != info_item) {
             info_build(cur, (int)VIEW_PANE_W - 24);
