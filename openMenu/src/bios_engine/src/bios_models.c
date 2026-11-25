@@ -572,9 +572,9 @@ build_pal_bar(builder* b, float S) {
     const float x0 = -66.0f, x1 = -58.0f, yt = 61.5f, yb = -61.5f, zb = 8.5f, zf = 8.9f;
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     static const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-    int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
+    int p = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, 0); /* lit by the scene's light, like the menu's icons */
     quad(b, p, A, B, C, D, uv, v3m(0, 0, 1));
-    int q = poly_new(b, -1, 0xFF2A4D9Cu, STRIP_IGNORE_LIGHT);
+    int q = poly_new(b, -1, 0xFF2A4D9Cu, 0);
     const v3 A0 = v3m(x0 * S, yt * S, zb * S), B0 = v3m(x1 * S, yt * S, zb * S), C0 = v3m(x1 * S, yb * S, zb * S), D0 = v3m(x0 * S, yb * S, zb * S);
     quad(b, q, A0, A, D, D0, NULL, v3m(-1, 0, 0));
     quad(b, q, B, B0, C0, C, NULL, v3m(1, 0, 0));
@@ -587,8 +587,8 @@ build_pal_bar(builder* b, float S) {
 static void
 build_pal_tray(builder* b, float S) {
     const float x0 = -69.6f, x1 = 66.8f, yt = 61.0f, yb = -61.0f, zf = 7.8f, zr = -7.8f;
-    const uint32_t blue = 0xFF2A4D9Cu, side = 0xFF264794u;
-    int f = poly_new(b, -1, blue, STRIP_IGNORE_LIGHT), e = poly_new(b, -1, side, STRIP_IGNORE_LIGHT);
+    const uint32_t blue = 0xFF2A4D9Cu;
+    int f = poly_new(b, -1, blue, 0), e = poly_new(b, -1, blue, 0); /* lit */
     const v3 A = v3m(x0 * S, yt * S, zf * S), B = v3m(x1 * S, yt * S, zf * S), C = v3m(x1 * S, yb * S, zf * S), D = v3m(x0 * S, yb * S, zf * S);
     const v3 A0 = v3m(x0 * S, yt * S, zr * S), B0 = v3m(x1 * S, yt * S, zr * S), C0 = v3m(x1 * S, yb * S, zr * S), D0 = v3m(x0 * S, yb * S, zr * S);
     quad(b, f, A, B, C, D, NULL, v3m(0, 0, 1));
@@ -687,13 +687,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                 uint32_t srcc = src[0].argb;
                 if (!ribbed && (srcc >> 24) == 0xFFu && ((srcc >> 16) & 0xFF) < 0x40 && (srcc & 0xFF) > 0x40) {
                     /* the PAL case's opaque blues (the curved hinge sections and the like): the case's blue, shaded as the original was */
-                    if (srcc == 0xFF1E48ADu) {
-                        srcc = 0xFF4268B4u; /* the lighter blue: the pill's */
-                    } else {
-                        const float k = (float)(srcc & 0xFF) / (float)0x89;
-                        const uint32_t r = (uint32_t)fminf(255.0f, 0x2A * k), g = (uint32_t)fminf(255.0f, 0x4D * k), bl = (uint32_t)fminf(255.0f, 0x9C * k);
-                        srcc = 0xFF000000u | r << 16 | g << 8 | bl;
-                    }
+                    srcc = srcc == 0xFF1E48ADu ? 0xFF4268B4u : 0xFF2A4D9Cu; /* the pill's blue and the case's: flat, the light shades them */
                 }
                 const uint32_t col = tex == BMODEL_TEX_BACK ? 0xFFEAEAEAu /* the back is white paper */ : mul_argb(srcc, rib_axis >= 0 ? 0xFFFFFFFFu : tint);
                 int g = first;
@@ -708,7 +702,7 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint) {
                     bpoly* np = &b->polys[b->npolys++];
                     np->tex = stex;
                     np->diffuse = col;
-                    np->flags = STRIP_IGNORE_LIGHT; /* one-sided: a back face (the rear label seen from the front) must not take part in the PVR's per-triangle sort */
+                    np->flags = (!ribbed && !strcmp(part->name, "hinge_strip")) ? 0 : STRIP_IGNORE_LIGHT; /* the PAL hinge sections are lit; one-sided: a back face (the rear label seen from the front) must not take part in the PVR's per-triangle sort */
                     np->ntris = 0;
                     np->corners = (nj_corner*)calloc((size_t)ntri * 3, sizeof(nj_corner));
                     if (!np->corners) {

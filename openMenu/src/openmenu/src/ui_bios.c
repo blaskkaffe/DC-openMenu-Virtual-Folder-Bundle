@@ -653,7 +653,7 @@ draw_strip_bg(float x, float y, float w, float h) {
     gfx_rect(x, y + 4.0f, w, h - 9.0f, z + 0.00008f, 0xFF4B5776u);
 }
 
-static float draw_feature_strip(const gd_item* cur, float x, float y, float w);
+static float draw_feature_strip(const gd_item* cur, float x, float y, float w, int full);
 
 static void
 draw_side_card(const gd_item* cur) {
@@ -690,7 +690,7 @@ draw_side_card(const gd_item* cur) {
     } else if (cur) {
         gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
-    draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W);
+    draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W, 0);
 }
 
 static void
@@ -974,6 +974,26 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
     return n;
 }
 
+/* The number the menu writes into a badge (the Visual Memory blocks, the disc count), at the badge's top left (bx, by). */
+static void
+draw_badge_number(const gd_item* cur, const struct db_item* meta, int region, int key, float bx, float by) {
+    const feature_badge* b = &feature_badges[region][key];
+    if (b->num_x < 0) {
+        return;
+    }
+    char t[16] = "";
+    if (key == FB_VMU) {
+        if (region == FB_REGION_US) {
+            snprintf(t, sizeof(t), "%d blocks", meta->vmu_blocks);
+        } else {
+            snprintf(t, sizeof(t), "%d", meta->vmu_blocks);
+        }
+    } else if (key == FB_DISC) {
+        snprintf(t, sizeof(t), "%d", gd_item_disc_total(cur->disc) > 0 ? gd_item_disc_total(cur->disc) : 1);
+    }
+    gfx_text_scaled(t, bx + (float)b->num_x, by + (float)b->num_y, 0.5f, 0xFF000000u, 0.45f);
+}
+
 /* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
 static float
 draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
@@ -1005,19 +1025,7 @@ draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
             break;
         }
         gfx_image(id, x + cx, y + cy, (float)pw, (float)ph, PANE_Z + 0.00008f);
-        if (b->num_x >= 0) { /* the number the menu writes into the badge */
-            char t[16] = "";
-            if (keys[i] == FB_VMU) {
-                if (region == FB_REGION_US) {
-                    snprintf(t, sizeof(t), "%d blocks", meta->vmu_blocks);
-                } else {
-                    snprintf(t, sizeof(t), "%d", meta->vmu_blocks);
-                }
-            } else if (keys[i] == FB_DISC) {
-                snprintf(t, sizeof(t), "%d", gd_item_disc_total(cur->disc) > 0 ? gd_item_disc_total(cur->disc) : 1);
-            }
-            gfx_text_scaled(t, x + cx + (float)b->num_x, y + cy + (float)b->num_y, 0.5f, 0xFF000000u, 0.45f);
-        }
+        draw_badge_number(cur, meta, region, keys[i], x + cx, y + cy);
         cx += (float)b->w + gap;
         row_h = row_h > (float)b->h ? row_h : (float)b->h;
     }
@@ -1083,7 +1091,7 @@ fi_label(int key) {
 /* Draws the strip at (x, y), `w` wide: the icons at the logos' own size in a row, a second row when they do not fit (the strip grows to it);
  * returns its height (0 when the game has nothing to show). The icons shrink only if even two rows are not enough. */
 static float
-draw_feature_strip(const gd_item* cur, float x, float y, float w) {
+draw_feature_strip(const gd_item* cur, float x, float y, float w, int full) {
     static const gd_item* last;
     if (cur != last) {
         fi_free_all();
@@ -1103,7 +1111,8 @@ draw_feature_strip(const gd_item* cur, float x, float y, float w) {
     int rows = 1, row_of[FB_COUNT];
     for (int i = 0; i < n; i++) {
         const feature_icon* ic = &feature_icons[keys[i]];
-        iw[i] = ic->px ? (float)ic->w : (float)gfx_text_width(fi_label(keys[i])) * text_s + 10.0f;
+        iw[i] = full && feature_badges[region][keys[i]].px ? (float)feature_badges[region][keys[i]].w
+                : ic->px ? (float)ic->w : (float)gfx_text_width(fi_label(keys[i])) * text_s + 10.0f;
     }
     for (;; s -= 0.05f) { /* flow the icons into rows; two rows at most */
         float cx = 0.0f;
@@ -1136,7 +1145,22 @@ draw_feature_strip(const gd_item* cur, float x, float y, float w) {
             break; /* no room: the rest is left out */
         }
         const float ry = y + vpad + (float)row * (row_h * s + 2.0f);
-        int pw, ph, id = ic->px ? fi_get(keys[i], &pw, &ph) : -1;
+        int pw, ph, id = -1;
+        if (full && feature_badges[region][keys[i]].px) { /* the whole logo, as on the case's back (shared with the information box's pictures) */
+            const feature_badge* fb = &feature_badges[region][keys[i]];
+            id = fb_get(region, keys[i], &pw, &ph);
+            if (id >= 0) {
+                const float bh = (float)fb->h * s;
+                const float bx = x + pad + cx, by = ry + (row_h * s - bh) / 2.0f;
+                gfx_image(id, bx, by, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
+                if (s == 1.0f) {
+                    draw_badge_number(cur, meta, region, keys[i], bx, by);
+                }
+                cx += ww + gap * s;
+                continue;
+            }
+        }
+        id = ic->px ? fi_get(keys[i], &pw, &ph) : -1;
         if (id >= 0) {
             const float ih = (float)ic->h * s;
             gfx_image(id, x + pad + cx, ry + (row_h * s - ih) / 2.0f, (float)pw * s, (float)ph * s, PANE_Z + 0.00012f);
@@ -1199,7 +1223,7 @@ draw_viewer(void) {
                             INFO_SCALE);
         }
     }
-    draw_feature_strip(cur, 140.0f, 372.0f, 460.0f);
+    draw_feature_strip(cur, 140.0f, 372.0f, 460.0f, 1);
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));

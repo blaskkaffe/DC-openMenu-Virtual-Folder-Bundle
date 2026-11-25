@@ -557,11 +557,20 @@ draw_round_face(const nj_mesh* mesh, const nj_poly* poly, const nj_mat4* m, uint
 
 void
 bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink) {
+    bscene_draw_model_alpha(s, model, cx, cy, scale, rot_deg, 0.0f, sink);
+}
+
+void
+bscene_draw_model_alpha(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], float alpha_off, const bscene_sink* sink) {
     float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
     bvm_obj o;
     memset(&o, 0, sizeof(o));
     o.active = 1;
     o.flags = BVM_F_MODEL;
+    if (alpha_off != 0.0f) {
+        o.flags |= BVM_F_COLOUR;
+        o.color[0] = alpha_off;
+    }
     o.model = model;
     o.texlist = model;
     o.pos[0] = (cx - 320.0f) * units_per_px;
