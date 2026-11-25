@@ -1627,6 +1627,196 @@ pointer_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
     p->out->triangle(p->out->user, w, tex);
 }
 
+/* ---- The BIOS screensaver ----------------------------------------------------------------------------------------
+ * As the boot ROM does it (KATANA 1.01d): script 0's object 0x122 is a 9 x 7 grid mesh (cells of 6.3 units, at z -312.5,
+ * the plain white texture GBIX 1) in front of everything, with the grid mesh deformers 6 (0x8C0169EA) and 7 (0x8C016A80).
+ * Its delays are set at 0x8C0145C0: 36000 frames at 60 Hz, 30000 at 50 Hz (10 minutes either way).
+ *   1. no input for 10 minutes: deformer 6 blackens the screen, alpha 0 -> 140 one step a frame;
+ *   2. 10 more minutes: alpha 140 -> 220, then deformer 7: six balls of light (red, green, blue, yellow, magenta, white)
+ *      drift along Catmull-Rom splines through random points, coloured onto the grid's corners (300 / distance - 20 each,
+ *      added up, 0..160 a channel) over the 220 of black;
+ *   3. any input: the light goes, the black fades out 4 steps a frame, and the 10 minutes start again.
+ * The input that wakes it is not passed on while the screen is dimmed. */
+#define SS_COLS 9
+#define SS_ROWS 7
+typedef struct {
+    float pos[3], t;
+    float c[3][4]; /* the spline's control points, per axis */
+} ss_ball;
+static struct {
+    int phase; /* 0 waiting, 1 dimming to 140, 2 holding, 3 dimming to 220, 4 lights, 5 waking */
+    int var0, wait;
+    uint32_t seed;
+    ss_ball ball[6];
+} ss = {0, 0, -1, 1, {{{0}}}};
+
+static int
+ss_rand(void) { /* the BIOS's rand (0x8C0297E0) */
+    ss.seed = ss.seed * 0x41C64E6Du + 0x3039u;
+    return (int)((ss.seed >> 16) & 0x7FFF);
+}
+
+static float
+ss_rnd(float span, float base) {
+    return (float)ss_rand() / 32768.0f * span + base;
+}
+
+static int
+ss_delay(void) {
+    return video_refresh_hz() <= 50 ? 30000 : 36000;
+}
+
+static void
+ss_balls_init(void) {
+    ss.seed ^= (uint32_t)timer_ms_gettime64();
+    for (int b = 0; b < 6; b++) {
+        ss_ball* o = &ss.ball[b];
+        for (int k = 0; k < 4; k++) {
+            o->c[0][k] = ss_rnd(48.0f, -24.0f);
+            o->c[1][k] = ss_rnd(32.0f, -16.0f);
+            o->c[2][k] = ss_rnd(1.0f, 7.5f);
+        }
+        o->t = 0.0f;
+    }
+}
+
+static void
+ss_ball_step(ss_ball* o) { /* 0x8C016F00 */
+    const float t = o->t, t2 = t * t, t3 = t2 * t;
+    const float w0 = 0.5f * (2.0f * t2 - t - t3), w1 = 1.5f * t3 - 2.5f * t2 + 1.0f, w2 = 0.5f * t - 1.5f * t3 + 2.0f * t2,
+                w3 = 0.5f * (t3 - t2);
+    for (int a = 0; a < 3; a++) {
+        o->pos[a] = o->c[a][1] * w1 + o->c[a][0] * w0 + o->c[a][2] * w2 + o->c[a][3] * w3;
+    }
+    float nt = t + 0.005f;
+    if (nt >= 1.0f) {
+        nt -= 1.0f;
+        for (int a = 0; a < 3; a++) {
+            o->c[a][0] = o->c[a][1];
+            o->c[a][1] = o->c[a][2];
+            o->c[a][2] = o->c[a][3];
+        }
+        o->c[0][3] = ss_rnd(48.0f, -24.0f);
+        o->c[1][3] = ss_rnd(32.0f, -16.0f);
+        o->c[2][3] = ss_rnd(6.0f, 1.1f);
+    }
+    o->t = nt;
+}
+
+/* Once a frame with whether there was any input; 1 when that input only woke the screen up */
+static int
+ss_step(int input) {
+    if (ss.wait < 0) {
+        ss.wait = ss_delay();
+    }
+    if (ss.phase == 5) { /* waking: the BIOS ignores the pad meanwhile */
+        ss.var0 -= 4;
+        if (ss.var0 <= 0) {
+            ss.var0 = 0;
+            ss.phase = 0;
+            ss.wait = ss_delay();
+        }
+        return input;
+    }
+    if (input) {
+        const int shown = ss.var0 > 0;
+        if (shown) {
+            ss.phase = 5;
+        } else {
+            ss.phase = 0;
+            ss.wait = ss_delay();
+        }
+        return shown;
+    }
+    switch (ss.phase) {
+        case 0:
+            if (--ss.wait <= 0) {
+                ss.phase = 1;
+            }
+            break;
+        case 1:
+            if (ss.var0 >= 140) {
+                ss.phase = 2;
+                ss.wait = ss_delay();
+            } else {
+                ss.var0++;
+            }
+            break;
+        case 2:
+            if (--ss.wait <= 0) {
+                ss.phase = 3;
+            }
+            break;
+        case 3:
+            if (++ss.var0 >= 220) {
+                ss.var0 = 220;
+                ss.phase = 4;
+                ss_balls_init();
+            }
+            break;
+        case 4:
+            for (int b = 0; b < 6; b++) {
+                ss_ball_step(&ss.ball[b]);
+            }
+            break;
+    }
+    return 0;
+}
+
+static void
+ss_draw(void) {
+    if (ss.var0 <= 0) {
+        return;
+    }
+    if (ss.phase != 4) { /* deformer 6: the grid black, alpha var0 */
+        gfx_rect(-40.0f, -40.0f, 720.0f, 560.0f, 1.0f, (uint32_t)ss.var0 << 24);
+        return;
+    }
+    /* deformer 7: the grid's corners coloured by the six balls (each 300 / distance - 20), alpha 220 */
+    static const uint8_t mix[6][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}, {1, 0, 1}, {1, 1, 1}};
+    static bscene_vtx v[SS_COLS + 1][SS_ROWS + 1];
+    const float pxu = BSCENE_FOCAL / 312.5f; /* pixels per unit at the grid's depth */
+    const int half_w = SS_COLS * 63 / 2, half_h = SS_ROWS * 63 / 2;
+    for (int i = 0; i <= SS_COLS; i++) {
+        for (int j = 0; j <= SS_ROWS; j++) {
+            const float x = (float)(i * 63 - half_w) / 10.0f, y = (float)(j * 63 - half_h) / 10.0f;
+            float col[3] = {0.0f, 0.0f, 0.0f};
+            for (int b = 0; b < 6; b++) {
+                const ss_ball* o = &ss.ball[b];
+                const float dx = x - o->pos[0], dy = y - o->pos[1], d2 = dx * dx + dy * dy + o->pos[2] * o->pos[2];
+                const float f = 300.0f / sqrtf(d2) - 20.0f;
+                for (int k = 0; k < 3; k++) {
+                    if (mix[b][k]) {
+                        col[k] += f;
+                    }
+                }
+            }
+            uint32_t argb = 220u << 24;
+            for (int k = 0; k < 3; k++) {
+                const float c = col[k] < 0.0f ? 0.0f : (col[k] > 160.0f ? 160.0f : col[k]);
+                argb |= (uint32_t)c << (16 - 8 * k);
+            }
+            bscene_vtx* p = &v[i][j];
+            p->x = 320.0f + x * pxu;
+            p->y = 240.0f - y * pxu;
+            p->invw = 1.0f;
+            p->u = p->v = 0.0f;
+            p->argb = argb;
+            p->oargb = 0;
+        }
+    }
+    const bscene_sink* sk = gfx_sink();
+    const bscene_texref none = {BSCENE_TEX_NONE, 0, 0, 0};
+    for (int i = 0; i < SS_COLS; i++) {
+        for (int j = 0; j < SS_ROWS; j++) {
+            bscene_vtx t1[3] = {v[i][j], v[i + 1][j], v[i][j + 1]};
+            bscene_vtx t2[3] = {v[i + 1][j], v[i + 1][j + 1], v[i][j + 1]};
+            sk->triangle(sk->user, t1, none);
+            sk->triangle(sk->user, t2, none);
+        }
+    }
+}
+
 static void
 draw_pointer(void) {
     if (!pointer.visible) {
@@ -1876,6 +2066,7 @@ draw_frame(void) {
         gfx_text(bench_status(), TEXT_X, STATUS_Y, 0.5f, 0xFFF0E060u, 1);
     }
     draw_pointer();
+    ss_draw(); /* the screensaver, over everything */
     phase_us[2] += timer_us_gettime64() - t0;
     build_us_sum += timer_us_gettime64() - t0;
     gfx_end_frame();
@@ -3027,6 +3218,16 @@ ui_bios_run(const bios_rom* rom) {
             apply_hover(); /* a click acts on what is under the pointer, even if it has not moved */
         }
         int typed = input_typed_char();
+        if (!bench_active()) {
+            int jx, jy, lt, rt;
+            input_analog(&jx, &jy, &lt, &rt);
+            const int any = b != BTN_NONE || pointer.moved || pointer.clicked || typed || jx || jy || lt || rt;
+            if (ss_step(any)) { /* the input only woke the screen up */
+                b = BTN_NONE;
+                typed = 0;
+                pointer.moved = pointer.clicked = 0;
+            }
+        }
         if (typed && screen == SCREEN_GAMES && !recent_open && !options_open && !viewmenu_open && !viewer_open && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
         }
