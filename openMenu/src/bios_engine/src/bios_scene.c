@@ -803,8 +803,8 @@ draw_polys(const bscene* s, const bvm_obj* o, int n, const nj_mesh* mesh, const 
             tex.b = poly->tex;
             tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
         }
-        if (s->flat_ghost) {
-            tex.kind = BSCENE_TEX_NONE;
+        if (s->flat_ghost && poly->tex >= 0) { /* the semi-transparent second copy has no pictures: the faces that carry one are left out */
+            continue;
         }
         uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
         int forced = 0; /* a colour the scripts pick is shown as it is */
