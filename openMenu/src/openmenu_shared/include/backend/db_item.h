@@ -56,7 +56,26 @@ typedef struct db_item {
     unsigned char accessories; /* Accessories Described above */
     unsigned char network;     /* 0, none. 1, modem. 2, bba. 3, both */
     unsigned short genre;      /* Genres Described above */
-    char padding1;             /*Currently Unused, for expansion */
-    char padding2;             /*Currently Unused, for expansion */
+    /* The two bytes below were padding1/padding2 (always 0 in the files made so far): older menus ignore them, and a file
+     * without them reads as "nothing more". */
+    unsigned char accessories_hi; /* accessories bits 8..15 (light gun, BBA, fishing rod, ASCII pad, Dreameye, modem) */
+    unsigned char links;          /* more ways to connect besides `network`: LINK_W5500, LINK_SERIAL (any combination) */
     char description[376];
 } db_item;
+
+/* network: the standard Dreamcast ways online (a bit each, so 3 = both) */
+enum { NETWORK_MODEM = 1, NETWORK_BBA = 2 };
+/* links: patched or homebrew ways to connect */
+enum { LINK_W5500 = 1, LINK_SERIAL = 2 };
+/* every way a game connects, one bit each: none or any combination */
+enum { CONNECT_MODEM = 1, CONNECT_BBA = 2, CONNECT_W5500 = 4, CONNECT_SERIAL = 8 };
+
+static inline unsigned
+db_item_accessories(const db_item* m) {
+    return (unsigned)m->accessories | (unsigned)m->accessories_hi << 8;
+}
+
+static inline unsigned
+db_item_connections(const db_item* m) {
+    return ((unsigned)m->network & 3u) | ((unsigned)m->links & 0x3Fu) << 2;
+}

@@ -163,6 +163,32 @@ meta_parse_accessories(const char* accessories) {
     return ret;
 }
 
+/* network= is a number (0 none, 1 modem, 2 broadband adapter, 3 both) or the ways to connect joined by '+':
+ * MODEM, BBA, W5500 (patched), SERIAL (patched). The last two go to `links`. */
+static void
+meta_parse_network(db_item* item, const char* value) {
+    if (value[0] >= '0' && value[0] <= '9') {
+        item->network = (unsigned char)(atoi(value) & 3);
+        return;
+    }
+    char temp[64];
+    snprintf(temp, sizeof(temp), "%s", value);
+    item->network = 0;
+    for (char* t = strtok(temp, "+|, "); t; t = strtok(NULL, "+|, ")) {
+        if (!strcasecmp(t, "MODEM") || !strcasecmp(t, "MOD")) {
+            item->network |= NETWORK_MODEM;
+        } else if (!strcasecmp(t, "BBA") || !strcasecmp(t, "LAN") || !strcasecmp(t, "ETH")) {
+            item->network |= NETWORK_BBA;
+        } else if (!strcasecmp(t, "W5500")) {
+            item->links |= LINK_W5500;
+        } else if (!strcasecmp(t, "SERIAL")) {
+            item->links |= LINK_SERIAL;
+        } else if (strcasecmp(t, "NONE") && strcmp(t, "0")) {
+            printf("META: Unknown connection: %s\n", t);
+        }
+    }
+}
+
 static int
 read_meta_ini(void* user, const char* section, const char* name, const char* value) {
     /* Parsing Meta into struct */
@@ -177,8 +203,20 @@ read_meta_ini(void* user, const char* section, const char* name, const char* val
 #define DB_ITEM_GENRE(s, n, default)                                                                                   \
     else if (strcasecmp(section, #s) == 0 && strcasecmp(name, #n) == 0) item->n = meta_parse_genre(value);
 #define DB_ITEM_ACCESSORY(s, n, default)                                                                               \
-    else if (strcasecmp(section, #s) == 0 && strcasecmp(name, #n) == 0) item->n = meta_parse_accessories(value);
+    else if (strcasecmp(section, #s) == 0 && strcasecmp(name, #n) == 0) {                                              \
+        const unsigned short acc_ = meta_parse_accessories(value);                                                     \
+        item->n = (unsigned char)(acc_ & 0xFF);                                                                         \
+        item->accessories_hi = (unsigned char)(acc_ >> 8); /* the flags past the first eight (light gun, BBA, ...) */   \
+    }
+#define DB_ITEM_NETWORK(s, n, default)                                                                                 \
+    else if (strcasecmp(section, #s) == 0 && strcasecmp(name, #n) == 0) meta_parse_network(item, value);
+/* added to what accessories= and network= already set, whatever the order of the lines */
+#define DB_ITEM_OR(s, n, default)                                                                                      \
+    else if (strcasecmp(section, #s) == 0 && strcasecmp(name, #n) == 0) item->n |= (unsigned char)atoi(value);
 #include "backend/db_item.def"
+    /* the old names of accessories_hi and links */
+    else if (strcasecmp(section, "ITEM") == 0 && strcasecmp(name, "padding1") == 0 && atoi(value)) item->accessories_hi = (unsigned char)atoi(value);
+    else if (strcasecmp(section, "ITEM") == 0 && strcasecmp(name, "padding2") == 0 && atoi(value)) item->links = (unsigned char)atoi(value);
 
     return 1;
 }
@@ -190,6 +228,8 @@ meta_init_item(db_item* item) {
 #define DB_ITEM_CHAR(s, n, default)      item->n = default;
 #define DB_ITEM_GENRE(s, n, default)     item->n = default;
 #define DB_ITEM_ACCESSORY(s, n, default) item->n = default;
+#define DB_ITEM_NETWORK(s, n, default)   item->n = default;
+#define DB_ITEM_OR(s, n, default)        item->n = default;
 #include "backend/db_item.def"
 }
 
