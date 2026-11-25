@@ -90,10 +90,7 @@ def build_pal():
             continue
         im = crop(src, box)
         out[k] = cutout(im) if k.startswith('P') or k == 'ONLINE' else cutout_tile(im)   # everything outside the outline is transparent, the inside stays white
-    # Fishing Controller: only the small label of a European Bass Fishing back (low quality)
-    pb = load('palbass')
-    out['FISHING'] = cutout_tile(pb.crop((395, 462, 482, 520)).resize((87 * 4, 58 * 4), Image.LANCZOS))
-    LOW.add(('PAL', 'FISHING'))
+    # Fishing Controller: no usable PAL scan yet (the crop of the Bass Fishing back caught the CRI ADX logo): a placeholder
     return out
 
 def build_us():
