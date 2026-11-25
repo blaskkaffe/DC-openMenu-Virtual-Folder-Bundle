@@ -19,6 +19,7 @@
 #define STRIP_IGNORE_SPECULAR 0x02
 #define STRIP_IGNORE_AMBIENT 0x04
 #define STRIP_DOUBLE_SIDED 0x10
+#define STRIP_INNER 0x80 /* (bios_models) inside a case: not in its semi-transparent second copy */
 #define STRIP_ENV 0x40 /* environment mapping: u, v come from the vertex normal, not from the file */
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
@@ -803,7 +804,7 @@ draw_polys(const bscene* s, const bvm_obj* o, int n, const nj_mesh* mesh, const 
             tex.b = poly->tex;
             tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
         }
-        if (s->flat_ghost && poly->tex >= 0) { /* the semi-transparent second copy has no pictures: the faces that carry one are left out */
+        if (s->flat_ghost && (poly->tex >= 0 || (poly->strip_flags & STRIP_INNER))) { /* also the tray inside: its big faces cut through the cover */ /* the semi-transparent second copy has no pictures: the faces that carry one are left out */
             continue;
         }
         uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
