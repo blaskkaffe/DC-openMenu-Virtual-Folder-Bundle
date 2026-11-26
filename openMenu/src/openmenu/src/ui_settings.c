@@ -75,9 +75,11 @@ static const char* const autostart_modes[] = {"On", "Off"};
 /* This menu's own settings: the choice is bits of favorites_flags() (favorites.h), not OPENMENU.SYS. The bytes only give the rows a
  * variable to point at (so the card defaults can name them); uis_get / uis_set read and write the flags. */
 static const char* const bg_modes[] = {"BIOS blue", "Green", "Orange", "Purple", "Red", "Grey"}; /* bg_palette.c */
-static uint8_t bg_byte[1], dark_byte[1];
+static const char* const jp_logo_modes[] = {"Original", "English"};
+static uint8_t bg_byte[1], dark_byte[1], jplogo_byte[1];
 static uint8_t* bg_var = bg_byte;
 static uint8_t* dark_var = dark_byte;
+static uint8_t* jplogo_var = jplogo_byte;
 
 /* To add a setting, add a row here (and the choice names above). The rows run in the order of the Settings list; the last NET_ROWS rows
  * are not in it, the Internet screen shows them (uis_net_first). */
@@ -99,6 +101,7 @@ static const row_def rows[] = {
     {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
     {0, -1, "Display", "Background", "Colour of the menu background", &bg_var, BG_PALETTE_COUNT, bg_modes},
     {0, -1, "Display", "Dark mode", "Dim the background", &dark_var, 2, on_off},
+    {0, -1, "Display", "Japanese logos", "Japanese games' feature logos", &jplogo_var, 2, jp_logo_modes},
     {0, UIS_ICON_DISC, "Game list", "Game order", "Order of the games", &sf_sort, 3, sort_modes},
     {0, UIS_ICON_DISC, "Game list", "Multi-disc games", "List every disc or one entry per set", &sf_multidisc, MULTIDISC_END + 1,
      multidisc_modes},
@@ -298,6 +301,9 @@ uis_get(int row) {
     if (VALID(row) && rows[row].var == &dark_var) {
         return (favorites_flags() & FORK_FLAG_DARK) != 0;
     }
+    if (VALID(row) && rows[row].var == &jplogo_var) {
+        return (favorites_flags() & FORK_FLAG_JP_LOGOS_EN) != 0;
+    }
     return VALID(row) && rows[row].var ? (*rows[row].var)[0] : 0;
 }
 
@@ -330,6 +336,10 @@ uis_set(int row, int choice) {
     }
     if (VALID(row) && rows[row].var == &dark_var && choice >= 0 && choice < rows[row].count) {
         favorites_set_flags(choice ? favorites_flags() | FORK_FLAG_DARK : favorites_flags() & ~(unsigned)FORK_FLAG_DARK);
+        return;
+    }
+    if (VALID(row) && rows[row].var == &jplogo_var && choice >= 0 && choice < rows[row].count) {
+        favorites_set_flags(choice ? favorites_flags() | FORK_FLAG_JP_LOGOS_EN : favorites_flags() & ~(unsigned)FORK_FLAG_JP_LOGOS_EN);
         return;
     }
     if (VALID(row) && rows[row].var && choice >= 0 && choice < rows[row].count) {
@@ -500,7 +510,7 @@ cfg_handler(void* user, const char* section, const char* name, const char* value
     cfg_norm(value, want, sizeof(want));
     for (int r = 0; r < NUM_ROWS; r++) {
         if (!rows[r].var || rows[r].sysoff || rows[r].var == &sf_honor_defaults || rows[r].var == &bg_var ||
-            rows[r].var == &dark_var) { /* those two live in the favorites file, which is read after this */
+            rows[r].var == &dark_var || rows[r].var == &jplogo_var) { /* those live in the favorites file, which is read after this */
             continue;
         }
         cfg_norm(rows[r].label, have, sizeof(have));
