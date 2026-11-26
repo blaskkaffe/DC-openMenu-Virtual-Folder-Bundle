@@ -1048,8 +1048,8 @@ info_build(const gd_item* cur, int width_px) {
 /* ---- The feature logos of the back of the case (players, Visual Memory, Vibration / Jump / puru puru Pack, ...), drawn in the style of
  * the game's region: PAL logo tiles, the American arrow tags, the Japanese white boxes. Pictures are in feature_badges.h (made by
  * tools/gen_badges.py; openMenu/FEATURE_LOGOS.md lists which are real logos, which a poor scan and which only placeholders). ---- */
-static int fb_id[3][FB_COUNT];
-static unsigned char fb_made[3][FB_COUNT];
+static int fb_id[FB_REGIONS][FB_COUNT];
+static unsigned char fb_made[FB_REGIONS][FB_COUNT];
 
 static int
 fb_pow2(int v) {
@@ -1083,7 +1083,7 @@ fb_get(int region, int key, int* pw, int* ph) {
 
 static void
 fb_free_all(void) {
-    for (int r = 0; r < 3; r++) {
+    for (int r = 0; r < FB_REGIONS; r++) {
         for (int k = 0; k < FB_COUNT; k++) {
             if (fb_made[r][k]) {
                 gfx_dyn_free(fb_id[r][k]);
@@ -1101,6 +1101,9 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
         region = FB_REGION_PAL;
     } else if (strchr(cur->region, 'U')) {
         region = FB_REGION_US;
+    }
+    if (region == FB_REGION_JP && (favorites_flags() & FORK_FLAG_JP_LOGOS_EN)) {
+        region = FB_REGION_JPEN; /* the same logos with their text in English (Settings, Display, Japanese logos) */
     }
     int n = 0;
     const int np = meta->num_players;
@@ -1126,7 +1129,7 @@ feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* reg
     if ((acc & ACCESORIES_BBA) || (conn & CONNECT_BBA)) keys[n++] = FB_BBA;
     if (conn & CONNECT_W5500) keys[n++] = FB_W5500;
     if (conn & CONNECT_SERIAL) keys[n++] = FB_SERIAL;
-    if (region == FB_REGION_JP) keys[n++] = FB_DISC;
+    if (region == FB_REGION_JP || region == FB_REGION_JPEN) keys[n++] = FB_DISC;
 
     *region_out = region;
     return n;
