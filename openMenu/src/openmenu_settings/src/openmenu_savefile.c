@@ -145,7 +145,7 @@ savefile_defaults() {
     sf_clock_extender[0] = CLOCK_EXTENDER_OFF;
     sf_disc_details[0] = DISC_DETAILS_SHOW;
     sf_folders_item_details[0] = FOLDERS_ITEM_DETAILS_ON;
-    sf_clock[0] = CLOCK_12HOUR;
+    sf_clock[0] = CLOCK_24HOUR;
     sf_vm2_send_all[0] = VM2_SEND_ALL;
     sf_boot_mode[0] = BOOT_MODE_FULL;
     sf_vmu_time_sync[0] = VMU_TIME_SYNC_OFF;
@@ -197,7 +197,7 @@ update_savefile(void** loaded_variables, crayon_savefile_version_t loaded_versio
         sf_folders_item_details[0] = FOLDERS_ITEM_DETAILS_ON;
     }
     if (loaded_version < SFV_CLOCK) {
-        sf_clock[0] = CLOCK_12HOUR;
+        sf_clock[0] = CLOCK_24HOUR;
     }
     if (loaded_version < SFV_MULTIDISC_GROUPING) {
         sf_multidisc_grouping[0] = MULTIDISC_GROUPING_ANYWHERE;

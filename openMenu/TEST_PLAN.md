@@ -70,7 +70,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 6. Main menu top bar and header logo
 
-- [ ] Clock: the header clock reads as the real BIOS's for the BIOS language (Japanese 2026/10/03 22:27, English 10/03/2026 22:27 or 03/10/2026 22:27 on a PAL console, German 03.10.2026 22:27); always 24 hour. Settings > Clock and date > .beat time On (with Online time sync set) shows "03/10 22:27 .977".
+- [ ] Clock: the header clock reads as the real BIOS's for the BIOS language (Japanese 2026/10/03 22:27, English 10/03/2026 22:27 or 03/10/2026 22:27 on a PAL console, German 03.10.2026 22:27); 24 hour by default (Settings > Clock and date > Clock: On (12-Hour) shows 10/03/26 10:27 PM, Off hides it, as in 1.7.1). Settings > Clock and date > .beat time On (with Online time sync set) shows "03/10 22:27 .977".
       second. .beat with Online time sync Off shows the plain clock. Check one .beat value against a Swatch clock (BMT = UTC+1).
       Note: the default is 12 hour (the saved default), so the header reads AM/PM unless changed; decide if that is wanted.
 - [ ] Above the clock, same font: a lamp (grey off, yellow connecting, green online, red failed) and, once the list is in, "DCNow! n DCNet n".

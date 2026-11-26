@@ -140,7 +140,7 @@ settings_sanitize() {
         sf_clock[0] = sf_clock[0] == CLOCK_LEGACY_24HOUR_BEAT ? CLOCK_24HOUR : CLOCK_12HOUR;
     }
     if ((sf_clock[0] < CLOCK_START) || (sf_clock[0] > CLOCK_END)) {
-        sf_clock[0] = CLOCK_12HOUR;
+        sf_clock[0] = CLOCK_24HOUR;
     }
 
     if ((sf_vm2_send_all[0] < VM2_SEND_START) || (sf_vm2_send_all[0] > VM2_SEND_END)) {

@@ -23,26 +23,33 @@ main(void) {
     CHECK(clock_beats(22, 59, 0) == 999);
     {
         char t[32];
-        clock_header_text(t, sizeof(t), 0, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
+        clock_header_text(t, sizeof(t), 0, 0, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "2026/10/03 22:27"));
-        clock_header_text(t, sizeof(t), 1, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
+        clock_header_text(t, sizeof(t), 1, 0, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "10/03/2026 22:27"));
-        clock_header_text(t, sizeof(t), 1, 1, 0, 2026, 10, 3, 9, 5, 0, 1);
+        clock_header_text(t, sizeof(t), 1, 1, 0, 0, 2026, 10, 3, 9, 5, 0, 1);
         CHECK(!strcmp(t, "03/10/2026 09:05"));
-        clock_header_text(t, sizeof(t), 2, 1, 0, 2026, 10, 3, 22, 27, 0, 1);
+        clock_header_text(t, sizeof(t), 2, 1, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "03.10.2026 22:27"));
-        clock_header_text(t, sizeof(t), 4, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
+        clock_header_text(t, sizeof(t), 4, 0, 0, 0, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "03/10/2026 22:27"));
-        clock_header_text(t, sizeof(t), 1, 1, 1, 2026, 10, 3, 22, 27, 0, 1);
+        clock_header_text(t, sizeof(t), 1, 1, 0, 1, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "03/10 22:27 .977"));
-        clock_header_text(t, sizeof(t), 0, 0, 1, 2026, 10, 3, 12, 0, 0, 1);
+        clock_header_text(t, sizeof(t), 0, 0, 0, 1, 2026, 10, 3, 12, 0, 0, 1);
         CHECK(!strcmp(t, "10/03 12:00 .542"));
-        clock_header_text(t, sizeof(t), 1, 1, 1, 2026, 10, 3, 22, 27, 0, 0); /* zone unknown: no beats */
+        clock_header_text(t, sizeof(t), 1, 1, 0, 1, 2026, 10, 3, 22, 27, 0, 0); /* zone unknown: no beats */
         CHECK(!strcmp(t, "03/10/2026 22:27"));
+        clock_header_text(t, sizeof(t), 1, 0, 1, 0, 2026, 10, 3, 22, 27, 0, 1);
+        CHECK(!strcmp(t, "10/03/26 10:27 PM"));
+        clock_header_text(t, sizeof(t), 0, 0, 1, 0, 2026, 10, 3, 0, 5, 0, 1);
+        CHECK(!strcmp(t, "26/10/03 12:05 AM"));
+        clock_header_text(t, sizeof(t), 1, 1, 1, 1, 2026, 10, 3, 22, 27, 0, 1);
+        CHECK(!strcmp(t, "03/10 10:27P .977"));
+        for (int h = 0; h < 2; h++)
         for (int l = 0; l < 6; l++) {
             for (int b = 0; b < 2; b++) {
-                clock_header_text(t, sizeof(t), l, l & 1, b, 2026, 12, 31, 22, 59, 330, 1);
-                CHECK(strlen(t) <= 16);
+                clock_header_text(t, sizeof(t), l, l & 1, h, b, 2026, 12, 31, 22, 59, 330, 1);
+                CHECK(strlen(t) <= 17);
             }
         }
     }

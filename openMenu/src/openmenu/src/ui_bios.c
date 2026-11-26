@@ -215,8 +215,11 @@ update_clock(void) {
     clock_get(&y, &mo, &d, &h, &mi);
     /* as the BIOS; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
     clock_header_text(text, sizeof(text), ((volatile uint8_t*)0x8C000078)[5] /* the BIOS language */,
-                      (*(volatile uint8_t*)0x8C000072 & 0xF) == 2 /* a PAL console */, uis_beat(), y, mo, d, h, mi,
+                      (*(volatile uint8_t*)0x8C000072 & 0xF) == 2 /* a PAL console */, sf_clock[0] == CLOCK_12HOUR, uis_beat(), y, mo, d, h, mi,
                       online_time_sync_minutes(sf_online_time_sync[0]), sf_online_time_sync[0] != ONLINE_TIME_SYNC_OFF);
+    if (sf_clock[0] == CLOCK_OFF) { /* the shared Clock setting (openMenu 1.7.1's): Off hides the clock; the player counts stay */
+        text[0] = 0;
+    }
     /* The row above the clock (same font): the players per network while online (no lamp: the text says it) */
     online_header oh;
     online_header_get(&oh);
@@ -236,7 +239,7 @@ update_clock(void) {
         bsurf_clock_text(s, 40, 16, text);
         if (counts[0]) {
             int text_w = (int)strlen(counts) * 11;
-            int right = 40 + (int)strlen(text) * 11; /* the clock's right edge */
+            int right = 40 + (int)(text[0] ? strlen(text) : 16) * 11; /* the clock's right edge (where it would be when it is off) */
             bsurf_clock_text(s, right - text_w, 0, counts);
         }
         strcpy(shown, key);
