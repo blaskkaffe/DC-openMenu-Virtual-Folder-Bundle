@@ -192,7 +192,6 @@ update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
     int mode = !oh.shown ? 0 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
-    mode = 1 + (int)((timer_ms_gettime64() / 6000) & 1); /* TEST ONLY: always shown, Now! and CNET by turns */
 #ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes */
     mode = 0;
 #endif
