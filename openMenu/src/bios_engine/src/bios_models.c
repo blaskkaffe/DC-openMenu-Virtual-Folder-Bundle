@@ -655,26 +655,16 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
                         quad(b, hp, v3m(-70.5f * S, 60.0f * S, zf * S), v3m(NTSC_FRONT_X0 * S, 60.0f * S, zf * S),
                              v3m(NTSC_FRONT_X0 * S, -60.0f * S, zf * S), v3m(-70.5f * S, -60.0f * S, zf * S), NULL, v3m(0, 0, 1));
                     } else {
-                        /* the clear cases: the inner label at the back of the case, seen through the clear front spine (white with
-                         * the colour logo, or black with a dark grey one; the picture is made by gfx, BMODEL_TEX_PILL) */
+                        /* the clear cases: the inner label right behind the clear front spine, touching the front cover's edge as
+                         * the real ones do (white with the colour logo, or black with a dark grey one; the picture is made by gfx,
+                         * BMODEL_TEX_PILL) */
                         static const float huv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
                         int hp = poly_new(b, BMODEL_TEX_PILL, 0xFFFFFFFFu, STRIP_IGNORE_LIGHT);
-                        const float zb = -4.4f;
-                        quad(b, hp, v3m(-70.4f * S, 60.8f * S, zb * S), v3m(NTSC_FRONT_X0 * S, 60.8f * S, zb * S),
-                             v3m(NTSC_FRONT_X0 * S, -60.8f * S, zb * S), v3m(-70.4f * S, -60.8f * S, zb * S), huv, v3m(0, 0, 1));
-                        /* the well the label lies in: its walls (left, right, top, bottom) in the label's colour, up to the front, so
-                         * no gap shows from the sides */
+                        const float zb = zf - 0.05f, wy = 60.8f;
+                        quad(b, hp, v3m(-70.4f * S, wy * S, zb * S), v3m(NTSC_FRONT_X0 * S, wy * S, zb * S),
+                             v3m(NTSC_FRONT_X0 * S, -wy * S, zb * S), v3m(-70.4f * S, -wy * S, zb * S), huv, v3m(0, 0, 1));
                         const uint32_t wc = clear == 2 ? 0xFF0E0E10u : 0xFFEEEEEAu;
                         int w = poly_new(b, -1, wc, STRIP_IGNORE_LIGHT);
-                        const float wx0 = -70.4f, wx1 = NTSC_FRONT_X0, wy = 60.8f, wz0 = zb, wz1 = 4.2f;
-                        quad(b, w, v3m(wx0 * S, wy * S, wz1 * S), v3m(wx0 * S, wy * S, wz0 * S), v3m(wx0 * S, -wy * S, wz0 * S),
-                             v3m(wx0 * S, -wy * S, wz1 * S), NULL, v3m(1, 0, 0));
-                        quad(b, w, v3m(wx1 * S, wy * S, wz0 * S), v3m(wx1 * S, wy * S, wz1 * S), v3m(wx1 * S, -wy * S, wz1 * S),
-                             v3m(wx1 * S, -wy * S, wz0 * S), NULL, v3m(-1, 0, 0));
-                        quad(b, w, v3m(wx0 * S, wy * S, wz0 * S), v3m(wx0 * S, wy * S, wz1 * S), v3m(wx1 * S, wy * S, wz1 * S),
-                             v3m(wx1 * S, wy * S, wz0 * S), NULL, v3m(0, -1, 0));
-                        quad(b, w, v3m(wx0 * S, -wy * S, wz1 * S), v3m(wx0 * S, -wy * S, wz0 * S), v3m(wx1 * S, -wy * S, wz0 * S),
-                             v3m(wx1 * S, -wy * S, wz1 * S), NULL, v3m(0, 1, 0));
                         /* seen from the spine side: the label wraps round the hinge edge inside the clear shell, from the back to the
                          * front, so the case is not see-through beside the spine label (behind it at x -71.03) */
                         const float sx = -70.8f, sz0 = -5.0f, sz1 = 5.2f;
