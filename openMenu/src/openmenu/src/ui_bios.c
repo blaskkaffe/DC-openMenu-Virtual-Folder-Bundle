@@ -2116,6 +2116,10 @@ draw_frame(void) {
     uis_background(&top, &bottom);
     bscene_set_background_tint(uis_wave_tint());
     gfx_set_dark(uis_dark());
+    if (uis_real_mode() != (menu.bg.hidden != 0)) { /* Settings > Display > Real mode: the BIOS's hidden mode */
+        menu.bg.hidden = uis_real_mode();
+        bscene_set_real_mode(menu.bg.hidden);
+    }
     if (uis_dark() != (menu.scene.header_bar_argb != 0)) { /* the cached header drawing has this in its key */
         menu.scene.header_bar_argb = uis_dark() ? bg_palette_bar_dark() : 0;
     }

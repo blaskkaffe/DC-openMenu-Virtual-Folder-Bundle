@@ -176,6 +176,8 @@ void bscene_set_background_tint(uint32_t rgb);
  * looked up by the sink at send time, so pictures that arrive later still show. Call bscene_cache_clear() after
  * changing anything else a model's look depends on; bscene_cache_enable(0) turns the cache off. */
 void bscene_cache_clear(void);
+/* The BIOS's hidden "real mode" lighting (on) or the usual one (off); clears the draw cache. */
+void bscene_set_real_mode(int on);
 void bscene_cache_enable(int on);
 
 /* Translucent sorting. The BIOS lets the PVR sort its translucent polygons (auto-sort), so where the parts of a

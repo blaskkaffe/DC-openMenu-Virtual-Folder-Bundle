@@ -12,9 +12,26 @@
 
 /* Lighting, as the BIOS sets it up (gui_main 0x8C0105D4): one directional light along the view axis,
  * njSetLightIntensity(light, spc 1.4, dif 0.3, amb 0), njSetAmbient(0.5, 0.5, 0.5). See bios_lit(). */
-#define LIGHT_AMBIENT 0.5f
-#define LIGHT_DIFFUSE 0.3f
-#define LIGHT_SPECULAR 1.4f
+static float LIGHT_AMBIENT = 0.5f, LIGHT_DIFFUSE = 0.3f, LIGHT_SPECULAR = 1.4f;
+/* The light's direction in view space (where it shines to); (0, 0, -1) along the view axis. */
+static float light_x = 0.0f, light_y = 0.0f, light_z = -1.0f;
+
+/* "Real mode" (the BIOS's hidden mode, unlocked there by Puyo Puyo Fever's ICONDATA_VMS; 0x8C0279A0 sets it up when
+ * 0x8C890B80 is set): njSetLightAngle(light, 0xE800, 0xE800, 0) (the light turned -33.75 degrees about x and y, so it
+ * comes from the upper left), njSetLightIntensity(light, spc 1.3, dif 1.1, amb 0), njSetAmbient(0, 0, 0); the
+ * background turns teal (dcbg hidden mode). */
+void
+bscene_set_real_mode(int on) {
+    if (on) {
+        const float a = -33.75f * 3.14159265f / 180.0f, ca = cosf(a), sa = sinf(a);
+        LIGHT_AMBIENT = 0.0f, LIGHT_DIFFUSE = 1.1f, LIGHT_SPECULAR = 1.3f;
+        light_x = -ca * sa, light_y = sa, light_z = -ca * ca; /* (0, 0, -1) turned about x, then about y */
+    } else {
+        LIGHT_AMBIENT = 0.5f, LIGHT_DIFFUSE = 0.3f, LIGHT_SPECULAR = 1.4f;
+        light_x = 0.0f, light_y = 0.0f, light_z = -1.0f;
+    }
+    bscene_cache_clear();
+}
 #define STRIP_IGNORE_LIGHT 0x01
 #define STRIP_IGNORE_SPECULAR 0x02
 #define STRIP_IGNORE_AMBIENT 0x04
@@ -759,7 +776,11 @@ transform_mesh(const bscene* s, const nj_mesh* mesh, const nj_mat4* m) {
                  * not renormalised (the object's scale counts) */
                 float d = 1.0f;
                 if (vx->has_nrm) {
-                    d = m->m[2][0] * vx->nrm.x + m->m[2][1] * vx->nrm.y + m->m[2][2] * vx->nrm.z;
+                    d = -light_z * (m->m[2][0] * vx->nrm.x + m->m[2][1] * vx->nrm.y + m->m[2][2] * vx->nrm.z);
+                    if (light_x != 0.0f || light_y != 0.0f) { /* real mode: the light comes from the side */
+                        d -= light_x * (m->m[0][0] * vx->nrm.x + m->m[0][1] * vx->nrm.y + m->m[0][2] * vx->nrm.z)
+                           + light_y * (m->m[1][0] * vx->nrm.x + m->m[1][1] * vx->nrm.y + m->m[1][2] * vx->nrm.z);
+                    }
                     d = d > 0.0f ? d : 0.0f;
                 }
                 if (s->fit_kind == 2 && i >= 40) {
