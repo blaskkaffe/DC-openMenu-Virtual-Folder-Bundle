@@ -341,27 +341,20 @@ uis_set(int row, int choice) {
     }
 }
 
-/* TEST ONLY: every background colour, light then dark, 4 s each */
-static unsigned
-test_flags(void) {
-    const unsigned k = (unsigned)(timer_ms_gettime64() / 4000) % 12;
-    return ((k % 6) << FORK_BG_SHIFT) | (k >= 6 ? FORK_FLAG_DARK : 0);
-}
-
 void
 uis_background(uint32_t* top, uint32_t* bottom) {
-    unsigned f = test_flags();
+    unsigned f = favorites_flags();
     bg_palette_apply((int)((f & FORK_BG_MASK) >> FORK_BG_SHIFT), (f & FORK_FLAG_DARK) != 0, top, bottom);
 }
 
 int
 uis_dark(void) {
-    return (test_flags() & FORK_FLAG_DARK) != 0;
+    return (favorites_flags() & FORK_FLAG_DARK) != 0;
 }
 
 uint32_t
 uis_wave_tint(void) {
-    unsigned f = test_flags();
+    unsigned f = favorites_flags();
     return bg_palette_wave_tint((int)((f & FORK_BG_MASK) >> FORK_BG_SHIFT), (f & FORK_FLAG_DARK) != 0);
 }
 
