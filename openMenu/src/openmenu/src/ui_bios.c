@@ -330,6 +330,7 @@ case_titles_shift(const char* title, const char* tag) {
  * arrived; the pictures of the next and previous games are read ahead while the cursor rests. */
 #define CASE_ART_WAIT 10
 static int case_wait;
+static int case_auto; /* the shown case is a US one whose clear style (black or white tray) the box art's band still has to pick */
 
 static void
 case_prefetch(int cursor) {
@@ -374,16 +375,24 @@ case_update(void) {
                 app = !*c; /* T-0000A, 000000, HOMEBREW: no real product number */
             }
             int model = app ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : us ? BMODEL_CASE_CLEAR_BLACK : BMODEL_CASE_WHITE;
+            /* a US game: the clear case whose inner label matches the cover's band, black or white (seen when the box art is
+             * there; it may still come, see below) */
+            case_auto = !app && !serial_is_pal(cur->product) && us;
+            if (case_auto && gfx_art_front_band(cur->product) == 1) {
+                model = BMODEL_CASE_CLEAR_WHITE;
+            }
             static const struct { const char* name; int model; } styles[] = {{"white", BMODEL_CASE_WHITE}, {"dark", BMODEL_CASE_DARK},
                 {"clearwhite", BMODEL_CASE_CLEAR_WHITE}, {"clearblack", BMODEL_CASE_CLEAR_BLACK}, {"pal", BMODEL_CASE_PAL}};
             for (size_t k = 0; k < sizeof(styles) / sizeof(styles[0]); k++) {
                 if (!strcasecmp(cur->casestyle, styles[k].name)) {
                     model = styles[k].model;
+                    case_auto = 0;
                 }
             }
             case_titles_shift(cur->name, cur->product);
             bcase_show(&gcase, model, cur->product, dir);
         } else {
+            case_auto = 0;
             case_titles_shift("", "");
             bcase_show(&gcase, -1, "", dir);
         }
@@ -391,6 +400,13 @@ case_update(void) {
         gcase_prev_item = cur;
     } else {
         case_prefetch(cursor);
+        if (case_auto && cur && gcase.cur.active) { /* the box art came after the case: its band picks the clear case now */
+            const int band = gfx_art_front_band(cur->product);
+            if (band >= 0) {
+                gcase.cur.model = band == 1 ? BMODEL_CASE_CLEAR_WHITE : BMODEL_CASE_CLEAR_BLACK;
+                case_auto = 0;
+            }
+        }
     }
     bcase_step(&gcase);
 }

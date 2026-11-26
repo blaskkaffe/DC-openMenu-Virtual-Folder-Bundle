@@ -102,6 +102,8 @@ void gfx_model_bind_title(const char* title, const char* product);
 /* Start loading a game picture before it is needed (box = 1: box art, 0: disc icon), so it is there when the
  * row or case shows it. Returns 1 once the picture is in video memory or known to be missing, 0 while it loads. */
 int gfx_art_prefetch(const char* product, int box);
+/* The box front's band at its left edge (the US covers'): -1 not loaded yet, 0 none to tell, 1 white, 2 black */
+int gfx_art_front_band(const char* product);
 
 /* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
  * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */

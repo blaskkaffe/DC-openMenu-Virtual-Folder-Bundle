@@ -242,6 +242,7 @@ typedef struct {
     int loading; /* a job of the loader thread is reading it: do not evict */
     uint32_t last_use;
     uint32_t retry_at; /* the disc could not be read: ask again from this frame on (0: nothing to retry) */
+    int band;          /* box fronts: the curved band at the cover's left edge (the US covers'): 0 not known, 1 white, 2 black */
 } art_entry;
 
 /* Pictures are read from the DATs by a thread of their own (reading the disc takes tens of
@@ -449,6 +450,103 @@ art_evict_one(const art_entry* keep) {
     return 1;
 }
 
+static art_entry* art_get(const char* product, int box);
+
+/* One texel of a picture in the loader's buffer (after the 0x20 byte header) as luminance 0..255, -1 if the format is not known */
+static int
+art_texel_luma(const art_job* j, int x, int y) {
+    const uint8_t* d = j->buf + 0x20;
+    const int col = j->fmt & (7 << 27); /* PVR_TXRFMT_ARGB1555 / RGB565 / ARGB4444 */
+    uint32_t idx;
+    uint16_t c;
+    /* twiddled: the bits of y and x interleaved, y's in the even places (the smaller side's bits only) */
+    const int tw = !(j->fmt & PVR_TXRFMT_NONTWIDDLED);
+    if (j->fmt & PVR_TXRFMT_VQ_ENABLE) {
+        if (!tw) {
+            return -1;
+        }
+        const int bx = x / 2, by = y / 2, bw = j->w / 2, bh = j->h / 2, m = bw < bh ? bw : bh;
+        idx = 0;
+        int bit = 0;
+        for (int i = 1; i < m; i <<= 1) {
+            idx |= ((by & i) ? 1u : 0u) << bit++;
+            idx |= ((bx & i) ? 1u : 0u) << bit++;
+        }
+        idx |= (uint32_t)((bw < bh ? by : bx) / m) * (uint32_t)(m * m);
+        const uint8_t code = d[2048 + idx];
+        const uint8_t* e = d + code * 8 + (((x & 1) * 2 + (y & 1)) * 2);
+        c = (uint16_t)(e[0] | (e[1] << 8));
+    } else {
+        if (tw) {
+            const int m = j->w < j->h ? j->w : j->h;
+            idx = 0;
+            int bit = 0;
+            for (int i = 1; i < m; i <<= 1) {
+                idx |= ((y & i) ? 1u : 0u) << bit++;
+                idx |= ((x & i) ? 1u : 0u) << bit++;
+            }
+            idx |= (uint32_t)((j->w < j->h ? y : x) / m) * (uint32_t)(m * m);
+        } else {
+            idx = (uint32_t)y * (uint32_t)j->w + (uint32_t)x;
+        }
+        c = (uint16_t)(d[idx * 2] | (d[idx * 2 + 1] << 8));
+    }
+    int r, g, b;
+    if (col == PVR_TXRFMT_RGB565) {
+        r = (c >> 11) << 3, g = ((c >> 5) & 63) << 2, b = (c & 31) << 3;
+    } else if (col == PVR_TXRFMT_ARGB4444) {
+        r = ((c >> 8) & 15) * 17, g = ((c >> 4) & 15) * 17, b = (c & 15) * 17;
+    } else {
+        r = ((c >> 10) & 31) << 3, g = ((c >> 5) & 31) << 3, b = (c & 31) << 3;
+    }
+    return (r * 77 + g * 151 + b * 28) >> 8;
+}
+
+/* The US covers have a curved band down their left edge with the Dreamcast logo: black on most (Sonic Adventure 2), white on others.
+ * Samples down the left 2..8 % of the cover (the band, above and below its logo); the median says which: 1 white, 2 black, 0 neither
+ * clearly (another cover). */
+static int
+art_band_of(const art_job* j) {
+    enum { N = 7 * 9 };
+    int v[N], n = 0;
+    for (int a = 0; a < 7; a++) {
+        for (int k = 0; k < 9; k++) {
+            const int x = j->w * (2 + a) / 100, y = j->h * (12 + k * 9) / 100;
+            const int l = art_texel_luma(j, x, y);
+            if (l < 0) {
+                return 0;
+            }
+            v[n++] = l;
+        }
+    }
+    for (int i = 1; i < n; i++) { /* insertion sort: 63 values */
+        for (int k = i; k > 0 && v[k - 1] > v[k]; k--) {
+            const int t = v[k];
+            v[k] = v[k - 1], v[k - 1] = t;
+        }
+    }
+    const int lo = v[n / 4], mid = v[n / 2], hi = v[n * 3 / 4];
+    if (hi < 70) {
+        return 2;
+    }
+    if (lo > 190) {
+        return 1;
+    }
+    return mid < 50 ? 2 : mid > 215 ? 1 : 0;
+}
+
+int
+gfx_art_front_band(const char* product) {
+    if (!product || !product[0]) {
+        return -1;
+    }
+    art_entry* e = art_get(product, 1);
+    if (!e || e->loading) {
+        return -1; /* not known yet */
+    }
+    return e->band;
+}
+
 /* Main thread, once per frame: upload the pictures the loader has finished. */
 static void
 art_poll(void) {
@@ -475,6 +573,7 @@ art_poll(void) {
                 continue;
             }
             pvr_txr_load(j->buf + 0x20, e->tex.ptr, padded);
+            e->band = j->box == 1 ? art_band_of(j) : 0;
             e->tex.w = j->w;
             e->tex.h = j->h;
             e->tex.fmt = j->fmt;
