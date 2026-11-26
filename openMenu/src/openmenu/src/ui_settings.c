@@ -358,7 +358,7 @@ uis_background(uint32_t* top, uint32_t* bottom) {
 
 int
 uis_real_mode(void) {
-    return (favorites_flags() & FORK_FLAG_REAL_MODE) != 0;
+    return 1; /* TEST ONLY */
 }
 
 int
