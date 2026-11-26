@@ -1896,9 +1896,25 @@ picture_quad(const rom_tex* tex, float x, float y, float w, float h, float z, ui
     send_quad(x, y, w, h, z, 0.0f, 0.0f, 1.0f, 1.0f, argb);
 }
 
+/* The header logo: where it is and how it is shaded this frame, for the "Now!" / "CNET" letters drawn after it (gfx_logo_badge). Called
+ * for every triangle and strip before anything is skipped, so the letters slide and fade with the bar, invisible ones included. */
+static void
+note_logo(const bscene_vtx* v, int n, bscene_texref ref) {
+    if (ref.kind != BSCENE_TEX_TEXLIST || ref.a != BMENU_HEADER_MODEL || ref.b != BMENU_LOGO_SLOT) {
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        if (!logo_seen || v[i].x < logo_ox) logo_ox = v[i].x;
+        if (!logo_seen || v[i].y < logo_oy) logo_oy = v[i].y;
+        logo_seen = 1;
+    }
+    logo_argb = v[0].argb;
+}
+
 static void
 sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
     (void)user;
+    note_logo(v, 3, ref);
     if (!(v[0].argb >> 24) && !(v[1].argb >> 24) && !(v[2].argb >> 24)) {
         return; /* fully transparent */
     }
@@ -1908,14 +1924,6 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
         if (!tex) {
             return; /* texture missing from this ROM: draw nothing rather than garbage */
         }
-    }
-    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
-        for (int i = 0; i < 3; i++) {
-            if (!logo_seen || v[i].x < logo_ox) logo_ox = v[i].x;
-            if (!logo_seen || v[i].y < logo_oy) logo_oy = v[i].y;
-            logo_seen = 1;
-        }
-        logo_argb = v[0].argb;
     }
     tri_count++;
     if (strip_pending && tex == strip_tex && ref.uv == strip_uv) {
@@ -2100,6 +2108,7 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
 static void
 sink_strip(void* user, const bscene_vtx* v, int n, bscene_texref ref) {
     (void)user;
+    note_logo(v, n, ref);
     int any = 0;
     for (int i = 0; i < n; i++) {
         any |= v[i].argb >> 24 ? 1 : 0;
@@ -2408,7 +2417,10 @@ gfx_dyn_valid(int id) {
 void
 gfx_logo_badge(void) {
     const float sx = 139.0f / 128.0f, sy = 34.0f / 32.0f;
-    const float ox = logo_seen ? logo_ox : 27.0f, oy = logo_seen ? logo_oy : 28.0f; /* follows the header bar while it slides */
+    if (!logo_seen) {
+        return; /* the logo is not drawn this frame (the bar is off the screen or not there): neither are its letters */
+    }
+    const float ox = logo_ox, oy = logo_oy; /* follows the header bar while it slides */
     /* "Now!" after the logo, or "CNET" after the D of the logo (cropped to swirl + D then): pictures with the edges baked in */
     build_logo_variants();
     int blue = (logo_swirl_rgb & 0xFF) > ((logo_swirl_rgb >> 16) & 0xFF);
@@ -2418,7 +2430,7 @@ gfx_logo_badge(void) {
         return;
     }
     /* drawn with the colour of the logo's own polygon, so the letters are shaded and fade exactly as the logo is */
-    const uint32_t tint = logo_seen ? logo_argb : 0xFFFFFFFFu;
+    const uint32_t tint = logo_argb;
     float x = logo_mode == 1 ? ox + 127.0f * sx - 2.0f : ox + (float)LOGO_D_END * sx, y = oy;
     float w = (float)text->w * sx, h = (float)LOGO_H * sy;
     picture_quad(text, x, y, w, h, 0.5f, tint);
