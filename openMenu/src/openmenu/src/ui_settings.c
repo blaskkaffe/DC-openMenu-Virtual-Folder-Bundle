@@ -49,7 +49,6 @@ static const char* const sort_modes[] = {"A-Z", "SD card order", "Release year"}
 static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
 static const char* const recent_modes[] = {"Off", "Last 10", "Last 20", "Last 30", "Last 40", "Last 50"}; /* as 1.7.1 */
-static const char* const clock_modes[] = {"12 hour", "24 hour", "Date only", "12 hour + .beat", "24 hour + .beat"}; /* sf_clock 0..4 */
 static const char* const on_off[] = {"Off", "On"};
 static const char* const serial_vmu_modes[] = {"Off", "On (A1)", "On (A2)", "On (B1)", "On (B2)", "On (C1)", "On (C2)", "On (D1)", "On (D2)"}; /* as 1.7.1 */
 static const char* const vm2_modes[] = {"Send to all", "Send to first", "Off"};
@@ -76,7 +75,8 @@ static const char* const autostart_modes[] = {"On", "Off"};
  * variable to point at (so the card defaults can name them); uis_get / uis_set read and write the flags. */
 static const char* const bg_modes[] = {"BIOS blue", "Green", "Orange", "Purple", "Red", "Grey"}; /* bg_palette.c */
 static const char* const jp_logo_modes[] = {"Original", "English"};
-static uint8_t bg_byte[1], dark_byte[1], jplogo_byte[1];
+static uint8_t bg_byte[1], dark_byte[1], jplogo_byte[1], beat_byte[1];
+static uint8_t* beat_var = beat_byte;
 static uint8_t* bg_var = bg_byte;
 static uint8_t* dark_var = dark_byte;
 static uint8_t* jplogo_var = jplogo_byte;
@@ -91,7 +91,7 @@ static const row_def rows[] = {
     {0, UIS_ICON_OTHER, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
     /* everything about the clock and the date, one group: the BIOS clock, the header clock, and the three ways to keep it right */
     {UIS_ACTION_DATETIME, UIS_ICON_CLOCK, "Clock and date", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
-    {0, UIS_ICON_CLOCK, "Clock and date", "Clock format", ".beat uses the Online time sync zone", &sf_clock, 5, clock_modes},
+    {0, UIS_ICON_CLOCK, "Clock and date", ".beat time", "After the clock; zone from Online time sync", &beat_var, 2, on_off},
     {UIS_ACTION_VMUCLOCK, UIS_ICON_CLOCK, "Clock and date", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
     {0, UIS_ICON_CLOCK, "Clock and date", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
      on_off},
@@ -257,19 +257,11 @@ uis_choice_name(int row, int choice) {
 static int sys_dirty;
 static char vmu_result[24] = "";
 
-/* Clock format: the 12 / 24 hour / date only choice is the save file's sf_clock (as 1.7.1), the .beat part is a flag of this menu's own file
- * (favorites.h), so OPENMENU.SYS only ever holds what 1.7.1 knows. 0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat. */
+/* The .beat time after the header clock: a flag of this menu's own file (favorites.h). The clock itself is written as the BIOS does
+ * (clock_header_text), so OPENMENU.SYS's sf_clock (1.7.1's format choice) is left as it is for the other themes. */
 int
-uis_clock_mode(void) {
-    int base = sf_clock[0];
-    return (favorites_flags() & FORK_FLAG_BEAT) && base < 2 ? base + 3 : base;
-}
-
-static void
-clock_mode_set(int mode) {
-    sf_clock[0] = (uint8_t)(mode >= 3 ? mode - 3 : mode);
-    unsigned flags = favorites_flags() & ~(unsigned)FORK_FLAG_BEAT;
-    favorites_set_flags(mode >= 3 ? flags | FORK_FLAG_BEAT : flags);
+uis_beat(void) {
+    return (favorites_flags() & FORK_FLAG_BEAT) != 0;
 }
 
 /* An older build of this menu saved the .beat choices as sf_clock 3 and 4 (the loader turned them into 12 / 24 hour and noted it): move
@@ -291,8 +283,8 @@ uis_get(int row) {
         int v = SYS(row);
         return v < rows[row].count ? v : 0;
     }
-    if (VALID(row) && rows[row].var == &sf_clock) {
-        return uis_clock_mode();
+    if (VALID(row) && rows[row].var == &beat_var) {
+        return uis_beat();
     }
     if (VALID(row) && rows[row].var == &bg_var) {
         int v = (int)((favorites_flags() & FORK_BG_MASK) >> FORK_BG_SHIFT);
@@ -326,8 +318,8 @@ uis_set(int row, int choice) {
         }
         return;
     }
-    if (VALID(row) && rows[row].var == &sf_clock && choice >= 0 && choice < rows[row].count) {
-        clock_mode_set(choice);
+    if (VALID(row) && rows[row].var == &beat_var && choice >= 0 && choice < rows[row].count) {
+        favorites_set_flags(choice ? favorites_flags() | FORK_FLAG_BEAT : favorites_flags() & ~(unsigned)FORK_FLAG_BEAT);
         return;
     }
     if (VALID(row) && rows[row].var == &bg_var && choice >= 0 && choice < rows[row].count) {
@@ -510,7 +502,7 @@ cfg_handler(void* user, const char* section, const char* name, const char* value
     cfg_norm(value, want, sizeof(want));
     for (int r = 0; r < NUM_ROWS; r++) {
         if (!rows[r].var || rows[r].sysoff || rows[r].var == &sf_honor_defaults || rows[r].var == &bg_var ||
-            rows[r].var == &dark_var || rows[r].var == &jplogo_var) { /* those live in the favorites file, which is read after this */
+            rows[r].var == &dark_var || rows[r].var == &jplogo_var || rows[r].var == &beat_var) { /* those live in the favorites file, which is read after this */
             continue;
         }
         cfg_norm(rows[r].label, have, sizeof(have));

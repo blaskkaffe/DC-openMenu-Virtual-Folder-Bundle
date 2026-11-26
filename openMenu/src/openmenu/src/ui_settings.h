@@ -68,9 +68,8 @@ int uis_commit(void);
  * still (every block waits for a vblank), so leaving Settings without a change must not do it. */
 void uis_snapshot(void);
 
-/* The clock format as the Settings row shows it (0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat), and the move of an
- * older build's .beat choice out of the shared save file. */
-int uis_clock_mode(void);
+/* The .beat time after the header clock is on (Settings > Clock and date > .beat time). */
+int uis_beat(void);
 void uis_clock_migrate(void);
 
 /* Settings from the [BIOSMENU] section of /cd/DEFAULTS.INI when "Card defaults" is on (see ui_settings.c). Call once at

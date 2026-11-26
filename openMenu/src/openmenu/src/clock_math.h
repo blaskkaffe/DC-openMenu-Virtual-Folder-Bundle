@@ -8,8 +8,8 @@ long long clock_unix_secs(int year, int month, int day, int hour, int minute);
  * in minutes (east positive), the minute counts as its middle second. 0..999. */
 int clock_beats(int hour, int minute, int utc_offset_min);
 
-/* The text of the main menu's clock. mode: 0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat (the setting
- * Clock: sf_clock). The date follows `date_order` (0 year first, 1 month first, 2 day first); with beats it has no year so the
- * line fits the header (at most 19 characters). Beats need to know the time zone: with offset_known 0 they are left out. */
-void clock_header_text(char* out, unsigned size, int date_order, int mode, int year, int month, int day, int hour, int minute,
+/* The text of the main menu's clock, as the BIOS writes it: 24 hour time, the date by the BIOS language (0 Japanese, 1 English, 2 German,
+ * 3 French, 4 Spanish, 5 Italian) and, for English, the console's region (pal: day first). With beats_on (this menu's .beat setting) and
+ * the time zone known, the year is left out and the .beat time follows (at most 16 characters). */
+void clock_header_text(char* out, unsigned size, int language, int pal, int beats_on, int year, int month, int day, int hour, int minute,
                        int utc_offset_min, int offset_known);

@@ -27,42 +27,43 @@ clock_beats(int hour, int minute, int utc_offset_min) {
 }
 
 void
-clock_header_text(char* out, unsigned size, int date_order, int mode, int year, int month, int day, int hour, int minute,
+clock_header_text(char* out, unsigned size, int language, int pal, int beats_on, int year, int month, int day, int hour, int minute,
                   int utc_offset_min, int offset_known) {
-    int beats = (mode == 3 || mode == 4) && offset_known;
-    /* The header's text surface shows about 17 characters from x 40: a 12 hour clock takes a two digit year (or, with beats, one
-     * letter A/P) so that the end is not cut off. */
-    int twelve = mode == 0 || mode == 3;
-    int yr = twelve ? year % 100 : year;
-    const char* yfmt = twelve ? "%02d" : "%04d";
-    char date[24], time[16], ys[8];
-    snprintf(ys, sizeof(ys), yfmt, yr);
-    if (beats) { /* no year: the line has to fit the header */
-        snprintf(date, sizeof(date), "%02d/%02d", date_order == 2 ? day : month, date_order == 2 ? month : day);
-    } else if (date_order == 0) {
-        snprintf(date, sizeof(date), "%s/%02d/%02d", ys, month, day);
-    } else if (date_order == 2) {
-        snprintf(date, sizeof(date), "%02d/%02d/%s", day, month, ys);
-    } else {
-        snprintf(date, sizeof(date), "%02d/%02d/%s", month, day, ys);
+    /* As the BIOS's format_datetime_string (0x8C01BAE0): always a 24 hour clock; the date by the BIOS language, English by the console's
+     * region. Japanese 2026/10/03, English (America, Japan) 10/03/2026, English (PAL) 03/10/2026, German 03.10.2026, French, Spanish,
+     * Italian 03/10/2026. */
+    int first = month, second = day, year_first = 0; /* the two numbers before (or after) the year */
+    char sep = '/';
+    switch (language) {
+        case 1: /* English */
+            if (pal) {
+                first = day, second = month;
+            }
+            break;
+        case 2: /* German */
+            first = day, second = month, sep = '.';
+            break;
+        case 3:
+        case 4:
+        case 5: /* French, Spanish, Italian */
+            first = day, second = month;
+            break;
+        default: /* Japanese (and anything else, as the BIOS) */
+            year_first = 1;
+            break;
     }
-    if (mode == 2) {
-        snprintf(out, size, "%s", date);
-        return;
-    }
-    if (mode == 0 || mode == 3) {
-        int h12 = hour % 12 == 0 ? 12 : hour % 12;
-        if (beats) {
-            snprintf(time, sizeof(time), "%d:%02d%c", h12, minute, hour < 12 ? 'A' : 'P');
-        } else {
-            snprintf(time, sizeof(time), "%d:%02d %s", h12, minute, hour < 12 ? "AM" : "PM");
-        }
+    char date[24];
+    const int beats = beats_on && offset_known;
+    if (beats) { /* this menu's addition: Swatch .beat time after the clock; no year, so the line fits the header */
+        snprintf(date, sizeof(date), "%02d%c%02d", first, sep, second);
+    } else if (year_first) {
+        snprintf(date, sizeof(date), "%04d%c%02d%c%02d", year, sep, first, sep, second);
     } else {
-        snprintf(time, sizeof(time), "%02d:%02d", hour, minute);
+        snprintf(date, sizeof(date), "%02d%c%02d%c%04d", first, sep, second, sep, year);
     }
     if (beats) {
-        snprintf(out, size, "%s %s .%03d", date, time, clock_beats(hour, minute, utc_offset_min));
+        snprintf(out, size, "%s %02d:%02d .%03d", date, hour, minute, clock_beats(hour, minute, utc_offset_min));
     } else {
-        snprintf(out, size, "%s %s", date, time);
+        snprintf(out, size, "%s %02d:%02d", date, hour, minute);
     }
 }
