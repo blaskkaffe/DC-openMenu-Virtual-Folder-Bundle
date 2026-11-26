@@ -1392,10 +1392,11 @@ draw_viewer(void) {
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));
-    /* the BACK marker of the list, selected: lit, its frame blinking */
+    /* the BACK marker of the list: B leaves, but the cursor is never on it here, so as the BIOS draws a BACK marker that is
+     * not selected (grey frame, white arrow; lit and blinking only when selected) */
     const bvm_obj* back = bvm_find(&menu.vm, 0x1110);
     if (back) {
-        bmenu_back_style(&menu, 1, glist.anim, glist.pal_console);
+        bmenu_back_style(&menu, 0, glist.anim, glist.pal_console);
         menu.scene.parts = BSCENE_PART_ALL;
         bscene_draw_object(&menu.scene, back, gfx_sink());
         menu.scene.ovr_n = 0;
