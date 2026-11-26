@@ -266,33 +266,6 @@ static void draw_svmu(void);
 #define INFO_W 182.0f
 #define ART_SIZE 140.0f
 
-/* Fit the lines of the right panel: `text` cut at spaces into lines of at most `width` characters. */
-static int
-wrap_text(const char* text, int width, char out[][20], int max_lines) {
-    int lines = 0;
-    const char* p = text;
-    while (*p && lines < max_lines) {
-        while (*p == ' ') p++;
-        int len = (int)strlen(p);
-        int take = len <= width ? len : width;
-        if (len > width) {
-            int cut = take;
-            while (cut > 0 && p[cut] != ' ') cut--;
-            if (cut > 0) take = cut;
-        }
-        memcpy(out[lines], p, (size_t)take);
-        out[lines][take] = '\0';
-        p += take;
-        lines++;
-        if (lines == max_lines && *p) {
-            int n = (int)strlen(out[lines - 1]);
-            if (n > width - 2) n = width - 2;
-            strcpy(out[lines - 1] + n, "..");
-        }
-    }
-    return lines;
-}
-
 /* Scrolling of a long selected title: wait, scroll to the end, wait, start over. */
 #define MARQUEE_HOLD 60  /* frames at each end */
 #define MARQUEE_PX_PER_FRAME 1
@@ -885,9 +858,7 @@ draw_games(void) {
  * click on BACK) goes back to the list, X opens the game options, Y turns the case to face the viewer, and once it does,
  * over to its back (and back again). Turning and zooming ease towards where they are heading as the cases of the list
  * do. */
-#define VIEW_PANE_X 40.0f /* where the rows start */
-#define VIEW_PANE_W 190.0f
-#define VIEW_CX 440.0f
+#define VIEW_CX 320.0f
 #define VIEW_SIZE 300.0f
 #define VIEW_ZOOM_MIN 0.5f
 #define VIEW_ZOOM_MAX 2.2f
@@ -895,9 +866,7 @@ draw_games(void) {
 #define VIEW_DPAD_STEP 45.0f
 
 static float viewer_rot[2], viewer_target[2]; /* degrees about x (up/down) and y (left/right) */
-static int viewer_scroll;                     /* first information line shown */
 static int viewer_back_hover;                 /* the pointer is on BACK (a click there leaves): BACK lit and blinking */
-static int viewer_lines_max;                  /* how far it can scroll (set while drawing) */
 static float viewer_zoom = 1.0f, viewer_zoom_target = 1.0f;
 static int drag_x, drag_y, dragging;
 
@@ -906,7 +875,6 @@ viewer_reset(void) {
     viewer_rot[0] = viewer_rot[1] = viewer_target[0] = viewer_target[1] = 0.0f;
     viewer_zoom = viewer_zoom_target = 1.0f;
     dragging = 0;
-    viewer_scroll = 0;
 }
 
 /* nearest whole turn (front) / half turn (back) to an angle */
@@ -963,91 +931,6 @@ viewer_drag(const mouse_t* p) {
     dragging = 1;
     drag_x = p->x;
     drag_y = p->y;
-}
-
-/* The scrolling part of the information panel: genre, online, accessories and the description from META.DAT, cut into
- * lines that fit the panel at the small text size. Built once per game. */
-#define INFO_SCALE 0.75f
-#define INFO_LINE_H 21.0f
-#define INFO_MAX_LINES 40
-#define INFO_LINE_CHARS 40
-static char info_lines[INFO_MAX_LINES][INFO_LINE_CHARS + 1];
-static int info_count;
-static const gd_item* info_item;
-
-static void
-info_add_text(const char* text, int width_px) {
-    const char* p = text;
-    while (*p && info_count < INFO_MAX_LINES) {
-        while (*p == ' ') p++;
-        if (*p == '\n' || *p == '\r') {
-            p++;
-            continue;
-        }
-        char line[INFO_LINE_CHARS + 1];
-        int len = 0, last_space = -1;
-        while (p[len] && p[len] != '\n' && p[len] != '\r' && len < INFO_LINE_CHARS) {
-            line[len] = p[len];
-            line[len + 1] = '\0';
-            if ((float)gfx_text_width(line) * INFO_SCALE > (float)width_px) {
-                break;
-            }
-            if (p[len] == ' ') last_space = len;
-            len++;
-        }
-        if (p[len] && p[len] != '\n' && p[len] != '\r' && p[len] != ' ' && last_space > 0) {
-            len = last_space; /* cut at the last space */
-        }
-        if (len == 0) len = 1;
-        memcpy(info_lines[info_count], p, (size_t)len);
-        info_lines[info_count][len] = '\0';
-        info_count++;
-        p += len;
-    }
-}
-
-static void
-info_add_flags(const char* label, unsigned bits, const char* const* names, int n, int width_px) {
-    char text[200];
-    size_t at = (size_t)snprintf(text, sizeof(text), "%s", label);
-    int any = 0;
-    for (int i = 0; i < n && at < sizeof(text); i++) {
-        if (bits & (1u << i) && names[i][0]) {
-            at += (size_t)snprintf(text + at, sizeof(text) - at, "%s%s", any ? ", " : "", names[i]);
-            any = 1;
-        }
-    }
-    if (any) {
-        info_add_text(text, width_px);
-    }
-}
-
-static void
-info_build(const gd_item* cur, int width_px) {
-    static const char* const genres[16] = {"Action",    "Racing",  "Simulation", "Sports",   "Light gun", "Fighting",
-                                           "Shooter",   "Survival", "Adventure", "Platformer", "RPG",     "Shoot 'em up",
-                                           "Strategy",  "Puzzle",  "Arcade",     "Music"};
-    static const char* const extras[14] = {"Jump Pack", "Keyboard", "VGA",          "Mouse",  "Maracas",  "Wheel",
-                                           "Microphone", "Arcade stick", "Light gun", "BBA",   "Fishing rod", "ASCII pad",
-                                           "Dreameye",  "Modem"};
-    static const char* const nets[4] = {"modem", "broadband adapter", "W5500 (patched)", "serial (patched)"};
-    info_item = cur;
-    info_count = 0;
-    struct db_item* meta = NULL;
-    if (!cur || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
-        info_add_text("No information for this game (META.DAT).", width_px);
-        return;
-    }
-    info_add_flags("Genre: ", meta->genre, genres, 16, width_px);
-    info_add_flags("Connects by: ", db_item_connections(meta), nets, 4, width_px);
-    info_add_flags("Uses: ", db_item_accessories(meta), extras, 14, width_px);
-    if (meta->description[0] && info_count < INFO_MAX_LINES) {
-        char desc[sizeof(meta->description) + 1];
-        memcpy(desc, meta->description, sizeof(meta->description));
-        desc[sizeof(meta->description)] = '\0';
-        info_lines[info_count++][0] = '\0'; /* a blank line before the description */
-        info_add_text(desc, width_px);
-    }
 }
 
 /* ---- The feature logos of the back of the case (players, Visual Memory, Vibration / Jump / puru puru Pack, ...), drawn in the style of
@@ -1158,44 +1041,6 @@ draw_badge_number(const gd_item* cur, const struct db_item* meta, int region, in
         snprintf(t, sizeof(t), "%d", gd_item_disc_total(cur->disc) > 0 ? gd_item_disc_total(cur->disc) : 1);
     }
     gfx_text_scaled(t, bx + (float)b->num_x * s, by + (float)b->num_y * s, 0.5f, 0xFF000000u, 0.45f * s);
-}
-
-/* Draws the logos of what the game supports in rows from (x, y), as wide as `width`; returns the height used. */
-static float
-draw_features(const gd_item* cur, float x, float y, float width, float bottom) {
-    static const gd_item* last;
-    if (cur != last) { /* another game: the pictures of the last one are let go */
-        fb_free_all();
-        last = cur;
-    }
-    struct db_item* meta = NULL;
-    if (!cur || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
-        return 0.0f;
-    }
-    int region, keys[FB_COUNT];
-    const int n = feature_keys(cur, meta, keys, &region);
-
-    const float gap = 4.0f;
-    float cx = 0.0f, cy = 0.0f, row_h = 0.0f;
-    for (int i = 0; i < n; i++) {
-        const feature_badge* b = &feature_badges[region][keys[i]];
-        int pw, ph, id = fb_get(region, keys[i], &pw, &ph);
-        if (id < 0) {
-            continue;
-        }
-        if (cx > 0.0f && cx + (float)b->w > width) { /* next row */
-            cy += row_h + gap;
-            cx = row_h = 0.0f;
-        }
-        if (y + cy + (float)b->h > bottom) { /* no room left in the box */
-            break;
-        }
-        gfx_image(id, x + cx, y + cy, (float)pw, (float)ph, PANE_Z + 0.00008f);
-        draw_badge_number(cur, meta, region, keys[i], x + cx, y + cy, 1.0f);
-        cx += (float)b->w + gap;
-        row_h = row_h > (float)b->h ? row_h : (float)b->h;
-    }
-    return n ? cy + row_h + gap : 0.0f;
 }
 
 /* The strip under the card in the list: the game's features as small icons in a row (the device drawings of the PAL logos; the others as small
@@ -1343,53 +1188,11 @@ draw_feature_strip(const gd_item* cur, float x, float y, float w, int full) {
 
 static void
 draw_viewer(void) {
-    char lines[3][20];
     float top, bottom;
     blist_rows_extent_px(&glist, &top, &bottom);
-    gfx_pane(VIEW_PANE_X, top, VIEW_PANE_W, bottom - top, PANE_Z, BSCENE_PANE_ARGB);
     const gd_item* cur = uil_item(uil_cursor());
-    if (cur) {
-        float y = top + 10.0f;
-        int n = wrap_text(cur->name, 15, lines, 3);
-        for (int i = 0; i < n; i++) {
-            gfx_text(lines[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFFFFFFFu, 1);
-            y += GFX_LINE_H - 4.0f;
-        }
-        char info[2][24];
-        int k = game_info_lines(cur, info);
-        y += 4.0f;
-        for (int i = 0; i < k; i++) {
-            gfx_text(info[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFC0C0C0u, 1);
-            y += GFX_LINE_H - 4.0f;
-        }
-        y += 2.0f;
-        y += draw_features(cur, VIEW_PANE_X + 10.0f, y, VIEW_PANE_W - 20.0f, bottom - 8.0f);
-        /* the scrolling information (Up/Down) */
-        if (cur != info_item) {
-            info_build(cur, (int)VIEW_PANE_W - 24);
-            viewer_scroll = 0;
-        }
-        y += 6.0f;
-        if (y > bottom - 10.0f - INFO_LINE_H) { /* the logos filled the box: one line of the text is kept at its foot */
-            y = bottom - 10.0f - INFO_LINE_H;
-        }
-        int visible = (int)((bottom - 10.0f - y) / INFO_LINE_H);
-        visible = visible < 1 ? 1 : visible;
-        viewer_lines_max = info_count > visible ? info_count - visible : 0;
-        if (viewer_scroll > viewer_lines_max) viewer_scroll = viewer_lines_max;
-        for (int i = 0; i < visible && viewer_scroll + i < info_count; i++) {
-            gfx_text_scaled(info_lines[viewer_scroll + i], VIEW_PANE_X + 10.0f, y + (float)i * INFO_LINE_H, 0.5f, 0xFFE0E0E0u,
-                            INFO_SCALE);
-        }
-        if (viewer_scroll > 0) {
-            gfx_text_scaled("^", VIEW_PANE_X + VIEW_PANE_W - 18.0f, y, 0.5f, 0xFFFFFFFFu, INFO_SCALE);
-        }
-        if (viewer_scroll < viewer_lines_max) {
-            gfx_text_scaled("v", VIEW_PANE_X + VIEW_PANE_W - 18.0f, y + (float)(visible - 1) * INFO_LINE_H, 0.5f, 0xFFFFFFFFu,
-                            INFO_SCALE);
-        }
-    }
-    draw_feature_strip(cur, 140.0f, 372.0f, 460.0f, 1);
+    /* the case alone in the middle (no information box); the feature strip along the bottom */
+    draw_feature_strip(cur, 320.0f - 210.0f, 372.0f, 420.0f, 1); /* centred under the case, clear of BACK */
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));
@@ -1444,22 +1247,16 @@ handle_viewer(button_t b) {
         case BTN_X: open_options(); break;
         case BTN_LEFT: viewer_target[1] -= VIEW_DPAD_STEP; break; /* eased there, as a held stick would */
         case BTN_RIGHT: viewer_target[1] += VIEW_DPAD_STEP; break;
-        case BTN_UP:
+        case BTN_UP: /* the mouse wheel (and Up / Down): zoom in and out, eased as the triggers */
         case BTN_PAGE_UP:
-            if (viewer_scroll > 0) {
-                viewer_scroll -= b == BTN_UP ? 1 : 4;
-                viewer_scroll = viewer_scroll < 0 ? 0 : viewer_scroll;
-                sound_sfx(BAUDIO_SFX_CURSOR);
-            }
-            break;
         case BTN_DOWN:
-        case BTN_PAGE_DOWN:
-            if (viewer_scroll < viewer_lines_max) {
-                viewer_scroll += b == BTN_DOWN ? 1 : 4;
-                viewer_scroll = viewer_scroll > viewer_lines_max ? viewer_lines_max : viewer_scroll;
-                sound_sfx(BAUDIO_SFX_CURSOR);
-            }
+        case BTN_PAGE_DOWN: {
+            const int in = b == BTN_UP || b == BTN_PAGE_UP;
+            viewer_zoom_target *= in ? 1.15f : 1.0f / 1.15f;
+            viewer_zoom_target = viewer_zoom_target < VIEW_ZOOM_MIN ? VIEW_ZOOM_MIN
+                                                                    : (viewer_zoom_target > VIEW_ZOOM_MAX ? VIEW_ZOOM_MAX : viewer_zoom_target);
             break;
+        }
         default: break;
     }
 }
