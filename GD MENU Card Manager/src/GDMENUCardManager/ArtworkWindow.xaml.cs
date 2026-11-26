@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -121,6 +122,7 @@ namespace GDMENUCardManager
 
             LoadCurrentArtwork();
             ProbeGdTex();
+            FillCaseBoxes();
 
             // Widen the window if the button row needs more room than the default width offers
             this.Loaded += (s, e) =>
@@ -234,6 +236,7 @@ namespace GDMENUCardManager
 
             LoadCurrentArtwork();
             ProbeGdTex();
+            ShowCase();
 
             RaisePropertyChanged(nameof(CanNavigatePrev));
             RaisePropertyChanged(nameof(CanNavigateNext));
@@ -572,6 +575,35 @@ namespace GDMENUCardManager
             _deleteRequested = false;
 
             _manager.RefreshArtworkStatusForSerial(Serial);
+        }
+
+        private bool _showingCase;
+
+        private void FillCaseBoxes()
+        {
+            CaseStyleBox.ItemsSource = CaseStylesManager.Styles.Select(x => x.Value).ToList();
+            CaseSizeBox.ItemsSource = CaseStylesManager.Sizes.Select(x => x.Value).ToList();
+            ShowCase();
+        }
+
+        /// <summary>The game's case style and size in the two boxes.</summary>
+        private void ShowCase()
+        {
+            if (CaseStyleBox == null || _slots == null)
+                return;
+            _showingCase = true;
+            var c = _slots.CurrentCase;
+            CaseStyleBox.SelectedIndex = Math.Max(0, CaseStylesManager.Styles.ToList().FindIndex(x => x.Key == c.Style));
+            CaseSizeBox.SelectedIndex = Math.Max(0, CaseStylesManager.Sizes.ToList().FindIndex(x => x.Key == c.Size));
+            _showingCase = false;
+        }
+
+        private void Case_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_showingCase || _slots == null || CaseStyleBox.SelectedIndex < 0 || CaseSizeBox.SelectedIndex < 0)
+                return;
+            _slots.StageCase(CaseStylesManager.Styles[CaseStyleBox.SelectedIndex].Key, CaseStylesManager.Sizes[CaseSizeBox.SelectedIndex].Key);
+            HasUnsavedChanges = HasUnsavedChanges || _slots.HasChanges;
         }
 
         private void Apply_Click(object sender, RoutedEventArgs e)

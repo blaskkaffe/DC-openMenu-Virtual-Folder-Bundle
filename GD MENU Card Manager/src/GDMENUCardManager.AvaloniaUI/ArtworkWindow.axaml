@@ -20,7 +20,8 @@
                HorizontalAlignment="Center" Margin="0,0,0,10"/>
 
     <!-- Which picture: the front cover, or the rest of the 3D case -->
-    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+    <StackPanel Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,0,0,8">
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,6">
       <RadioButton GroupName="ArtSlot" Content="Front" Tag="Front" IsChecked="True" Click="Slot_Click" Margin="0,0,14,0"
                    ToolTip.Tip="Front cover (BOX.DAT and ICON.DAT)"/>
       <RadioButton GroupName="ArtSlot" Content="Back" Tag="Back" Click="Slot_Click" Margin="0,0,14,0"
@@ -29,6 +30,16 @@
                    ToolTip.Tip="Spine label (SPINE.DAT)"/>
       <RadioButton GroupName="ArtSlot" Content="Disc" Tag="Disc" Click="Slot_Click"
                    ToolTip.Tip="Disc label: the disc's own (from the GDI) or a picture of your choice"/>
+    </StackPanel>
+    <!-- The 3D case the menu shows the game in (CASES.INI) -->
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+      <TextBlock Text="Case:" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0"/>
+      <ComboBox x:Name="CaseStyleBox" Width="230" SelectionChanged="Case_SelectionChanged" Margin="0,0,12,0"
+                ToolTip.Tip="The 3D case the BIOS-style menu shows this game in (CASES.INI)"/>
+      <TextBlock Text="Size:" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0"/>
+      <ComboBox x:Name="CaseSizeBox" Width="210" SelectionChanged="Case_SelectionChanged"
+                ToolTip.Tip="A double case for games of two or more discs"/>
+    </StackPanel>
     </StackPanel>
 
 <!-- Preview -->
