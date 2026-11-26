@@ -29,9 +29,47 @@ enum {
     BMODEL_PODIUM,               /* winners' stand in Dreamcast colours; the numbers 1 2 3 are the CD player's digits (bmodel_podium_digits) */
     BMODEL_CASE_CLEAR_WHITE,     /* clear CD jewel case, white tray: a white inner label with the colour logo behind the clear front spine */
     BMODEL_CASE_CLEAR_BLACK,     /* clear CD jewel case, black tray: a black inner label with a dark grey logo */
+    /* the double cases (two or more discs): the same five, BMODEL_CASE_DOUBLE_Z times as deep (24 mm instead of 10.4) */
+    BMODEL_CASE_WHITE_DOUBLE,
+    BMODEL_CASE_PAL_DOUBLE,
+    BMODEL_CASE_DARK_DOUBLE,
+    BMODEL_CASE_CLEAR_WHITE_DOUBLE,
+    BMODEL_CASE_CLEAR_BLACK_DOUBLE,
     BMODEL_END
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)
+#define BMODEL_CASE_DOUBLE_Z 2.3f
+
+/* a double case's single one (any other model as it is) */
+static inline int
+bmodel_case_single(int id) {
+    switch (id) {
+        case BMODEL_CASE_WHITE_DOUBLE: return BMODEL_CASE_WHITE;
+        case BMODEL_CASE_PAL_DOUBLE: return BMODEL_CASE_PAL;
+        case BMODEL_CASE_DARK_DOUBLE: return BMODEL_CASE_DARK;
+        case BMODEL_CASE_CLEAR_WHITE_DOUBLE: return BMODEL_CASE_CLEAR_WHITE;
+        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: return BMODEL_CASE_CLEAR_BLACK;
+        default: return id;
+    }
+}
+
+/* a single case's double one (any other model as it is) */
+static inline int
+bmodel_case_double(int id) {
+    switch (id) {
+        case BMODEL_CASE_WHITE: return BMODEL_CASE_WHITE_DOUBLE;
+        case BMODEL_CASE_PAL: return BMODEL_CASE_PAL_DOUBLE;
+        case BMODEL_CASE_DARK: return BMODEL_CASE_DARK_DOUBLE;
+        case BMODEL_CASE_CLEAR_WHITE: return BMODEL_CASE_CLEAR_WHITE_DOUBLE;
+        case BMODEL_CASE_CLEAR_BLACK: return BMODEL_CASE_CLEAR_BLACK_DOUBLE;
+        default: return id;
+    }
+}
+
+static inline int
+bmodel_case_is_double(int id) {
+    return bmodel_case_single(id) != id;
+}
 
 #define BMODEL_CASE_HEIGHT 9.3f /* height of the two cases in model units */
 #define BMODEL_TEX_FRONT 0

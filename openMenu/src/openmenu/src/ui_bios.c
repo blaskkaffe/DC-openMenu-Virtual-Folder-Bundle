@@ -4,6 +4,7 @@
 #include <malloc.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <string.h>
 
@@ -330,6 +331,77 @@ case_titles_shift(const char* title, const char* tag) {
  * arrived; the pictures of the next and previous games are read ahead while the cursor rests. */
 #define CASE_ART_WAIT 10
 static int case_wait;
+/* CASES.INI on the menu disc (written by the Card Manager): one line per game, "PRODUCT=style size", e.g. "T-9003N=clearwhite double";
+ * either word may be left out or be "auto" */
+typedef struct case_choice {
+    char product[12];
+    char style[12];
+    char size[8];
+} case_choice;
+static case_choice* case_choices;
+static int case_choice_count;
+
+static void
+case_choices_load(const char* path) {
+    file_t f = fs_open(path, O_RDONLY);
+    if (f == FILEHND_INVALID) {
+        return;
+    }
+    const int len = (int)fs_total(f);
+    char* buf = len > 0 && len < 512 * 1024 ? malloc((size_t)len + 1) : NULL;
+    if (!buf || fs_read(f, buf, (size_t)len) != len) {
+        free(buf);
+        fs_close(f);
+        return;
+    }
+    fs_close(f);
+    buf[len] = 0;
+    int lines = 1;
+    for (int i = 0; i < len; i++) {
+        lines += buf[i] == '\n';
+    }
+    case_choices = calloc((size_t)lines, sizeof(case_choice));
+    for (char* line = buf; case_choices && line && *line;) {
+        char* next = strchr(line, '\n');
+        if (next) {
+            *next++ = 0;
+        }
+        char* eq = strchr(line, '=');
+        if (eq && line[0] != ';' && line[0] != '#' && line[0] != '[') {
+            *eq = 0;
+            case_choice* c = &case_choices[case_choice_count];
+            char words[2][16] = {{0}};
+            sscanf(eq + 1, "%15s %15s", words[0], words[1]);
+            for (int w = 0; w < 2; w++) {
+                if (!strcasecmp(words[w], "single") || !strcasecmp(words[w], "double")) {
+                    snprintf(c->size, sizeof(c->size), "%s", words[w]);
+                } else if (words[w][0] && strcasecmp(words[w], "auto")) {
+                    snprintf(c->style, sizeof(c->style), "%s", words[w]);
+                }
+            }
+            snprintf(c->product, sizeof(c->product), "%s", line);
+            for (char* e = c->product + strlen(c->product); e > c->product && (e[-1] == ' ' || e[-1] == '\r'); ) {
+                *--e = 0;
+            }
+            if (c->product[0] && (c->style[0] || c->size[0])) {
+                case_choice_count++;
+            }
+        }
+        line = next;
+    }
+    free(buf);
+}
+
+static const case_choice*
+case_choice_of(const char* product) {
+    for (int i = 0; product && product[0] && i < case_choice_count; i++) {
+        if (!strcasecmp(case_choices[i].product, product)) {
+            return &case_choices[i];
+        }
+    }
+    return NULL;
+}
+
 static int case_auto; /* the shown case is a US one whose clear style (black or white tray) the box art's band still has to pick */
 
 static void
@@ -381,13 +453,35 @@ case_update(void) {
             if (case_auto && gfx_art_front_band(cur->product) == 1) {
                 model = BMODEL_CASE_CLEAR_WHITE;
             }
+            /* the case chosen for the game: N.casestyle= / N.casesize= in OPENMENU.INI first, then CASES.INI by product (the Card
+             * Manager's), then the above; a double case for two discs or more */
+            const char* want_style = cur->casestyle;
+            const char* want_size = cur->casesize;
+            const case_choice* cc = case_choice_of(cur->product);
+            if (!want_style[0] && cc) {
+                want_style = cc->style;
+            }
+            if (!want_size[0] && cc) {
+                want_size = cc->size;
+            }
             static const struct { const char* name; int model; } styles[] = {{"white", BMODEL_CASE_WHITE}, {"dark", BMODEL_CASE_DARK},
-                {"clearwhite", BMODEL_CASE_CLEAR_WHITE}, {"clearblack", BMODEL_CASE_CLEAR_BLACK}, {"pal", BMODEL_CASE_PAL}};
+                {"black", BMODEL_CASE_DARK}, {"clearwhite", BMODEL_CASE_CLEAR_WHITE}, {"clearblack", BMODEL_CASE_CLEAR_BLACK},
+                {"pal", BMODEL_CASE_PAL}};
             for (size_t k = 0; k < sizeof(styles) / sizeof(styles[0]); k++) {
-                if (!strcasecmp(cur->casestyle, styles[k].name)) {
+                if (!strcasecmp(want_style, styles[k].name)) {
                     model = styles[k].model;
                     case_auto = 0;
                 }
+            }
+            const char* slash = strchr(cur->disc, '/');
+            int dbl = slash && atoi(slash + 1) >= 2;
+            if (!strcasecmp(want_size, "double")) {
+                dbl = 1;
+            } else if (!strcasecmp(want_size, "single")) {
+                dbl = 0;
+            }
+            if (dbl) {
+                model = bmodel_case_double(model);
             }
             case_titles_shift(cur->name, cur->product);
             bcase_show(&gcase, model, cur->product, dir);
@@ -403,7 +497,8 @@ case_update(void) {
         if (case_auto && cur && gcase.cur.active) { /* the box art came after the case: its band picks the clear case now */
             const int band = gfx_art_front_band(cur->product);
             if (band >= 0) {
-                gcase.cur.model = band == 1 ? BMODEL_CASE_CLEAR_WHITE : BMODEL_CASE_CLEAR_BLACK;
+                const int m = band == 1 ? BMODEL_CASE_CLEAR_WHITE : BMODEL_CASE_CLEAR_BLACK;
+                gcase.cur.model = bmodel_case_is_double(gcase.cur.model) ? bmodel_case_double(m) : m;
                 case_auto = 0;
             }
         }
@@ -3146,6 +3241,7 @@ ui_bios_run(const bios_rom* rom) {
         db_load_DAT();
         have_meta = 1;
     }
+    case_choices_load("/cd/CASES.INI"); /* the case style and size per game, from the Card Manager */
     dbglog_boot("meta", (unsigned)timer_ms_gettime64());
 
     sound_init(rom);
