@@ -360,11 +360,20 @@ case_update(void) {
         case_wait = 0;
         int dir = cursor >= gcase_prev_cursor ? 1 : -1;
         if (cur && !uil_is_folder(cur)) {
-            /* a game of a PAL serial: the blue Dreamcast case; an American one: the black CD case; another: the white one; no serial (a homebrew, or a disc the menu cannot read): the black one */
-            /* by region: PAL blue; Japan only (J) white; America (U, also a J-U-E disc) the clear case with the black tray. The
-             * game's casestyle= in OPENMENU.INI picks another one: white, dark (grey, ribbed), clearwhite, clearblack, pal */
+            /* by region: PAL the blue Dreamcast case; America (U, also a J-U-E disc) the clear case with the black tray (casestyle=clearwhite
+             * for the white tray with the colour logo); Japan only the white case. Homebrew and applications (no serial, a serial of only
+             * zeros, a disc of type other, a browser disc) the black case. The game's casestyle= in OPENMENU.INI picks another one: white,
+             * dark (black, ribbed), clearwhite, clearblack, pal */
             const int us = strchr(cur->region, 'U') != NULL;
-            int model = !cur->product[0] ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : us ? BMODEL_CASE_CLEAR_BLACK : BMODEL_CASE_WHITE;
+            int app = !cur->product[0] || !strcmp(cur->type, "other") || uin_is_browser(cur->name);
+            if (!app) {
+                const char* c = cur->product;
+                while (*c && (*c < '1' || *c > '9')) {
+                    c++;
+                }
+                app = !*c; /* T-0000A, 000000, HOMEBREW: no real product number */
+            }
+            int model = app ? BMODEL_CASE_DARK : serial_is_pal(cur->product) ? BMODEL_CASE_PAL : us ? BMODEL_CASE_CLEAR_BLACK : BMODEL_CASE_WHITE;
             static const struct { const char* name; int model; } styles[] = {{"white", BMODEL_CASE_WHITE}, {"dark", BMODEL_CASE_DARK},
                 {"clearwhite", BMODEL_CASE_CLEAR_WHITE}, {"clearblack", BMODEL_CASE_CLEAR_BLACK}, {"pal", BMODEL_CASE_PAL}};
             for (size_t k = 0; k < sizeof(styles) / sizeof(styles[0]); k++) {

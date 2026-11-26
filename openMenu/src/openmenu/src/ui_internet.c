@@ -211,8 +211,8 @@ say(const char* text) {
 /* ---- the lists -------------------------------------------------------------------------------------------------------- */
 
 /* Browser discs on the card, by their titles. */
-static int
-is_browser(const char* name) {
+int
+uin_is_browser(const char* name) {
     static const char* const keys[] = {"BROWSER", "PASSPORT", "PLANETWEB", "PLANET WEB", "DREAMKEY", "DREAM KEY", "DREAMEXPLORER"};
     char up[128];
     size_t n = 0;
@@ -345,7 +345,7 @@ build_games(void) {
         if (!g || strncmp(g->disc, "DIR", 3) == 0) {
             continue;
         }
-        if (is_browser(g->name)) {
+        if (uin_is_browser(g->name)) {
             games[ngames].item = g;
             games[ngames].players = 0;
             games[ngames++].browser = 1;
