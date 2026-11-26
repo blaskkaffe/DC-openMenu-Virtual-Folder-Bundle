@@ -809,6 +809,15 @@ bmodel_build(int id, nj_object* out) {
     if (builder_start(&b) != 0) {
         return -1;
     }
+    if (bmodel_case_is_double(id)) {
+        /* the double case: the single one, deeper (its root node scaled along z: the labels, trays and walls go with it) */
+        builder_free(&b);
+        int r = bmodel_build(bmodel_case_single(id), out);
+        if (r == 0 && out->count > 0) {
+            out->nodes[0].scl.z *= BMODEL_CASE_DOUBLE_Z;
+        }
+        return r;
+    }
     switch (id) {
         case BMODEL_PHONE: build_phone(&b); break;
         case BMODEL_GLOBE: build_globe(&b); break;

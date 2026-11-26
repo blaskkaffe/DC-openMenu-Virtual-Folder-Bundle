@@ -1301,10 +1301,10 @@ typedef struct {
     uint32_t used;
 } spine_slot;
 static spine_slot spine_slots[SPINE_SLOTS];
-static uint8_t* spine_base[SPINE_KINDS]; /* RGB, 64 x 512 */
-static unsigned short* spine_base_px[SPINE_KINDS]; /* ... packed for the PVR */
-static rom_tex spine_plain[SPINE_KINDS];
-static int spine_base_tried[SPINE_KINDS];
+static uint8_t* spine_base[SPINE_KINDS * 2]; /* RGB, 64 x 512 */
+static unsigned short* spine_base_px[SPINE_KINDS * 2]; /* ... packed for the PVR */
+static rom_tex spine_plain[SPINE_KINDS * 2];
+static int spine_base_tried[SPINE_KINDS * 2];
 static uint32_t spine_made_frame = 0xFFFFFFFFu;
 enum { SPINE_W = 64, SPINE_H = 512 };
 /* background, patch, ink (title), band, the logo's swirl, its wordmark, the product code */
@@ -1318,7 +1318,8 @@ static const uint8_t spine_col[SPINE_KINDS][7][3] = {
  * and the letters are drawn that much wider across than along, so they are not stretched on the case. */
 static float
 spine_ra(int kind) {
-    const float depth_mm = kind == SPINE_PAL ? 15.5f : 7.03f;
+    /* kinds from SPINE_KINDS on: the same on a double case, BMODEL_CASE_DOUBLE_Z times as deep */
+    const float depth_mm = (kind % SPINE_KINDS == SPINE_PAL ? 15.5f : 7.03f) * (kind >= SPINE_KINDS ? BMODEL_CASE_DOUBLE_Z : 1.0f);
     return ((float)SPINE_W / depth_mm) / ((float)SPINE_H / 120.0f);
 }
 
@@ -1329,7 +1330,7 @@ spine_pack(const uint8_t* rgb, int kind, unsigned short* px, int x0, int y0, int
         for (int x = x0; x < x1; x++) {
             const int i = y * SPINE_W + x;
             const float r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
-            px[i] = kind == SPINE_PAL ? pack4444_dither(r, g, b, x, y) : pack4444(r, g, b);
+            px[i] = kind % SPINE_KINDS == SPINE_PAL ? pack4444_dither(r, g, b, x, y) : pack4444(r, g, b);
         }
     }
 }
@@ -1365,11 +1366,11 @@ spine_base_of(int kind) {
             }
         }
     }
-    const uint8_t* bg = spine_col[kind][0];
-    const uint8_t* patch = spine_col[kind][1];
-    const uint8_t* band = spine_col[kind][3];
-    const uint8_t* swirl = spine_col[kind][4];
-    const uint8_t* word = spine_col[kind][5];
+    const uint8_t* bg = spine_col[kind % SPINE_KINDS][0];
+    const uint8_t* patch = spine_col[kind % SPINE_KINDS][1];
+    const uint8_t* band = spine_col[kind % SPINE_KINDS][3];
+    const uint8_t* swirl = spine_col[kind % SPINE_KINDS][4];
+    const uint8_t* word = spine_col[kind % SPINE_KINDS][5];
     const float ra = spine_ra(kind);
     const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
     for (int y = 0; y < H; y++) {
@@ -1386,7 +1387,7 @@ spine_base_of(int kind) {
             if (inside) {
                 c = patch;
             }
-            if (kind == SPINE_J && (float)y > H - 150.0f) {
+            if (kind % SPINE_KINDS == SPINE_J && (float)y > H - 150.0f) {
                 c = band; /* across the whole label */
             }
             o[0] = c[0], o[1] = c[1], o[2] = c[2];
@@ -1399,7 +1400,7 @@ spine_base_of(int kind) {
         if (sh * s * ra > 0.6f * (float)W) {
             s = 0.6f * (float)W / (sh * ra);
         }
-        const float cy = (float)H - (kind == SPINE_USW ? 62.0f : 30.0f) - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
+        const float cy = (float)H - (kind % SPINE_KINDS == SPINE_USW ? 62.0f : 30.0f) - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
                 float lx = (float)lx0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)ly0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
@@ -1416,7 +1417,7 @@ spine_base_of(int kind) {
         }
     }
     free(logo);
-    if (kind == SPINE_USW) { /* "Sega" before the swirl, as on the shelf */
+    if (kind % SPINE_KINDS == SPINE_USW) { /* "Sega" before the swirl, as on the shelf */
         int box[4] = {W, H, 0, 0};
         spine_text(rgb, kind, "Sega", 30.0f, (float)H - 44.0f, 0.62f, word, box);
     }
@@ -1542,8 +1543,8 @@ spine_texture(int kind) {
     memcpy(rgb, base, (size_t)W * H * 3);
     memcpy(px, spine_base_px[kind], sizeof(unsigned short) * W * H);
     int box[4] = {W, H, 0, 0};
-    spine_text(rgb, kind, spine_title, 296.0f, 212.0f, 0.95f, spine_col[kind][2], box);
-    spine_text(rgb, kind, spine_code, 84.0f, 52.0f, 0.62f, spine_col[kind][6], box);
+    spine_text(rgb, kind, spine_title, 296.0f, 212.0f, 0.95f, spine_col[kind % SPINE_KINDS][2], box);
+    spine_text(rgb, kind, spine_code, 84.0f, 52.0f, 0.62f, spine_col[kind % SPINE_KINDS][6], box);
     spine_pack(rgb, kind, px, box[0], box[1], box[2], box[3]);
     free(rgb);
     if (victim->tex.valid) {
@@ -1571,12 +1572,13 @@ get_rom_texture_uncached(bscene_texref ref) {
     }
     /* built-in models: slot 0 shows the box art of the bound game, everything else is plain white */
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
+        const int ca = bmodel_case_single(ref.a); /* a double case: the single one's pictures */
         if (ref.b == BMODEL_TEX_FRONT) {
             art_entry* e = art_get(model_front_product, 1);
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            rom_tex* r = generic_cover(ref.a == BMODEL_CASE_PAL, 0); /* no box art: the generic front of the region */
+            rom_tex* r = generic_cover(ca == BMODEL_CASE_PAL, 0); /* no box art: the generic front of the region */
             if (r) {
                 return r;
             }
@@ -1586,13 +1588,13 @@ get_rom_texture_uncached(bscene_texref ref) {
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            rom_tex* r = generic_cover(ref.a == BMODEL_CASE_PAL, 1);
+            rom_tex* r = generic_cover(ca == BMODEL_CASE_PAL, 1);
             if (r) {
                 return r;
             }
         }
         if (ref.b == BMODEL_TEX_PILL) { /* the PAL hinge bar, or the NTSC cases' inner label behind the clear front spine */
-            rom_tex* r = ref.a == BMODEL_CASE_PAL ? pill_texture() : hinge_texture(ref.a == BMODEL_CASE_CLEAR_BLACK);
+            rom_tex* r = ca == BMODEL_CASE_PAL ? pill_texture() : hinge_texture(ca == BMODEL_CASE_CLEAR_BLACK);
             if (r) {
                 return r;
             }
@@ -1602,7 +1604,8 @@ get_rom_texture_uncached(bscene_texref ref) {
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            const int kind = ref.a == BMODEL_CASE_PAL ? SPINE_PAL : ref.a == BMODEL_CASE_WHITE ? SPINE_J : ref.a == BMODEL_CASE_CLEAR_WHITE ? SPINE_USW : SPINE_US;
+            const int kind = (ca == BMODEL_CASE_PAL ? SPINE_PAL : ca == BMODEL_CASE_WHITE ? SPINE_J : ca == BMODEL_CASE_CLEAR_WHITE ? SPINE_USW : SPINE_US)
+                             + (bmodel_case_is_double(ref.a) ? SPINE_KINDS : 0);
             if (e && e->loading) {
                 rom_tex* r = spine_plain_texture(kind); /* SPINE.DAT may have one: none is made until it is known */
                 if (r) {

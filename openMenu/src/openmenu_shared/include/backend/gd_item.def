@@ -10,4 +10,5 @@ CFG(ITEMS, product, "T-0000A")
 CFG(ITEMS, folder, "")
 CFG(ITEMS, type, "game")
 CFG(ITEMS, casestyle, "")
+CFG(ITEMS, casesize, "")
 #undef CFG
