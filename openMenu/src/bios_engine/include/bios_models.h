@@ -29,7 +29,8 @@ enum {
     BMODEL_PODIUM,               /* winners' stand in Dreamcast colours; the numbers 1 2 3 are the CD player's digits (bmodel_podium_digits) */
     BMODEL_CASE_CLEAR_WHITE,     /* clear CD jewel case, white tray: a white inner label with the colour logo behind the clear front spine */
     BMODEL_CASE_CLEAR_BLACK,     /* clear CD jewel case, black tray: a black inner label with a dark grey logo */
-    /* the double cases (two or more discs): the same five, BMODEL_CASE_DOUBLE_Z times as deep (24 mm instead of 10.4) */
+    /* the double cases (two or more discs, 24 mm deep): ribbed dark grey top and bottom, clear front, back and sides, two spine labels
+     * per side; the style picks the spine label (and blue edges for PAL) */
     BMODEL_CASE_WHITE_DOUBLE,
     BMODEL_CASE_PAL_DOUBLE,
     BMODEL_CASE_DARK_DOUBLE,
@@ -38,7 +39,6 @@ enum {
     BMODEL_END
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)
-#define BMODEL_CASE_DOUBLE_Z 2.3f
 
 /* a double case's single one (any other model as it is) */
 static inline int

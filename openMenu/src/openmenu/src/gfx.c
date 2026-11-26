@@ -1318,8 +1318,8 @@ static const uint8_t spine_col[SPINE_KINDS][7][3] = {
  * and the letters are drawn that much wider across than along, so they are not stretched on the case. */
 static float
 spine_ra(int kind) {
-    /* kinds from SPINE_KINDS on: the same on a double case, BMODEL_CASE_DOUBLE_Z times as deep */
-    const float depth_mm = (kind % SPINE_KINDS == SPINE_PAL ? 15.5f : 7.03f) * (kind >= SPINE_KINDS ? BMODEL_CASE_DOUBLE_Z : 1.0f);
+    /* kinds from SPINE_KINDS on: the same for the double case, whose two spine labels (one per half) are 10 mm across */
+    const float depth_mm = kind >= SPINE_KINDS ? 10.0f : kind % SPINE_KINDS == SPINE_PAL ? 15.5f : 7.03f;
     return ((float)SPINE_W / depth_mm) / ((float)SPINE_H / 120.0f);
 }
 
