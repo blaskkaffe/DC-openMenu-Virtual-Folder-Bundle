@@ -545,6 +545,7 @@ mul_argb(uint32_t c, uint32_t t) {
 /* where the NTSC cases' 120 mm front cover starts: 14.5 mm in from the hinge edge, as on the real jewel cases (the clear
  * front spine beside it shows the inner label) */
 #define NTSC_FRONT_X0 -56.5f
+#define NTSC_FRONT_X1 69.6f /* the front cover reaches the right edge of the lid (inside its rim), as on the real cases */
 
 static float
 remap_f(float v, float o0, float o1, float n0, float n1) {
@@ -564,7 +565,7 @@ fit_label(dc_vertex_t v[4], const char* name, int pal) {
         const float hh = strstr(name, "label_rear") ? 59.5f : 60.0f; /* Sega's guidelines: front inlay 120 x 120 mm, back inlay 119 mm tall */
         v[i].y = v[i].y > 0.0f ? hh : -hh;
         if (strstr(name, "label_front")) {
-            v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : NTSC_FRONT_X0, pal ? 67.0f : NTSC_FRONT_X0 + 120.0f);
+            v[i].x = remap_f(v[i].x, x0, x1, pal ? -53.0f : NTSC_FRONT_X0, pal ? 67.0f : NTSC_FRONT_X1);
         } else if (strstr(name, "label_spine")) {
             v[i].z = remap_f(v[i].z, z0, z1, pal ? -8.5f : -3.77f, pal ? 7.0f : 3.27f);
             v[i].u = 1.0f - v[i].u; /* the spine labels read the other way round (turned 180 degrees) */
@@ -696,11 +697,11 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
             const dc_vertex_t* src = part_verts;
             for (int st = 0; st < part->nstrips; st++) {
                 const int n = part->strip_len[st];
-                /* the NTSC cases' ribs: the outer top, bottom and right edges and the hinge strip (white or black, the spine's) carry the ribbed
+                /* the NTSC cases' ribs: the outer top and bottom edges and the hinge strip (white or black, the spine's) carry the ribbed
                  * texture, its u running across the ribs (one repeat of the picture is RIB_MM wide) */
                 int rib_axis = -1; /* 0: u from x, 1: u from y */
-                if (ribbed && !strcmp(part->name, "case_shell") && st <= 2) {
-                    rib_axis = st == 2 ? 1 : 0;
+                if (ribbed && !strcmp(part->name, "case_shell") && st <= 1) {
+                    rib_axis = 0; /* the top and bottom edges only: the right side stays smooth */
                 } else if (ribbed && !strcmp(part->name, "hinge_strip") && (st == 0 || st == 2)) {
                     rib_axis = st == 0 ? 0 : 1;
                 }
