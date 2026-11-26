@@ -143,6 +143,7 @@ typedef struct bfs {
 
     /* card grid */
     int g_state, g_result, g_cursor, g_last, g_dest, g_help, g_tick, g_busy_frame, g_ready;
+    int g_auto; /* the cursor went to BACK only because no card was ready yet: it moves to the first card that gets ready */
     /* browser */
     int b_state, b_result, b_mode, b_card, b_page, b_cursor, b_blink, b_blink_t, b_same, b_redraw, b_dirty_info;
     int b_saved_page, b_saved_cursor;

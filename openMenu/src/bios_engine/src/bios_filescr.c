@@ -514,6 +514,9 @@ grid_select(bfs* fs) {
 static void
 grid_cb(bfs* fs, int code, int* pos) {
     int dir = -1;
+    if (code != 7) {
+        fs->g_auto = 0; /* the player moved it */
+    }
     if (code == BFS_KEY_B) {
         sfx(fs, 2);
         fs->g_state = 3;
@@ -609,6 +612,7 @@ grid_create(bfs* fs) {
     }
     cursor_install(fs, 0, grid_table, 9, cursor, grid_cb);
     fs->g_cursor = cursor;
+    fs->g_auto = cursor == 8;
     grid_select(fs);
     grid_arrow(fs);
     fly_in(fs);
@@ -651,6 +655,21 @@ card_grid(bfs* fs, int param) {
             if (fs->changed < 1) {
                 if (count_cards(fs)) {
                     progress_dialog(fs, 0);
+                }
+                /* The BIOS has the cards read before this screen opens, so its cursor starts on the first one; here they may still be
+                 * reading when it opens and the cursor starts on BACK (lit, its frame blinking). The first card that gets ready takes
+                 * the cursor, as long as the player has not moved it. */
+                if (fs->g_auto && fs->g_cursor == 8) {
+                    for (int i = 0; i < 8; i++) {
+                        if (fs->card[i].status == BFS_CARD_READY && (fs->src != i || !fs->g_dest)) {
+                            fs->g_auto = 0;
+                            cursor_install(fs, 0, grid_table, 9, i, grid_cb);
+                            fs->g_cursor = i;
+                            grid_select(fs);
+                            grid_arrow(fs);
+                            break;
+                        }
+                    }
                 }
                 if (param == 1) {
                     fs->g_result = fs->g_cursor + 1;

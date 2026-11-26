@@ -896,6 +896,7 @@ draw_games(void) {
 
 static float viewer_rot[2], viewer_target[2]; /* degrees about x (up/down) and y (left/right) */
 static int viewer_scroll;                     /* first information line shown */
+static int viewer_back_hover;                 /* the pointer is on BACK (a click there leaves): BACK lit and blinking */
 static int viewer_lines_max;                  /* how far it can scroll (set while drawing) */
 static float viewer_zoom = 1.0f, viewer_zoom_target = 1.0f;
 static int drag_x, drag_y, dragging;
@@ -1392,11 +1393,11 @@ draw_viewer(void) {
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));
-    /* the BACK marker of the list: B leaves, but the cursor is never on it here, so as the BIOS draws a BACK marker that is
-     * not selected (grey frame, white arrow; lit and blinking only when selected) */
+    /* the BACK marker of the list: lit with its frame blinking (as the BIOS draws a selected one) only while the pointer is on it,
+     * where a click leaves; B leaves too, but the pad's cursor is never on it here */
     const bvm_obj* back = bvm_find(&menu.vm, 0x1110);
     if (back) {
-        bmenu_back_style(&menu, 0, glist.anim, glist.pal_console);
+        bmenu_back_style(&menu, viewer_back_hover, glist.anim, glist.pal_console);
         menu.scene.parts = BSCENE_PART_ALL;
         bscene_draw_object(&menu.scene, back, gfx_sink());
         menu.scene.ovr_n = 0;
@@ -1408,6 +1409,7 @@ static void open_options(void);
 
 static void
 open_viewer(void) {
+    viewer_back_hover = 0;
     glist.back_selected = 0;
     viewer_open = 1;
     viewer_reset();
@@ -3197,6 +3199,9 @@ apply_hover(void) {
         }
         case SCREEN_GAMES: {
             if (viewer_open) {
+                const int on = blist_back_at_px_l(&glist, ux, uy);
+                if (on && !viewer_back_hover) sound_sfx(BAUDIO_SFX_CURSOR);
+                viewer_back_hover = on;
                 break;
             }
             if (blist_back_at_px_l(&glist, ux, uy)) {
