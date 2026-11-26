@@ -12,7 +12,7 @@ Label limit 17 characters (the value pill starts at x 304), value limit 27, help
                    help (39): Start the disc in the drive at power on <- cut at 36
  4 Clock and date  Date and time         13  (opens the editor; shows MM-DD HH:MM)
                    help (28): Set the clock of the console
- 5 Clock and date  Clock format          12  12 hour, 24 hour, Date only, 12 hour + .beat, 24 hour + .beat   [longest 15]
+ 5 Clock and date  .beat time            2  Off, On
                    help (36): .beat uses the Online time sync zone
  6 Clock and date  Memory card clock     17  (action; shows Done (n) / No memory card / Failed (n/m))
                    help (33): Set the clock of the memory cards

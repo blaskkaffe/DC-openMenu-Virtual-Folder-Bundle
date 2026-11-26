@@ -20,7 +20,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
 - [ ] Settings used below: Game list > Game order / Serial VMU / Recently played; Settings > Internet > Online features On or Auto-connect,
-      Internet screen > Settings > Online time sync (a zone), Player list refresh; Display > Clock format.
+      Internet screen > Settings > Online time sync (a zone), Player list refresh; Clock and date > .beat time.
 - [ ] Test on an NTSC-U console (orange swirl) and, if you can, a PAL one (blue swirl, region byte 2). Note the console and BIOS version.
 
 ## 2. Game list (the single box)
@@ -70,7 +70,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 6. Main menu top bar and header logo
 
-- [ ] Clock: Settings > Display > Clock format: 12 hour (10:27 PM), 24 hour, Date only, 12 hour + .beat, 24 hour + .beat; the header changes within a
+- [ ] Clock: the header clock reads as the real BIOS's for the BIOS language (Japanese 2026/10/03 22:27, English 10/03/2026 22:27 or 03/10/2026 22:27 on a PAL console, German 03.10.2026 22:27); always 24 hour. Settings > Clock and date > .beat time On (with Online time sync set) shows "03/10 22:27 .977".
       second. .beat with Online time sync Off shows the plain clock. Check one .beat value against a Swatch clock (BMT = UTC+1).
       Note: the default is 12 hour (the saved default), so the header reads AM/PM unless changed; decide if that is wanted.
 - [ ] Above the clock, same font: a lamp (grey off, yellow connecting, green online, red failed) and, once the list is in, "DCNow! n DCNet n".

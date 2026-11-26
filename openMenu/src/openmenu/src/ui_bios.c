@@ -213,8 +213,9 @@ update_clock(void) {
     char counts[24] = "";
     int y, mo, d, h, mi;
     clock_get(&y, &mo, &d, &h, &mi);
-    /* Clock format setting; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
-    clock_header_text(text, sizeof(text), clock_date_order(), uis_clock_mode(), y, mo, d, h, mi,
+    /* as the BIOS; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
+    clock_header_text(text, sizeof(text), ((volatile uint8_t*)0x8C000078)[5] /* the BIOS language */,
+                      (*(volatile uint8_t*)0x8C000072 & 0xF) == 2 /* a PAL console */, uis_beat(), y, mo, d, h, mi,
                       online_time_sync_minutes(sf_online_time_sync[0]), sf_online_time_sync[0] != ONLINE_TIME_SYNC_OFF);
     /* The row above the clock (same font): the players per network while online (no lamp: the text says it) */
     online_header oh;
