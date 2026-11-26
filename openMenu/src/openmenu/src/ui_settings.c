@@ -50,6 +50,7 @@ static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
 static const char* const recent_modes[] = {"Off", "Last 10", "Last 20", "Last 30", "Last 40", "Last 50"}; /* as 1.7.1 */
 static const char* const on_off[] = {"Off", "On"};
+static const char* const clock_modes[] = {"On (12-Hour)", "On (24-Hour)", "Off"}; /* sf_clock, as openMenu 1.7.1 */
 static const char* const serial_vmu_modes[] = {"Off", "On (A1)", "On (A2)", "On (B1)", "On (B2)", "On (C1)", "On (C2)", "On (D1)", "On (D2)"}; /* as 1.7.1 */
 static const char* const vm2_modes[] = {"Send to all", "Send to first", "Off"};
 static const char* const aspect_modes[] = {"4:3", "16:9"};
@@ -91,6 +92,7 @@ static const row_def rows[] = {
     {0, UIS_ICON_OTHER, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
     /* everything about the clock and the date, one group: the BIOS clock, the header clock, and the three ways to keep it right */
     {UIS_ACTION_DATETIME, UIS_ICON_CLOCK, "Clock and date", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
+    {0, UIS_ICON_CLOCK, "Clock and date", "Clock", "The header clock (shared with openMenu 1.7)", &sf_clock, CLOCK_END + 1, clock_modes},
     {0, UIS_ICON_CLOCK, "Clock and date", ".beat time", "After the clock; zone from Online time sync", &beat_var, 2, on_off},
     {UIS_ACTION_VMUCLOCK, UIS_ICON_CLOCK, "Clock and date", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
     {0, UIS_ICON_CLOCK, "Clock and date", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,

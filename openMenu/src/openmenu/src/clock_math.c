@@ -27,7 +27,7 @@ clock_beats(int hour, int minute, int utc_offset_min) {
 }
 
 void
-clock_header_text(char* out, unsigned size, int language, int pal, int beats_on, int year, int month, int day, int hour, int minute,
+clock_header_text(char* out, unsigned size, int language, int pal, int hour12, int beats_on, int year, int month, int day, int hour, int minute,
                   int utc_offset_min, int offset_known) {
     /* As the BIOS's format_datetime_string (0x8C01BAE0): always a 24 hour clock; the date by the BIOS language, English by the console's
      * region. Japanese 2026/10/03, English (America, Japan) 10/03/2026, English (PAL) 03/10/2026, German 03.10.2026, French, Spanish,
@@ -52,18 +52,32 @@ clock_header_text(char* out, unsigned size, int language, int pal, int beats_on,
             year_first = 1;
             break;
     }
-    char date[24];
+    char date[24], time[16];
     const int beats = beats_on && offset_known;
+    /* 12 hour (the shared Clock setting, openMenu 1.7.1's): a two digit year (with beats one letter A/P) so the line fits the header */
+    const int y = hour12 ? year % 100 : year;
+    const char* yf = hour12 ? "%02d%c%02d%c%02d" : "%04d%c%02d%c%02d";
+    const char* yl = hour12 ? "%02d%c%02d%c%02d" : "%02d%c%02d%c%04d";
     if (beats) { /* this menu's addition: Swatch .beat time after the clock; no year, so the line fits the header */
         snprintf(date, sizeof(date), "%02d%c%02d", first, sep, second);
     } else if (year_first) {
-        snprintf(date, sizeof(date), "%04d%c%02d%c%02d", year, sep, first, sep, second);
+        snprintf(date, sizeof(date), yf, y, sep, first, sep, second);
     } else {
-        snprintf(date, sizeof(date), "%02d%c%02d%c%04d", first, sep, second, sep, year);
+        snprintf(date, sizeof(date), yl, first, sep, second, sep, y);
+    }
+    if (hour12) {
+        const int h12 = hour % 12 == 0 ? 12 : hour % 12;
+        if (beats) {
+            snprintf(time, sizeof(time), "%d:%02d%c", h12, minute, hour < 12 ? 'A' : 'P');
+        } else {
+            snprintf(time, sizeof(time), "%d:%02d %s", h12, minute, hour < 12 ? "AM" : "PM");
+        }
+    } else {
+        snprintf(time, sizeof(time), "%02d:%02d", hour, minute);
     }
     if (beats) {
-        snprintf(out, size, "%s %02d:%02d .%03d", date, hour, minute, clock_beats(hour, minute, utc_offset_min));
+        snprintf(out, size, "%s %s .%03d", date, time, clock_beats(hour, minute, utc_offset_min));
     } else {
-        snprintf(out, size, "%s %02d:%02d", date, hour, minute);
+        snprintf(out, size, "%s %s", date, time);
     }
 }
