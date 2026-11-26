@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <time.h>
 #include <string.h>
 
@@ -392,10 +393,29 @@ case_choices_load(const char* path) {
     free(buf);
 }
 
+/* two product numbers alike when their letters and digits are (T-9003N, T9003N, t9003n) */
+static int
+case_product_eq(const char* a, const char* b) {
+    for (;;) {
+        while (*a && !isalnum((unsigned char)*a)) {
+            a++;
+        }
+        while (*b && !isalnum((unsigned char)*b)) {
+            b++;
+        }
+        if (!*a || !*b) {
+            return !*a && !*b;
+        }
+        if (toupper((unsigned char)*a++) != toupper((unsigned char)*b++)) {
+            return 0;
+        }
+    }
+}
+
 static const case_choice*
 case_choice_of(const char* product) {
     for (int i = 0; product && product[0] && i < case_choice_count; i++) {
-        if (!strcasecmp(case_choices[i].product, product)) {
+        if (case_product_eq(case_choices[i].product, product)) {
             return &case_choices[i];
         }
     }

@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -138,6 +139,7 @@ namespace GDMENUCardManager
 
             LoadCurrentArtwork();
             ProbeGdTex();
+            FillCaseBoxes();
 
             // Widen the window if the button row needs more room than the default width offers
             this.Opened += (s, e) =>
@@ -253,6 +255,7 @@ namespace GDMENUCardManager
 
             LoadCurrentArtwork();
             ProbeGdTex();
+            ShowCase();
 
             RaisePropertyChanged(nameof(CanNavigatePrev));
             RaisePropertyChanged(nameof(CanNavigateNext));
@@ -632,6 +635,43 @@ namespace GDMENUCardManager
             _deleteRequested = false;
 
             _manager.RefreshArtworkStatusForSerial(Serial);
+        }
+
+        private bool _showingCase;
+
+        private void FillCaseBoxes()
+        {
+            var styleBox = this.FindControl<ComboBox>("CaseStyleBox");
+            var sizeBox = this.FindControl<ComboBox>("CaseSizeBox");
+            if (styleBox == null || sizeBox == null)
+                return;
+            styleBox.ItemsSource = CaseStylesManager.Styles.Select(x => x.Value).ToList();
+            sizeBox.ItemsSource = CaseStylesManager.Sizes.Select(x => x.Value).ToList();
+            ShowCase();
+        }
+
+        /// <summary>The game's case style and size in the two boxes.</summary>
+        private void ShowCase()
+        {
+            var styleBox = this.FindControl<ComboBox>("CaseStyleBox");
+            var sizeBox = this.FindControl<ComboBox>("CaseSizeBox");
+            if (styleBox == null || sizeBox == null || _slots == null)
+                return;
+            _showingCase = true;
+            var c = _slots.CurrentCase;
+            styleBox.SelectedIndex = Math.Max(0, CaseStylesManager.Styles.ToList().FindIndex(x => x.Key == c.Style));
+            sizeBox.SelectedIndex = Math.Max(0, CaseStylesManager.Sizes.ToList().FindIndex(x => x.Key == c.Size));
+            _showingCase = false;
+        }
+
+        private void Case_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var styleBox = this.FindControl<ComboBox>("CaseStyleBox");
+            var sizeBox = this.FindControl<ComboBox>("CaseSizeBox");
+            if (_showingCase || _slots == null || styleBox == null || sizeBox == null || styleBox.SelectedIndex < 0 || sizeBox.SelectedIndex < 0)
+                return;
+            _slots.StageCase(CaseStylesManager.Styles[styleBox.SelectedIndex].Key, CaseStylesManager.Sizes[sizeBox.SelectedIndex].Key);
+            HasUnsavedChanges = HasUnsavedChanges || _slots.HasChanges;
         }
 
         private void Apply_Click(object sender, RoutedEventArgs e)

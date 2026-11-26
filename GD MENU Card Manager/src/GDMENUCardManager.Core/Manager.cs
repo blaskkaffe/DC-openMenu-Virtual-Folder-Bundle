@@ -238,6 +238,9 @@ namespace GDMENUCardManager.Core
         /// <summary>INFO.DAT: release date, developer, publisher and the like (see InfoDatManager).</summary>
         public InfoDatManager InfoDat { get; private set; }
 
+        /// <summary>CASES.INI: the 3D case style and size chosen per game (see CaseStylesManager).</summary>
+        public CaseStylesManager CaseStyles { get; private set; }
+
         public const string BackDatFileName = "BACK.DAT";
         public const string DiscArtDatFileName = "DISCART.DAT";
         public const string InfoDatFileName = "INFO.DAT";
@@ -249,12 +252,14 @@ namespace GDMENUCardManager.Core
         public string GetInfoDatPath() => Path.Combine(GetMenuDataPath(), InfoDatFileName);
         public string GetSpineDatPath() => Path.Combine(GetMenuDataPath(), SpineDatFileName);
         public string GetDiscUserDatPath() => Path.Combine(GetMenuDataPath(), DiscUserDatFileName);
+        public string GetCaseStylesPath() => Path.Combine(GetMenuDataPath(), CaseStylesManager.FileName);
 
         /// <summary>Some of the DATs written by the scraper (or by hand) are not saved yet.</summary>
         public bool HasUnsavedScrapedData =>
             MetaDat?.HasUnsavedChanges == true || BackDat?.HasUnsavedChanges == true ||
             DiscArtDat?.HasUnsavedChanges == true || InfoDat?.HasUnsavedChanges == true ||
-            SpineDat?.HasUnsavedChanges == true || DiscUserDat?.HasUnsavedChanges == true;
+            SpineDat?.HasUnsavedChanges == true || DiscUserDat?.HasUnsavedChanges == true ||
+            CaseStyles?.HasUnsavedChanges == true;
 
         /// <summary>Writes META.DAT, BACK.DAT, DISCART.DAT and INFO.DAT where they changed. Returns the errors, if any.</summary>
         public string SaveScrapedData()
@@ -294,6 +299,8 @@ namespace GDMENUCardManager.Core
                 }
                 if (InfoDat?.HasUnsavedChanges == true)
                     InfoDat.Save(GetInfoDatPath());
+                if (CaseStyles?.HasUnsavedChanges == true)
+                    CaseStyles.Save(GetCaseStylesPath());
             }
             catch (Exception ex)
             {
@@ -382,6 +389,11 @@ namespace GDMENUCardManager.Core
             if (File.Exists(GetDiscUserDatPath()))
                 DiscUserDat.Load(GetDiscUserDatPath());
             InfoDat ??= new InfoDatManager();
+            if (CaseStyles == null)
+            {
+                CaseStyles = new CaseStylesManager();
+                CaseStyles.Load(GetCaseStylesPath());
+            }
             if (File.Exists(GetBackDatPath()))
                 BackDat.Load(GetBackDatPath());
             if (File.Exists(GetDiscArtDatPath()))
@@ -3202,7 +3214,7 @@ namespace GDMENUCardManager.Core
                 // On macOS, user data files live in Application Support, not the bundle.
                 // Exclude them from the bulk bundle copy so they don't overwrite user data.
                 var excludeFromBundle = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP", BackDatFileName, InfoDatFileName, SpineDatFileName }
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "BOX.DAT", "ICON.DAT", "META.DAT", "FOLDRART.DAT", "FOLDRART.MAP", "DEFAULTS.INI", "BGM.ADP", BackDatFileName, InfoDatFileName, SpineDatFileName, CaseStylesManager.FileName }
                     : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 excludeFromBundle.Add(DiscArtDatFileName); // goes into DISC.DAT below, not onto the card as it is
                 excludeFromBundle.Add(DiscUserDatFileName); // the same
@@ -3231,6 +3243,8 @@ namespace GDMENUCardManager.Core
                     File.Copy(GetSpineDatPath(), Path.Combine(dataPath, SpineDatFileName), overwrite: true);
                 if (File.Exists(GetInfoDatPath()))
                     File.Copy(GetInfoDatPath(), Path.Combine(dataPath, InfoDatFileName), overwrite: true);
+                if (File.Exists(GetCaseStylesPath()))
+                    File.Copy(GetCaseStylesPath(), Path.Combine(dataPath, CaseStylesManager.FileName), overwrite: true);
 
                 if (stageUnsavedMenuData)
                     StageUnsavedMenuData(dataPath);
@@ -3306,6 +3320,11 @@ namespace GDMENUCardManager.Core
             {
                 if (spineChanged)
                     SpineDat.Save(Path.Combine(dataPath, SpineDatFileName));
+                if (CaseStyles?.HasUnsavedChanges == true)
+                {
+                    CaseStyles.Save(Path.Combine(dataPath, CaseStylesManager.FileName));
+                    CaseStyles.HasUnsavedChanges = true; // written to the card's copy only: the app's own still to be saved
+                }
                 if (metaChanged)
                     MetaDat.Save(Path.Combine(dataPath, "META.DAT"));
                 if (backChanged)

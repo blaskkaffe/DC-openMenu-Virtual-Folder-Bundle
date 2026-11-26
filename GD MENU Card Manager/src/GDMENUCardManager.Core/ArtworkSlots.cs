@@ -26,6 +26,7 @@ namespace GDMENUCardManager.Core
         private string _serial = string.Empty;
         private readonly Dictionary<ArtSlot, byte[]> _pending = new Dictionary<ArtSlot, byte[]>();
         private readonly HashSet<ArtSlot> _deletes = new HashSet<ArtSlot>();
+        private (string Style, string Size)? _case; // the case style and size (CASES.INI), when changed
 
         public ArtworkSlots(Manager manager)
         {
@@ -38,9 +39,20 @@ namespace GDMENUCardManager.Core
             _serial = serial ?? string.Empty;
             _pending.Clear();
             _deletes.Clear();
+            _case = null;
         }
 
-        public bool HasChanges => _pending.Count > 0 || _deletes.Count > 0;
+        public bool HasChanges => _pending.Count > 0 || _deletes.Count > 0 || _case != null;
+
+        /// <summary>The game's case style and size ("" automatic), with the staged change.</summary>
+        public (string Style, string Size) CurrentCase =>
+            _case ?? _manager.CaseStyles?.Get(_serial) ?? ("", "");
+
+        public void StageCase(string style, string size)
+        {
+            var stored = _manager.CaseStyles?.Get(_serial) ?? ("", "");
+            _case = stored.Style == (style ?? "") && stored.Size == (size ?? "") ? null : ((string, string)?)(style ?? "", size ?? "");
+        }
 
         /// <summary>The picture the DAT holds now (PVR), or null.</summary>
         public byte[] Stored(ArtSlot slot)
@@ -138,8 +150,11 @@ namespace GDMENUCardManager.Core
                     case ArtSlot.Disc: _manager.DiscUserDat?.DeleteEntryForSerial(_serial); break;
                 }
             }
+            if (_case != null)
+                _manager.CaseStyles?.Set(_serial, _case.Value.Style, _case.Value.Size);
             _pending.Clear();
             _deletes.Clear();
+            _case = null;
         }
 
         /// <summary>The line under the preview: what the slot is and where it goes.</summary>
