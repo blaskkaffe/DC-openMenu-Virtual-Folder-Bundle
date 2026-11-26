@@ -675,6 +675,11 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
                              v3m(wx1 * S, wy * S, wz0 * S), NULL, v3m(0, -1, 0));
                         quad(b, w, v3m(wx0 * S, -wy * S, wz1 * S), v3m(wx0 * S, -wy * S, wz0 * S), v3m(wx1 * S, -wy * S, wz0 * S),
                              v3m(wx1 * S, -wy * S, wz1 * S), NULL, v3m(0, 1, 0));
+                        /* seen from the spine side: the label wraps round the hinge edge inside the clear shell, from the back to the
+                         * front, so the case is not see-through beside the spine label (behind it at x -71.03) */
+                        const float sx = -70.8f, sz0 = -5.0f, sz1 = 5.2f;
+                        quad(b, w, v3m(sx * S, wy * S, sz0 * S), v3m(sx * S, wy * S, sz1 * S), v3m(sx * S, -wy * S, sz1 * S),
+                             v3m(sx * S, -wy * S, sz0 * S), NULL, v3m(-1, 0, 0));
                     }
                 }
             }

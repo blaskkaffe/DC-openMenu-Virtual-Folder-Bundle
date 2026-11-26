@@ -19,6 +19,8 @@ int uin_handle(button_t b);
 /* Once per frame, before drawing: connection, lists, objects. */
 void uin_sync(void);
 void uin_draw(void);
+/* a browser disc (Dreamkey, Planetweb, ...), by its title */
+int uin_is_browser(const char* name);
 /* The mouse over the bottom row selects a button (screen pixels). */
 void uin_hover(float x, float y);
 /* A left click at x, y (on the 640 px picture): the button to act on, which is the key of the popup button under it (A anywhere else). */

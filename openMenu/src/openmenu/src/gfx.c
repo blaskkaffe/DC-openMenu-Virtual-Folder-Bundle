@@ -1146,7 +1146,7 @@ hinge_texture(int dark) {
     const float* ink = inks[dark];
     const float* sw = swirls[dark];
     const float ppm_x = (float)W / 14.0f, ppm_y = (float)H / 120.0f;
-    const float s = x1 >= x0 ? 7.0f / (float)(y1 - y0 + 1) : 1.0f; /* mm per logo pixel: the logo is 7 mm across */
+    const float s = x1 >= x0 ? (dark ? 10.0f : 7.0f) / (float)(y1 - y0 + 1) : 1.0f; /* mm per logo pixel: the logo is 7 mm across (10 on the black label, as the real one) */
     const float L = x1 >= x0 ? (float)(x1 - x0 + 1) * s : 0.0f;
     const float sg = 5.0f / 18.0f, Ls = sega ? (float)tw * sg : 0.0f, gap = sega ? 2.0f : 0.0f; /* SEGA: 5 mm capitals */
     const float a0 = 60.0f - (Ls + gap + L) / 2.0f, b0 = a0 + Ls + gap; /* where SEGA and the logo start, mm from the bottom */
@@ -1164,9 +1164,9 @@ hinge_texture(int dark) {
                     if (tx >= 0 && tx < tw && ty >= 0 && ty < GFX_LINE_H) {
                         a = (float)sega[ty * tw + tx] / 255.0f;
                     }
-                } else if (x1 >= x0 && (dark ? along >= 2.0f : (along >= b0 && along < b0 + L))) {
-                    /* white: one logo in the middle; dark: the logo repeated along the whole label, 8 mm apart */
-                    const float kk = dark ? fmodf(along - 2.0f, L + 8.0f) : along - b0;
+                } else if (x1 >= x0 && (dark ? along >= 3.0f : (along >= b0 && along < b0 + L))) {
+                    /* white: one logo in the middle; dark: the logo repeated along the whole label from 3 mm up, 6 mm apart (swirl first) */
+                    const float kk = dark ? fmodf(along - 3.0f, L + 6.0f) : along - b0;
                     if (kk >= L) {
                         continue;
                     }
