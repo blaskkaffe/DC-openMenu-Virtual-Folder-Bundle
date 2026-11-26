@@ -1675,7 +1675,7 @@ ss_rnd(float span, float base) {
 
 static int
 ss_delay(void) {
-    return video_refresh_hz() <= 50 ? 30000 : 36000;
+    return 300; /* TEST ONLY */
 }
 
 static void
