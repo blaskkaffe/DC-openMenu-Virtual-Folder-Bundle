@@ -28,12 +28,13 @@ static const bench_step steps[] = {
     {"games_scroll", 0, -1, 0, 300, "0:Dx40/6"},
     {"games_scroll_fast", 0, -1, 0, 240, "0:Ux100/2"},
     {"games_page", 0, -1, 0, 320, "0:Px6/25 160:Qx6/25"},
-    {"viewer", 0, -1, 0, 320, "0:Y 30:Rx8/12 140:Y 190:Y 240:Lx4/10"},
+    {"viewer", 0, -1, 0, 400, "0:Y 30:Rx8/12 140:Y 190:Y 240:Lx4/10 300:Ux5/6 340:Dx5/6"}, /* Up / Down zoom */
     {"viewer_close", 0, -1, 0, 60, "0:B"},
     {"options_popup", 0, -1, 0, 120, "0:X 20:Dx3/15 90:B"},
     {"games_leave", 0, -1, 0, 120, "0:B 40:B"},
     {"settings", 1, 3, 0, 320, "0:A 40:Dx20/10 270:B"}, /* B saves the settings: the VMU write is part of it */
     {"file", 1, 1, 0, 400, "0:A 240:B 300:B"},
+    {"file_card", 1, 1, 0, 460, "0:A 150:A 270:B 330:B 400:B"}, /* the card grid, a card's files, back, out */
     {"internet", 1, 2, 0, 260, "0:A 200:B"}, /* Music and the CD player when the online features are off */
     {"main_end", 1, 0, 0, 180, ""},
 };
@@ -51,6 +52,7 @@ typedef struct step_result {
         int frame;
         bench_frame f;
     } drop[MAX_DROPS];
+    bench_frame trace[MAX_FRAMES]; /* every frame, for the trace lines (bench_set_trace) */
     char screen[24];
     bench_mem mem0, mem1;
     int have_mem0;
@@ -66,6 +68,12 @@ static int run_drops, total_drops;
 static unsigned run_worst, total_worst;
 static const char* run_worst_step;
 static char status[64];
+static int trace_on;
+
+void
+bench_set_trace(int on) {
+    trace_on = on;
+}
 
 static void say(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
@@ -166,6 +174,13 @@ report_step(void) {
         say("OM bench drop %d.%d f=%d %s ms logic=%s build=%s wait=%s art=%u text=%u", run + 1, step + 1, r->drop[i].frame,
             ms(df->period_us, a), ms(df->logic_us, b), ms(df->build_us, c), ms(df->wait_us, d), df->art_loads,
             df->text_uploads);
+    }
+    if (trace_on) { /* frame by frame: f=frame period logic build wait gpu vtx hdr tris art text, times in microseconds */
+        for (int i = 0; i < r->frames && i < MAX_FRAMES; i++) {
+            const bench_frame* t = &r->trace[i];
+            say("OM bench t %d.%d %d %u %u %u %u %u %u %u %u %u %u", run + 1, step + 1, i + 1, t->period_us, t->logic_us, t->build_us,
+                t->wait_us, t->gpu_us, t->vertices, t->headers, t->tris, t->art_loads, t->text_uploads);
+        }
     }
     run_drops += r->drops;
     total_drops += r->drops;
@@ -291,6 +306,9 @@ bench_frame_done(const bench_frame* f, const char* screen, const bench_mem* mem)
         r->periods[r->frames] = f->period_us;
     }
     if (phase_frame > 0) { /* the first frame's period still holds the settling frame before it */
+        if (r->frames < MAX_FRAMES) {
+            r->trace[r->frames] = *f;
+        }
         r->frames++;
         r->sum_period += f->period_us;
         r->sum_busy += f->period_us > f->wait_us ? f->period_us - f->wait_us : 0;

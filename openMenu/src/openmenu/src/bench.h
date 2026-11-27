@@ -42,6 +42,9 @@ typedef void (*bench_out_fn)(const char* line);
 /* Starts the script `runs` times. `refresh_hz` (50 or 60) sets what a dropped frame is (longer than 1.5 refreshes). */
 void bench_start(int runs, unsigned refresh_hz, const char* info, bench_out_fn out);
 int bench_active(void);
+/* Every frame's numbers as "OM bench t" lines after each step too (the frame by frame trace; long on a real serial line). */
+void bench_set_trace(int on);
+
 /* Stops it now (START pressed): what was measured so far is reported. */
 void bench_stop(const char* why);
 
