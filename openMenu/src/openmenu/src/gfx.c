@@ -780,22 +780,6 @@ upload_argb4444_impl(const unsigned short* px, int w, int h, rom_tex* g) {
     g->valid = 1;
 }
 
-/* The same for a picture already in a buffer from memalign(32, ...) whose size (w * h * 2) is a multiple of 32: no copy. Frees it. */
-static void
-upload_argb4444_staged(unsigned short* staging, int w, int h, rom_tex* g) {
-    const size_t size = (size_t)w * (size_t)h * 2u;
-    pvr_ptr_t ptr = (size & 31u) == 0 ? pvr_mem_malloc(size) : NULL;
-    if (ptr) {
-        pvr_txr_load(staging, ptr, size);
-        g->ptr = ptr;
-        g->w = w;
-        g->h = h;
-        g->fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
-        g->valid = 1;
-    }
-    free(staging);
-}
-
 static void
 upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     (void)0;
@@ -1475,19 +1459,19 @@ spine_ra(int kind) {
 
 /* rgb into px, the box x0..x1, y0..y1 (exclusive ends) */
 static void
-spine_pack(const uint8_t* rgb, int kind, unsigned short* px, int x0, int y0, int x1, int y1) {
+spine_pack(const uint8_t* rgb, int kind, unsigned short* px, int ry0, int x0, int y0, int x1, int y1) {
     lvl_init();
     const int pal = kind % SPINE_KINDS == SPINE_PAL;
     for (int y = y0; y < y1; y++) {
         for (int x = x0; x < x1; x++) {
-            const int i = y * SPINE_W + x;
+            const int i = (y - ry0) * SPINE_W + x; /* rgb and px start at row ry0 */
             const uint8_t* l = pal ? lvl_dither[bayer4[y & 3][x & 3]] : lvl_round;
             px[i] = (unsigned short)(0xF000u | (unsigned)l[rgb[i * 3]] << 8 | (unsigned)l[rgb[i * 3 + 1]] << 4 | l[rgb[i * 3 + 2]]);
         }
     }
 }
 
-static void spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, float best, const uint8_t* ink, int box[4]);
+static void spine_text(uint8_t* rgb, int ry0, int kind, const char* str, float avail, float mid, float best, const uint8_t* ink, int box[4]);
 
 /* The shared part of a kind's spine; NULL when it cannot be made. */
 static const uint8_t*
@@ -1587,14 +1571,14 @@ spine_base_of_impl(int kind) {
     free(logo);
     if (kind % SPINE_KINDS == SPINE_USW) { /* "Sega" before the swirl, as on the shelf */
         int box[4] = {W, H, 0, 0};
-        spine_text(rgb, kind, "Sega", 30.0f, (float)H - 44.0f, 0.62f, word, box);
+        spine_text(rgb, 0, kind, "Sega", 30.0f, (float)H - 44.0f, 0.62f, word, box);
     }
-    unsigned short* px = malloc(sizeof(unsigned short) * W * H);
+    unsigned short* px = memalign(32, sizeof(unsigned short) * W * H); /* each game's spine is uploaded from it (pvr_txr_load) */
     if (!px) {
         free(rgb);
         return NULL;
     }
-    spine_pack(rgb, kind, px, 0, 0, W, H);
+    spine_pack(rgb, kind, px, 0, 0, 0, W, H);
     upload_argb4444(px, W, H, &spine_plain[kind]);
     spine_base[kind] = rgb;
     spine_base_px[kind] = px;
@@ -1618,13 +1602,13 @@ spine_plain_texture(int kind) {
 }
 
 /* A string over the picture, reading upwards: its middle at picture row `mid`, in at most `avail` rows, glyphs at best `best`
- * picture pixels per font pixel, centred across. Only the rows and columns the letters can cover are visited. */
+ * picture pixels per font pixel, centred across. Only the rows and columns the letters can cover are visited, and added to `box`.
+ * rgb holds the picture's rows from ry0 on; with rgb NULL only the box is worked out. */
 static void
-spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, float best, const uint8_t* ink, int box[4]) {
+spine_text(uint8_t* rgb, int ry0, int kind, const char* str, float avail, float mid, float best, const uint8_t* ink, int box[4]) {
     enum { W = SPINE_W, H = SPINE_H };
-    int tw = 0;
-    uint8_t* cov = str[0] ? text_coverage(str, &tw) : NULL;
-    if (!cov) {
+    int tw = str[0] ? btext_width(str) + 4 : 0; /* text_coverage's width */
+    if (tw < 8 || tw > 1024) {
         return;
     }
     const float ra = spine_ra(kind);
@@ -1644,6 +1628,10 @@ spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, floa
     if (xa < xb && ya < yb) { /* what has to be packed again */
         box[0] = xa < box[0] ? xa : box[0], box[1] = ya < box[1] ? ya : box[1];
         box[2] = xb > box[2] ? xb : box[2], box[3] = yb > box[3] ? yb : box[3];
+    }
+    uint8_t* cov = rgb ? text_coverage(str, &tw) : NULL;
+    if (!cov) {
+        return;
     }
     const float isl = 1.0f / sl, ist = 1.0f / st;
     /* text y runs to the right: per column, the coverage rows of its two samples (offsets into cov; -1: off the glyphs) */
@@ -1672,7 +1660,7 @@ spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, floa
                 }
             }
             if (n) {
-                uint8_t* o = &rgb[(y * W + x) * 3];
+                uint8_t* o = &rgb[((y - ry0) * W + x) * 3];
                 for (int k = 0; k < 3; k++) {
                     o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * n) / 4); /* as (d * n * 255) / 1020 */
                 }
@@ -1714,28 +1702,44 @@ spine_texture_impl(int kind) {
     if (!victim) {
         return spine_plain_texture(kind); /* all in use on the screen: not now */
     }
-    uint8_t* rgb = malloc((size_t)W * H * 3);
-    unsigned short* px = rgb ? memalign(32, sizeof(unsigned short) * W * H) : NULL; /* uploaded as it is */
-    if (!px) {
+    /* Only the rows the title and the product code cover are made: the rest is the base as it is, uploaded straight from its
+     * packed copy, and these rows over it. */
+    const uint8_t* ink_t = spine_col[kind % SPINE_KINDS][2];
+    const uint8_t* ink_c = spine_col[kind % SPINE_KINDS][6];
+    int box[4] = {W, H, 0, 0};
+    spine_text(NULL, 0, kind, spine_title, 296.0f, 212.0f, 0.95f, ink_t, box);
+    spine_text(NULL, 0, kind, spine_code, 84.0f, 52.0f, 0.62f, ink_c, box);
+    const int r0 = box[1] < box[3] ? box[1] : 0, r1 = box[1] < box[3] ? box[3] : 0, rows = r1 - r0;
+    uint8_t* rgb = rows ? malloc((size_t)W * rows * 3) : NULL;
+    unsigned short* px = rows ? memalign(32, sizeof(unsigned short) * W * rows) : NULL;
+    pvr_ptr_t ptr = (!rows || (rgb && px)) ? pvr_mem_malloc(sizeof(unsigned short) * W * H) : NULL;
+    if (!ptr) {
         free(rgb);
+        free(px);
         return spine_plain_texture(kind);
     }
     spine_made_frame = frame_no;
-    memcpy(rgb, base, (size_t)W * H * 3);
-    memcpy(px, spine_base_px[kind], sizeof(unsigned short) * W * H);
-    int box[4] = {W, H, 0, 0};
-    spine_text(rgb, kind, spine_title, 296.0f, 212.0f, 0.95f, spine_col[kind % SPINE_KINDS][2], box);
-    spine_text(rgb, kind, spine_code, 84.0f, 52.0f, 0.62f, spine_col[kind % SPINE_KINDS][6], box);
-    spine_pack(rgb, kind, px, box[0], box[1], box[2], box[3]);
-    free(rgb);
+    pvr_txr_load(spine_base_px[kind], ptr, sizeof(unsigned short) * W * H);
+    if (rows) {
+        memcpy(rgb, base + (size_t)r0 * W * 3, (size_t)W * rows * 3);
+        memcpy(px, spine_base_px[kind] + r0 * W, sizeof(unsigned short) * W * rows);
+        int b2[4] = {W, H, 0, 0};
+        spine_text(rgb, r0, kind, spine_title, 296.0f, 212.0f, 0.95f, ink_t, b2);
+        spine_text(rgb, r0, kind, spine_code, 84.0f, 52.0f, 0.62f, ink_c, b2);
+        spine_pack(rgb, kind, px, r0, box[0], r0, box[2], r1);
+        pvr_txr_load(px, (pvr_ptr_t)((uint8_t*)ptr + (size_t)r0 * W * 2), sizeof(unsigned short) * W * rows); /* a row is 128 bytes */
+        free(rgb);
+        free(px);
+    }
     if (victim->tex.valid) {
         pvr_mem_free(victim->tex.ptr);
     }
     memset(victim, 0, sizeof(*victim));
-    upload_argb4444_staged(px, W, H, &victim->tex);
-    if (!victim->tex.valid) {
-        return spine_plain_texture(kind);
-    }
+    victim->tex.ptr = ptr;
+    victim->tex.w = W;
+    victim->tex.h = H;
+    victim->tex.fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+    victim->tex.valid = 1;
     strcpy(victim->key, key);
     victim->used = frame_no;
     return &victim->tex;
