@@ -1086,6 +1086,18 @@ fb_get(int region, int key, int* pw, int* ph) {
     return fb_made[region][key] ? fb_id[region][key] : -1;
 }
 
+static void
+fb_free_all(void) {
+    for (int r = 0; r < FB_REGIONS; r++) {
+        for (int k = 0; k < FB_COUNT; k++) {
+            if (fb_made[r][k]) {
+                gfx_dyn_free(fb_id[r][k]);
+                fb_made[r][k] = 0;
+            }
+        }
+    }
+}
+
 /* The logos' keys of what the game supports, in the order of the case's back; the region's style in *region. */
 static int
 feature_keys(const gd_item* cur, const struct db_item* meta, int* keys, int* region_out) {
