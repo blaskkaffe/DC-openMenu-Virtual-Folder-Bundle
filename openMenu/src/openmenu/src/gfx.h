@@ -101,6 +101,10 @@ void gfx_art_box(const char* product, float x, float y, float w, float h, float 
 void gfx_model_bind_front(const char* product);
 /* The title and product code of the game the CD case shows, for its spine label. */
 void gfx_model_bind_title(const char* title, const char* product);
+/* While the game list rests on a game: makes, one step per call, what the information screen (Y) needs for its full case (the
+ * spine label of the case kind and of the game, the BACK.DAT and SPINE.DAT pictures), so opening Y draws without making
+ * anything. `model` is the case (full or list). 1 once all is there. */
+int gfx_case_prepare(int model, const char* product, const char* title);
 
 /* Start loading a game picture before it is needed (box = 1: box art, 0: disc icon), so it is there when the
  * row or case shows it. Returns 1 once the picture is in video memory or known to be missing, 0 while it loads. */
