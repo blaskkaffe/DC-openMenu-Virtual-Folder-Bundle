@@ -1165,7 +1165,10 @@ test_models(const bios_rom* rom) {
         }
         CHECK(total <= 330); /* budget: about what the main screen icons use (234 to 486 triangles) */
         if (bmodel_case_single(id) == BMODEL_CASE_WHITE || bmodel_case_single(id) == BMODEL_CASE_PAL || bmodel_case_single(id) == BMODEL_CASE_DARK || bmodel_case_single(id) == BMODEL_CASE_CLEAR_WHITE || bmodel_case_single(id) == BMODEL_CASE_CLEAR_BLACK) {
-            CHECK(front_tris == 2 && back_tris == 2); /* one picture slot on the front, one on the back */
+            CHECK(front_tris == 2 && back_tris == (bmodel_case_is_list(id) ? 0 : 2)); /* one picture slot on the front, one on the back (not the list's) */
+            if (bmodel_case_is_list(id)) {
+                CHECK(total <= 24); /* the list's cases: a few boxes */
+            }
         } else {
             CHECK(front_tris == 0 && back_tris == 0);
         }
@@ -1226,7 +1229,7 @@ test_case(const bios_rom* rom) {
     tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
     bscene_sink sink = {&t, tally_tri, tally_text, NULL};
     bcase_draw(&c, &sc, 530.0f, 140.0f, 150.0f, NULL, NULL, &sink);
-    CHECK(t.tris > 20 && t.minx > 380.0f && t.maxx < 640.0f && t.miny > 20.0f && t.maxy < 260.0f);
+    CHECK(t.tris > 12 && /* the list case and its copy */ t.minx > 380.0f && t.maxx < 640.0f && t.miny > 20.0f && t.maxy < 260.0f);
     bscene_free(&sc);
 }
 

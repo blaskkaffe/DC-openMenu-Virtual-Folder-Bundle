@@ -36,19 +36,57 @@ enum {
     BMODEL_CASE_DARK_DOUBLE,
     BMODEL_CASE_CLEAR_WHITE_DOUBLE,
     BMODEL_CASE_CLEAR_BLACK_DOUBLE,
+    /* the same ten cases for the game list's card (bmodel_case_list): a few boxes, only the faces the card's tilt can show (no back),
+     * one picture (the front); the spine is the colour of the kind's spine label, the hinge side and the edges flat colours. The
+     * game list makes no spine, back or inner label picture with them: those come with the full case in the information screen. */
+    BMODEL_LCASE_WHITE,
+    BMODEL_LCASE_PAL,
+    BMODEL_LCASE_DARK,
+    BMODEL_LCASE_CLEAR_WHITE,
+    BMODEL_LCASE_CLEAR_BLACK,
+    BMODEL_LCASE_WHITE_DOUBLE,
+    BMODEL_LCASE_PAL_DOUBLE,
+    BMODEL_LCASE_DARK_DOUBLE,
+    BMODEL_LCASE_CLEAR_WHITE_DOUBLE,
+    BMODEL_LCASE_CLEAR_BLACK_DOUBLE,
     BMODEL_END
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)
 
-/* a double case's single one (any other model as it is) */
+/* a game list case's full one (any other model as it is) */
+static inline int
+bmodel_case_full(int id) {
+    static const int full[10] = {BMODEL_CASE_WHITE, BMODEL_CASE_PAL, BMODEL_CASE_DARK, BMODEL_CASE_CLEAR_WHITE, BMODEL_CASE_CLEAR_BLACK,
+                                 BMODEL_CASE_WHITE_DOUBLE, BMODEL_CASE_PAL_DOUBLE, BMODEL_CASE_DARK_DOUBLE, BMODEL_CASE_CLEAR_WHITE_DOUBLE,
+                                 BMODEL_CASE_CLEAR_BLACK_DOUBLE};
+    return id >= BMODEL_LCASE_WHITE && id <= BMODEL_LCASE_CLEAR_BLACK_DOUBLE ? full[id - BMODEL_LCASE_WHITE] : id;
+}
+
+/* a case's game list one (any other model as it is) */
+static inline int
+bmodel_case_list(int id) {
+    for (int i = 0; i < 10; i++) {
+        if (bmodel_case_full(BMODEL_LCASE_WHITE + i) == id) {
+            return BMODEL_LCASE_WHITE + i;
+        }
+    }
+    return id;
+}
+
+static inline int
+bmodel_case_is_list(int id) {
+    return id >= BMODEL_LCASE_WHITE && id <= BMODEL_LCASE_CLEAR_BLACK_DOUBLE;
+}
+
+/* a double case's single one, for a list case the full single one (any other model as it is) */
 static inline int
 bmodel_case_single(int id) {
     switch (id) {
-        case BMODEL_CASE_WHITE_DOUBLE: return BMODEL_CASE_WHITE;
-        case BMODEL_CASE_PAL_DOUBLE: return BMODEL_CASE_PAL;
-        case BMODEL_CASE_DARK_DOUBLE: return BMODEL_CASE_DARK;
-        case BMODEL_CASE_CLEAR_WHITE_DOUBLE: return BMODEL_CASE_CLEAR_WHITE;
-        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: return BMODEL_CASE_CLEAR_BLACK;
+        case BMODEL_CASE_WHITE_DOUBLE: case BMODEL_LCASE_WHITE: case BMODEL_LCASE_WHITE_DOUBLE: return BMODEL_CASE_WHITE;
+        case BMODEL_CASE_PAL_DOUBLE: case BMODEL_LCASE_PAL: case BMODEL_LCASE_PAL_DOUBLE: return BMODEL_CASE_PAL;
+        case BMODEL_CASE_DARK_DOUBLE: case BMODEL_LCASE_DARK: case BMODEL_LCASE_DARK_DOUBLE: return BMODEL_CASE_DARK;
+        case BMODEL_CASE_CLEAR_WHITE_DOUBLE: case BMODEL_LCASE_CLEAR_WHITE: case BMODEL_LCASE_CLEAR_WHITE_DOUBLE: return BMODEL_CASE_CLEAR_WHITE;
+        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: case BMODEL_LCASE_CLEAR_BLACK: case BMODEL_LCASE_CLEAR_BLACK_DOUBLE: return BMODEL_CASE_CLEAR_BLACK;
         default: return id;
     }
 }
@@ -68,6 +106,7 @@ bmodel_case_double(int id) {
 
 static inline int
 bmodel_case_is_double(int id) {
+    id = bmodel_case_full(id);
     return bmodel_case_single(id) != id;
 }
 

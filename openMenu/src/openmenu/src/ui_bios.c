@@ -290,6 +290,14 @@ static const gd_item* gcase_prev_item;
 static char case_title[64], case_title_old[64];
 static char case_tag[16], case_tag_old[16];
 
+/* a sink that takes nothing (models built at start-up without their pictures) */
+static void
+nothing_tri(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user;
+    (void)v;
+    (void)tex;
+}
+
 static void
 case_bind(void* user, const char* tag) {
     (void)user;
@@ -1057,12 +1065,14 @@ fi_get(int key, int* pw, int* ph) {
     return fi_made[key] ? fi_id[key] : -1;
 }
 
+/* All the small icons, made once at start-up and kept (about 20 pictures of at most 64 x 64): a new game in the list only draws
+ * them (making a game's icons again cost one to three milliseconds each time the cursor moved on) */
 static void
-fi_free_all(void) {
+fi_prewarm(void) {
     for (int k = 0; k < FB_COUNT; k++) {
-        if (fi_made[k]) {
-            gfx_dyn_free(fi_id[k]);
-            fi_made[k] = 0;
+        int pw, ph;
+        if (feature_icons[k].px) {
+            fi_get(k, &pw, &ph);
         }
     }
 }
@@ -1094,11 +1104,6 @@ fi_label(int key) {
  * returns its height (0 when the game has nothing to show). The icons shrink only if even two rows are not enough. */
 static float
 draw_feature_strip(const gd_item* cur, float x, float y, float w, int full) {
-    static const gd_item* last;
-    if (cur != last) {
-        fi_free_all();
-        last = cur;
-    }
     struct db_item* meta = NULL;
     if (!cur || uil_is_folder(cur) || !cur->product[0] || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
         return 0.0f;
@@ -3096,6 +3101,17 @@ ui_bios_run(const bios_rom* rom) {
     gfx_preload_art_index();
     dbglog_boot("art", (unsigned)timer_ms_gettime64());
     gfx_prewarm_case_pictures();
+    fi_prewarm();
+    { /* the cases' models: the game list's with their textures (made above), the information screen's geometry only (their spine,
+       * back and inner label pictures are made when that screen shows them: making every kind's spine now would keep 160 KB each) */
+        static const float still[3] = {0.0f, 0.0f, 0.0f};
+        static const bscene_sink none = {NULL, nothing_tri, NULL, NULL};
+        for (int id = BMODEL_CASE_WHITE; id < BMODEL_END; id++) {
+            if (id != BMODEL_PODIUM) {
+                bscene_draw_model(&menu.scene, id, 320.0f, 240.0f, 1.0f, still, bmodel_case_is_list(id) ? gfx_warm_sink() : &none);
+            }
+        }
+    }
     dbglog_boot("cases", (unsigned)timer_ms_gettime64());
     clock_extender_tick();
 

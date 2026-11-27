@@ -1,4 +1,5 @@
 #include "bios_case.h"
+#include "bios_models.h"
 
 #include <math.h>
 #include <string.h>
@@ -99,8 +100,9 @@ draw_item(const bcase* c, const bcase_item* it, bscene* s, float cx, float cy, f
     }
     float scale = size_px * (-BSCENE_PANEL_Z / 4000.0f) / BMODEL_CASE_HEIGHT;
     /* like the menu's icons: a second, a little larger and semi-transparent copy behind the first */
-    bscene_draw_model_alpha(s, it->model, cx, cy + it->y, scale * GHOST_SCALE, rot, GHOST_ALPHA, GHOST_BACK * scale, sink);
-    bscene_draw_model(s, it->model, cx, cy + it->y, scale, rot, sink);
+    const int model = bmodel_case_list(it->model); /* the list's few boxes (the information screen draws the full case) */
+    bscene_draw_model_alpha(s, model, cx, cy + it->y, scale * GHOST_SCALE, rot, GHOST_ALPHA, GHOST_BACK * scale, sink);
+    bscene_draw_model(s, model, cx, cy + it->y, scale, rot, sink);
 }
 
 void
