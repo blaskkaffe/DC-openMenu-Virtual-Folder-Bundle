@@ -3456,10 +3456,10 @@ ui_bios_run(const bios_rom* rom) {
                 snprintf(prev_label, sizeof(prev_label), "%s", log_label());
             }
             if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 11000u) { /* TEST ONLY: a heavy frame, broken down */
-                char hl[200];
-                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
+                char hl[256];
+                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u tex=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
                          log_label(), (unsigned)(draw_t1 - draw_t0) - fs.wait_us, (unsigned)(logic_end - logic_t0), gfx_prof_us[0], gfx_prof_us[1],
-                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], ui_prof_us[0], ui_prof_us[1],
+                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], gfx_prof_us[7], ui_prof_us[0], ui_prof_us[1],
                          ui_prof_us[2], ui_prof_us[3], ui_prof_us[4]);
                 bench_out_test(hl);
             }

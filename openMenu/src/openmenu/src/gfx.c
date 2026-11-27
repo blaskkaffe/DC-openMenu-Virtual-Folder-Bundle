@@ -936,7 +936,9 @@ get_rom_texture(bscene_texref ref) {
     if (memo_ok && memo_ref.kind == ref.kind && memo_ref.a == ref.a && memo_ref.b == ref.b) {
         return memo_tex;
     }
+    uint64_t _pt = timer_us_gettime64(); /* TEST ONLY */
     rom_tex* t = get_rom_texture_uncached(ref);
+    gfx_prof_us[7] += (unsigned)(timer_us_gettime64() - _pt);
     memo_ok = 1;
     memo_ref = ref;
     memo_tex = t;
