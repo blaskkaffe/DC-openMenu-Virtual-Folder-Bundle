@@ -1308,6 +1308,9 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     /* nearer than the panel depth: over the game list's case and rows (they are at that depth or in front of it) */
     bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
                         gfx_sink());
+    /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows, the case) from showing
+     * through the popup's text (over everything 3D, under the highlight and the text) */
+    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 0.6f, 0xE0141820u);
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;
