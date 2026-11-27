@@ -59,6 +59,9 @@
 #include "video.h"
 #include "feature_badges.h"
 
+extern unsigned gfx_prof_us[8];
+static unsigned ui_prof_us[6]; /* TEST ONLY: feature strip, side case, viewer, list, main objects, background */
+#define UPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; ui_prof_us[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET, SCREEN_CTRL } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
@@ -2786,9 +2789,6 @@ handle_datetime(button_t b) {
 /* ---- Performance test (bench.c): scripted keys, every frame measured, results on the serial port -------------------- */
 /* TEST ONLY: the lines kept in RAM (the frame trace packed, 16 bytes a frame) and written to /vmu/a2/BENCH at the end, for the
  * emulator, where the serial console stays off after the start-up probes of the serial pins */
-extern unsigned gfx_prof_us[8];
-static unsigned ui_prof_us[6]; /* TEST ONLY: feature strip, side case, viewer, list, main objects, background */
-#define UPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; ui_prof_us[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
 static char test_text[24000];
 static size_t test_text_n;
 static uint16_t test_trace[6000][8];
