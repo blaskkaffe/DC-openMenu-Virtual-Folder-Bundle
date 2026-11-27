@@ -594,6 +594,7 @@ svmu_step(void) {
     if (!xfer_thd && !xfer_done) {
         xfer_thd = thd_create(0, xfer_main, NULL);
         if (xfer_thd) {
+            thd_set_prio(xfer_thd, PRIO_DEFAULT + 4); /* below the menu: the SD writes keep the CPU busy (an SD card on the serial port is driven by it) */
             return;
         }
         /* no thread: one block per frame here, as before */

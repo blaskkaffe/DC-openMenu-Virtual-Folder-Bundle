@@ -40,7 +40,7 @@
 #define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
-#define MAX_LABELS 16
+#define MAX_LABELS 32 /* the main menu icons (4), the header clock (1), the game list rows (BLIST_MAX_SLOTS 13) and the Settings page rows (BPAGE_SLOTS 5) all keep theirs: 16 left the last two Settings rows blank once the list had been opened (it is, at start-up: bmenu_prewarm_screens) */
 #define LABEL_CHARS 120 /* a label may hold several lines / columns, see sink_text */
 
 /* Settings page text lines (bios_page): left aligned, label then a value column */
@@ -2205,6 +2205,7 @@ gfx_set_label(uint16_t obj_id, const char* text) {
             return;
         }
     }
+    _Static_assert(MAX_LABELS >= 4 + 1 + BLIST_MAX_SLOTS + BPAGE_SLOTS, "every label the screens set at the same time");
     if (num_labels < MAX_LABELS) {
         labels[num_labels].id = obj_id;
         strncpy(labels[num_labels].text, text, LABEL_CHARS);
