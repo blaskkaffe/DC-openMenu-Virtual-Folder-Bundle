@@ -49,7 +49,6 @@
 #include "ui_internet.h"
 #include <backend/gd_list.h>
 
-#include <kos/dbgio.h>
 #include "ui_ctrl.h"
 #include "ui_files.h"
 #include <bios_cdplayer.h>
@@ -59,9 +58,6 @@
 #include "video.h"
 #include "feature_badges.h"
 
-extern unsigned gfx_prof_us[12];
-static unsigned ui_prof_us[6]; /* TEST ONLY: feature strip, side case, viewer, list, main objects, background */
-#define UPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; ui_prof_us[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET, SCREEN_CTRL } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
@@ -818,9 +814,9 @@ draw_side_card(const gd_item* cur) {
     }
     /* the card */
     bscene_draw_plate(&menu.scene, CARD_X, CARD_Y, CARD_W, CARD_H, -357.0f, gfx_sink()); /* the File screen's blue memory card plate */
-    UPROF(1, bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
+    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
                118.0f * (1.0f + (float)BLIST_SIDE_CASE_PCT / 100.0f), case_bind, NULL,
-               near_sink(gfx_sink())));
+               near_sink(gfx_sink()));
     if (cur && !uil_is_folder(cur)) {
         char info[2][24];
         int k = game_info_lines(cur, info);
@@ -832,13 +828,13 @@ draw_side_card(const gd_item* cur) {
     } else if (cur) {
         gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
-    UPROF(0, draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W, 0));
+    draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W, 0);
 }
 
 static void
 draw_games(void) {
     if (viewer_open) {
-        UPROF(2, draw_viewer());
+        draw_viewer();
         return;
     }
     if (glist.side) { /* the list's field: the File screen's card grid frame (BIOS model 15) without its A to D tabs, its two lines around the selected game */
@@ -847,7 +843,7 @@ draw_games(void) {
         blist_selected_row_px(&glist, &rtop, &rh);
         bscene_draw_frame(&menu.scene, lx, ly, lw, lh, rtop, rh, -355.5f, gfx_sink()); /* the rows are at -353.5: the frame stays behind them */
     }
-    UPROF(3, blist_draw(&glist, gfx_sink()));
+    blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {
         gfx_text("No games found.", 260.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
         return;
@@ -1947,7 +1943,7 @@ draw_frame(void) {
         }
         phase_us[1] += timer_us_gettime64() - t1;
         if (debug_iso != 2 && debug_iso != 3) {
-            UPROF(4, bmenu_draw_objects(&menu, ms));
+            bmenu_draw_objects(&menu, ms);
         }
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
@@ -2787,53 +2783,8 @@ handle_datetime(button_t b) {
 }
 
 /* ---- Performance test (bench.c): scripted keys, every frame measured, results on the serial port -------------------- */
-/* TEST ONLY: the lines kept in RAM (the frame trace packed, 16 bytes a frame) and written to /vmu/a2/BENCH at the end, for the
- * emulator, where the serial console stays off after the start-up probes of the serial pins */
-static char test_text[24000];
-static size_t test_text_n;
-static uint16_t test_trace[6000][8];
-static int test_trace_n;
-
-static void
-bench_out_test(const char* line) {
-    const char* l = !strncmp(line, "OM bench ", 9) ? line + 9 : line;
-    unsigned r, st, f, per, lo, bu, wa, gp, vt, hd, tr, ar, tx;
-    if (!strncmp(l, "t ", 2) && sscanf(l + 2, "%u.%u %u %u %u %u %u %u %u %u %u %u %u", &r, &st, &f, &per, &lo, &bu, &wa, &gp, &vt, &hd,
-                                         &tr, &ar, &tx) == 13) {
-        if (test_trace_n < 6000) {
-            uint16_t* t = test_trace[test_trace_n++];
-            t[0] = (uint16_t)(st << 10 | (f & 1023));
-            t[1] = (uint16_t)(per / 10 > 65535 ? 65535 : per / 10); /* tens of microseconds */
-            t[2] = (uint16_t)(lo / 10 > 65535 ? 65535 : lo / 10);
-            t[3] = (uint16_t)(bu / 10 > 65535 ? 65535 : bu / 10);
-            t[4] = (uint16_t)(wa / 10 > 65535 ? 65535 : wa / 10);
-            t[5] = (uint16_t)(vt > 65535 ? 65535 : vt);
-            t[6] = (uint16_t)(tr > 65535 ? 65535 : tr);
-            t[7] = (uint16_t)((ar > 255 ? 255 : ar) << 8 | (tx > 255 ? 255 : tx));
-        }
-        return;
-    }
-    size_t n = strlen(l);
-    if (test_text_n + n + 2 < sizeof(test_text)) {
-        memcpy(test_text + test_text_n, l, n);
-        test_text_n += n;
-        test_text[test_text_n++] = '\n';
-    }
-    if (!strncmp(l, "done", 4)) {
-        file_t fd = fs_open("/vmu/a2/BENCH", O_WRONLY | O_TRUNC);
-        if (fd != FILEHND_INVALID) {
-            uint32_t hdr[2] = {(uint32_t)test_text_n, (uint32_t)test_trace_n};
-            fs_write(fd, hdr, sizeof(hdr));
-            fs_write(fd, test_text, test_text_n);
-            fs_write(fd, test_trace, (size_t)test_trace_n * 16u);
-            fs_close(fd);
-        }
-    }
-}
-
 static void
 bench_out(const char* line) {
-    bench_out_test(line); /* TEST ONLY */
     serial_log_block("bench", line + (strncmp(line, "OM bench ", 9) ? 0 : 9));
 }
 
@@ -2850,8 +2801,7 @@ bench_begin(void) {
     bscene_cache_enable(1);
     snprintf(info, sizeof(info), "%s %s games=%d online=%d bios=%s", console_is_pal() ? "PAL" : "NTSC",
              sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3", list_all_count(), (int)sf_dcnow[0], g_rom ? g_rom->revision : "?");
-    bench_set_trace(1); /* TEST ONLY */
-    bench_start(1, (unsigned)video_refresh_hz(), info, bench_out); /* TEST ONLY: one run (2) */
+    bench_start(2, (unsigned)video_refresh_hz(), info, bench_out);
 }
 
 static void
@@ -3375,17 +3325,7 @@ ui_bios_run(const bios_rom* rom) {
 
         if (!online_started && fade_step >= FADE_STEPS) {
             online_started = 1;
-            /* TEST ONLY: no online start (it takes the serial port, where the performance test writes) */
-        }
-        { /* TEST ONLY: the performance test with the frame trace, once, 3 seconds after the menu is up */
-            static int test_bench;
-            if (0 && !test_bench && fade_step >= FADE_STEPS && frame_no > 300 && !bench_active()) { /* started by hand instead */
-                test_bench = 1;
-                bench_set_trace(1);
-                show_debug = 0;
-                bscene_cache_enable(1);
-                bench_start(1, (unsigned)video_refresh_hz(), "TEST auto", bench_out_test);
-            }
+            online_boot();
         }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
@@ -3431,8 +3371,6 @@ ui_bios_run(const bios_rom* rom) {
             frames_this_second = 0;
             fps_since = now;
         }
-        memset(gfx_prof_us, 0, sizeof(gfx_prof_us));
-        memset(ui_prof_us, 0, sizeof(ui_prof_us));
         uint64_t draw_t0 = timer_us_gettime64();
         draw_frame(); /* pvr_wait_ready() inside paces this to the display */
         uint64_t draw_t1 = timer_us_gettime64();
@@ -3456,14 +3394,6 @@ ui_bios_run(const bios_rom* rom) {
                 prev_frame.art_us = fs.art_us;
                 prev_frame.text_uploads = fs.text_uploads;
                 snprintf(prev_label, sizeof(prev_label), "%s", log_label());
-            }
-            if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 11000u) { /* TEST ONLY: a heavy frame, broken down */
-                char hl[256];
-                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u tex=%u artget=%u discface=%u romup=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
-                         log_label(), (unsigned)(draw_t1 - draw_t0) - fs.wait_us, (unsigned)(logic_end - logic_t0), gfx_prof_us[0], gfx_prof_us[1],
-                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], gfx_prof_us[7], gfx_prof_us[8], gfx_prof_us[9], gfx_prof_us[10], ui_prof_us[0], ui_prof_us[1],
-                         ui_prof_us[2], ui_prof_us[3], ui_prof_us[4]);
-                bench_out_test(hl);
             }
             if (bench_active()) {
                 unsigned draw_us = (unsigned)(draw_t1 - draw_t0);

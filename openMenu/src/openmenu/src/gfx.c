@@ -39,8 +39,6 @@
 #define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
-/* TEST ONLY: where the time of a frame's drawing goes, for the emulator measurement */
-unsigned gfx_prof_us[12];
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
 #define MAX_LABELS 32 /* the main menu icons (4), the header clock (1), the game list rows (BLIST_MAX_SLOTS 13) and the Settings page rows (BPAGE_SLOTS 5) all keep theirs: 16 left the last two Settings rows blank once the list had been opened (it is, at start-up: bmenu_prewarm_screens) */
@@ -557,7 +555,7 @@ gfx_art_front_band(const char* product) {
 
 /* Main thread, once per frame: upload the pictures the loader has finished. */
 static void
-art_poll_impl(void) {
+art_poll(void) {
     int uploads = 0;
     for (int i = 0; i < ART_JOBS; i++) {
         art_job* j = &art_jobs[i];
@@ -595,14 +593,6 @@ art_poll_impl(void) {
     }
 }
 
-static void
-art_poll(void) {
-    (void)0;
-    uint64_t _p0 = timer_us_gettime64();
-    art_poll_impl();
-    gfx_prof_us[6] += (unsigned)(timer_us_gettime64() - _p0);
-    
-}
 
 static art_entry*
 art_get(const char* product, int box) {
@@ -749,9 +739,6 @@ static bscene_texref memo_ref;
 static rom_tex* memo_tex;
 
 static rom_tex* get_rom_texture_uncached(bscene_texref ref);
-/* TEST ONLY: the time art_get takes */
-static art_entry* art_get(const char* product, int box);
-static inline art_entry* ART_GET_T(const char* p, int b) { uint64_t q = timer_us_gettime64(); art_entry* e = art_get(p, b); gfx_prof_us[8] += (unsigned)(timer_us_gettime64() - q); return e; }
 
 /* ---- The header logo and the online mode ---- */
 
@@ -761,7 +748,7 @@ static inline art_entry* ART_GET_T(const char* p, int b) { uint64_t q = timer_us
 #define LOGO_D_END 46 /* the wordmark's D ends here; "CNET" starts (the D is kept from the BIOS logo) */
 
 static void
-upload_argb4444_impl(const unsigned short* px, int w, int h, rom_tex* g) {
+upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     size_t size = ((size_t)w * (size_t)h * 2u + 31u) & ~(size_t)31u;
     void* staging = memalign(32, size);
     pvr_ptr_t ptr = staging ? pvr_mem_malloc(size) : NULL;
@@ -780,14 +767,6 @@ upload_argb4444_impl(const unsigned short* px, int w, int h, rom_tex* g) {
     g->valid = 1;
 }
 
-static void
-upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
-    (void)0;
-    uint64_t _p0 = timer_us_gettime64();
-    upload_argb4444_impl(px, w, h, g);
-    gfx_prof_us[5] += (unsigned)(timer_us_gettime64() - _p0);
-    
-}
 
 /* The online logos' pictures: "Now!" orange / blue and "CNET" for the light bar, and flat copies for the dark bar (dark mode), made by
  * gfx_load_logo_texts from the masks of logo_letters.inc; and the ROM logo with a light wordmark. */
@@ -923,9 +902,7 @@ get_rom_texture(bscene_texref ref) {
     if (memo_ok && memo_ref.kind == ref.kind && memo_ref.a == ref.a && memo_ref.b == ref.b) {
         return memo_tex;
     }
-    uint64_t _pt = timer_us_gettime64(); /* TEST ONLY */
     rom_tex* t = get_rom_texture_uncached(ref);
-    gfx_prof_us[7] += (unsigned)(timer_us_gettime64() - _pt);
     memo_ok = 1;
     memo_ref = ref;
     memo_tex = t;
@@ -1024,7 +1001,7 @@ div255(int x) {
 static rom_tex generic_tex[2][2]; /* [pal][back] */
 static int generic_tried[2][2];
 static rom_tex*
-generic_cover_impl(int pal, int back) {
+generic_cover(int pal, int back) {
     enum { N = 128 };
     rom_tex* out = &generic_tex[pal ? 1 : 0][back ? 1 : 0];
     if (out->valid || generic_tried[pal ? 1 : 0][back ? 1 : 0] || !g_rom) {
@@ -1158,14 +1135,6 @@ generic_cover_impl(int pal, int back) {
     return out->valid ? out : NULL;
 }
 
-static rom_tex*
-generic_cover(int pal, int back) {
-    rom_tex* _r;
-    uint64_t _p0 = timer_us_gettime64();
-    _r = generic_cover_impl(pal, back);
-    gfx_prof_us[1] += (unsigned)(timer_us_gettime64() - _p0);
-    return _r;
-}
 
 /* The PAL case's hinge bar (BMODEL_TEX_PILL): 8 x 123 mm, muted blue; the lighter rounded pill (full width, 51 mm tall, corners of 3.2 mm) in
  * the middle with the BIOS logo's "Dreamcast" wordmark in dark lettering on it (the PAL cases have the text, not the swirl). 32 x 512. */
@@ -1315,7 +1284,7 @@ text_coverage(const char* str, int* tw) {
  * reading upwards; dark cases: a black label with the logo repeated in dark grey along it. 64 x 512. */
 static rom_tex hinge_tex[2];
 static rom_tex*
-hinge_texture_impl(int dark) {
+hinge_texture(int dark) {
     enum { W = 64, H = 512 };
     static int tried[2];
     dark = dark ? 1 : 0;
@@ -1413,14 +1382,6 @@ hinge_texture_impl(int dark) {
     return hinge_tex[dark].valid ? &hinge_tex[dark] : NULL;
 }
 
-static rom_tex*
-hinge_texture(int dark) {
-    rom_tex* _r;
-    uint64_t _p0 = timer_us_gettime64();
-    _r = hinge_texture_impl(dark);
-    gfx_prof_us[0] += (unsigned)(timer_us_gettime64() - _p0);
-    return _r;
-}
 
 /* The spines are made in two steps. The part every game of a kind shares (background, patch, the logo) is drawn once per kind into
  * spine_base and also kept as a picture of its own (spine_plain): what a case shows while its own spine is not made yet. The title
@@ -1475,7 +1436,7 @@ static void spine_text(uint8_t* rgb, int ry0, int kind, const char* str, float a
 
 /* The shared part of a kind's spine; NULL when it cannot be made. */
 static const uint8_t*
-spine_base_of_impl(int kind) {
+spine_base_of(int kind) {
     if (spine_base[kind] || spine_base_tried[kind] || !g_rom) {
         return spine_base[kind];
     }
@@ -1585,14 +1546,6 @@ spine_base_of_impl(int kind) {
     return rgb;
 }
 
-static const uint8_t*
-spine_base_of(int kind) {
-    const uint8_t* _r;
-    uint64_t _p0 = timer_us_gettime64();
-    _r = spine_base_of_impl(kind);
-    gfx_prof_us[2] += (unsigned)(timer_us_gettime64() - _p0);
-    return _r;
-}
 
 /* The kind's spine without title: shown until the game's own is made. */
 static rom_tex*
@@ -1671,7 +1624,7 @@ spine_text(uint8_t* rgb, int ry0, int kind, const char* str, float avail, float 
 }
 
 static rom_tex*
-spine_texture_impl(int kind) {
+spine_texture(int kind) {
     enum { W = SPINE_W, H = SPINE_H };
     char key[sizeof(spine_slots[0].key)];
     snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
@@ -1745,14 +1698,6 @@ spine_texture_impl(int kind) {
     return &victim->tex;
 }
 
-static rom_tex*
-spine_texture(int kind) {
-    rom_tex* _r;
-    uint64_t _p0 = timer_us_gettime64();
-    _r = spine_texture_impl(kind);
-    gfx_prof_us[3] += (unsigned)(timer_us_gettime64() - _p0);
-    return _r;
-}
 
 static rom_tex*
 get_rom_texture_uncached(bscene_texref ref) {
@@ -1767,7 +1712,7 @@ get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
         const int ca = bmodel_case_single(ref.a); /* a double case: the single one's pictures */
         if (ref.b == BMODEL_TEX_FRONT) {
-            art_entry* e = ART_GET_T(model_front_product, 1);
+            art_entry* e = art_get(model_front_product, 1);
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1777,7 +1722,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_BACK) {
-            art_entry* e = ART_GET_T(model_front_product, 2); /* BACK.DAT */
+            art_entry* e = art_get(model_front_product, 2); /* BACK.DAT */
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1793,7 +1738,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_SPINE) {
-            art_entry* e = ART_GET_T(model_front_product, 3); /* SPINE.DAT */
+            art_entry* e = art_get(model_front_product, 3); /* SPINE.DAT */
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1822,11 +1767,11 @@ get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BLIST_TEXLIST_BASE) {
         int slot = ref.a - BLIST_TEXLIST_BASE;
         if (ref.b == 0 && slot < BLIST_MAX_SLOTS) {
-            art_entry* e = ART_GET_T(row_product[slot], 0);
+            art_entry* e = art_get(row_product[slot], 0);
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            uint64_t _q = timer_us_gettime64(); rom_tex* face = disc_face(row_pal[slot]); gfx_prof_us[9] += (unsigned)(timer_us_gettime64() - _q); /* no picture: the BIOS disc of the game's region */
+            rom_tex* face = disc_face(row_pal[slot]); /* no picture: the BIOS disc of the game's region */
             if (face) {
                 return face;
             }
@@ -1877,7 +1822,7 @@ get_rom_texture_uncached(bscene_texref ref) {
         return NULL;
     }
 
-    { uint64_t _q = timer_us_gettime64(); upload_texture(&t, g); gfx_prof_us[10] += (unsigned)(timer_us_gettime64() - _q); }
+    upload_texture(&t, g);
     return g->valid ? g : NULL;
 }
 
@@ -2438,7 +2383,7 @@ pow2_at_least(int v) {
 }
 
 static text_tex*
-get_text_texture_impl(const char* str) {
+get_text_texture(const char* str) {
     text_tex* victim = NULL;
     for (int i = 0; i < MAX_TEXT_ENTRIES; i++) {
         if (text_texes[i].ptr && !strcmp(text_texes[i].str, str)) {
@@ -2492,14 +2437,6 @@ get_text_texture_impl(const char* str) {
     return victim;
 }
 
-static text_tex*
-get_text_texture(const char* str) {
-    text_tex* _r;
-    uint64_t _p0 = timer_us_gettime64();
-    _r = get_text_texture_impl(str);
-    gfx_prof_us[4] += (unsigned)(timer_us_gettime64() - _p0);
-    return _r;
-}
 
 void
 gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale) {
