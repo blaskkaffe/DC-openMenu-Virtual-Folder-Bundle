@@ -444,8 +444,37 @@ uif_handle(button_t b) {
     return 0;
 }
 
+/* The controller the user picked with A in the top row of the card grid (1 + its port), 0 when none since the last call. ui_bios.c opens
+ * that controller's screen (ui_ctrl.c), which asks the adapter on the port's controller unit; nothing is asked while this screen is only open. */
+static int pad_picked;
+/* What an adapter that was opened calls itself (iBlueControlMod looks like an official pad to the console): its pill, while it stays plugged */
+static char pad_adapter[4][12];
+static uint32_t pad_adapter_fn[4];
+
+int
+uif_pad_picked(void) {
+    int p = pad_picked;
+    pad_picked = 0;
+    return p;
+}
+
+void
+uif_set_pad_adapter(int port, const char* name) {
+    maple_device_t* dev = port >= 0 && port < 4 ? maple_enum_dev(port, 0) : NULL;
+    if (dev && dev->valid) {
+        snprintf(pad_adapter[port], sizeof(pad_adapter[port]), "%s", name ? name : "");
+        pad_adapter_fn[port] = dev->info.functions;
+    }
+}
+
 int
 uif_step(void) {
+    if (!left) {
+        int e = bfs_pad_event(&fs);
+        if (e) {
+            pad_picked = e;
+        }
+    }
     if (!left && bfs_update(&fs)) {
         left = 1;
         bsurf_free_all();
@@ -502,12 +531,26 @@ draw_pad_labels(void) {
         maple_device_t* dev = maple_enum_dev(p, 0);
         char product[sizeof(dev->info.product_name) + 1];
         tw[p] = 0.0f;
-        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px[p], &py[p])) {
+        if (!dev || !dev->valid) {
+            bfs_set_pad_name(&fs, p, "");
+            pad_adapter[p][0] = '\0';
             continue;
+        }
+        if (pad_adapter[p][0] && pad_adapter_fn[p] != dev->info.functions) {
+            pad_adapter[p][0] = '\0'; /* another device (or the adapter restarted in another mode) */
         }
         memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
         product[sizeof(dev->info.product_name)] = '\0';
         if (!pad_kind_name(dev->info.functions, product, kind[p])) {
+            /* a standard controller has no pill, unless it is an adapter that was opened here: then its name */
+            if (!pad_adapter[p][0]) {
+                bfs_set_pad_name(&fs, p, "Controller");
+                continue;
+            }
+            snprintf(kind[p], PAD_KIND_MAX, "%s", pad_adapter[p]);
+        }
+        bfs_set_pad_name(&fs, p, kind[p]); /* the plate of the selected controller says what it is */
+        if (!bfs_pad_px(&fs, p, &px[p], &py[p])) {
             continue;
         }
         for (;;) { /* a long name of its own (a controller we do not know) is cut to fit the column */

@@ -128,6 +128,7 @@ typedef struct bfs {
     bfs_host host;
     bfs_card* card; /* BFS_SLOTS cards */
     int ports;      /* bit n: a controller in port n */
+    int pads_ok;    /* bit n: the controller in port n can be selected; -1 (the default): every plugged one */
     int language;   /* 1 English, see btext_message() */
     int date_order; /* 0 year first, 1 month first, 2 day first */
     int pal;
@@ -164,6 +165,9 @@ typedef struct bfs {
     int layer;
     int key;
     int warp;             /* 1 + the cursor position the pointer asked for, 0 none (bfs_point) */
+    char pad_name[4][12]; /* what each controller is, shown on the plate while the cursor is on it (bfs_set_pad_name) */
+    unsigned pad_name_sig[4];
+    int pad_event;        /* 1 + the controller (port) the user picked with A on the card grid, 0 none: bfs_pad_event() */
     int serial_mark;      /* 1 + the slot that carries the Serial VMU's SD card mark, 0 none (bfs_set_serial_slot) */
     /* tables from the ROM */
     const uint8_t* grid_search;  /* 0x8C036FE0 */
@@ -200,6 +204,13 @@ int bfs_hit_rects(bfs* fs, float out[][5], int max);
 /* Where controller port `port` (0..3) is drawn on the card grid: its centre on the 640x480 picture. Returns 0 when the grid
  * with the controller is not showing (another screen, a popup over it, a screen transition). */
 int bfs_pad_px(bfs* fs, int port, float* x, float* y);
+/* The controller (port 0..3) the user picked with A in the card grid's top row (the controllers above the cards can be selected: they
+ * are lifted like a card), as 1 + the port, 0 when none was picked since the last call. The caller opens that controller's screen. */
+int bfs_pad_event(bfs* fs);
+/* What controller `port` is, up to 10 characters ("Joy-Con"), for the plate that shows while the cursor is on it. */
+void bfs_set_pad_name(bfs* fs, int port, const char* name);
+/* The controller the cursor is on (0..3), -1 when it is on a card or BACK */
+int bfs_pad_selected(const bfs* fs);
 /* The slot (0 A1, 1 A2, 2 B1 ... 7 D2) whose card carries the small SD card mark of the Serial VMU, -1 for none. The mark is drawn by
  * bfs_draw() with the card: it moves, fades and goes under popups with it. */
 void bfs_set_serial_slot(bfs* fs, int slot);

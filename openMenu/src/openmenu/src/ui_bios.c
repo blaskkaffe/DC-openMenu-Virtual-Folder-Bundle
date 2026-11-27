@@ -49,6 +49,7 @@
 #include "ui_internet.h"
 #include <backend/gd_list.h>
 
+#include "ui_ctrl.h"
 #include "ui_files.h"
 #include <bios_cdplayer.h>
 #include "ui_list.h"
@@ -57,7 +58,7 @@
 #include "video.h"
 #include "feature_badges.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET, SCREEN_CTRL } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -1271,7 +1272,8 @@ static uint32_t
 screen_accent(void) {
     switch (screen) {
         case SCREEN_GAMES: return BMENU_ACCENT_PLAY;
-        case SCREEN_FILE: return BMENU_ACCENT_FILE;
+        case SCREEN_FILE:
+        case SCREEN_CTRL: return BMENU_ACCENT_FILE;
         case SCREEN_MUSIC:
         case SCREEN_INTERNET: return BMENU_ACCENT_MUSIC;
         case SCREEN_SETTINGS:
@@ -1835,6 +1837,7 @@ log_label(void) {
         case SCREEN_FILE: return "file";
         case SCREEN_MUSIC: return "cd player";
         case SCREEN_INTERNET: return "internet";
+        case SCREEN_CTRL: return "controller";
     }
     return "?";
 }
@@ -1966,6 +1969,9 @@ draw_frame(void) {
         if (vmu_menu_open) {
             draw_vmu_menu();
         }
+    } else if (screen == SCREEN_CTRL) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        uic_draw();
     } else if (screen == SCREEN_MUSIC) {
         bscene_draw_background(&menu.bg, gfx_sink());
         bcd_draw(&cdp, gfx_sink());
@@ -2119,7 +2125,6 @@ handle_main(button_t b) {
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uis_snapshot();
-                uis_refresh_devices();
                 bpage_open(&page, &menu, uis_count());
                 page.pal = console_is_pal();
                 settings_popup = 0;
@@ -3231,6 +3236,13 @@ ui_bios_run(const bios_rom* rom) {
             }
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
+        } else if (screen == SCREEN_CTRL) {
+            if (uic_handle(b)) { /* left the controller screen: back to the card grid */
+                uif_open(&menu);
+                uif_set_pal(console_is_pal());
+                vmu_menu_open = 0;
+                screen = SCREEN_FILE;
+            }
         } else if (screen == SCREEN_INTERNET) {
             if (b == BTN_A && pointer.clicked) {
                 b = uin_click(pointer_screen_x(), (float)pointer.y, b); /* a click on a popup's button: that button */
@@ -3288,6 +3300,21 @@ ui_bios_run(const bios_rom* rom) {
                 bmenu_show_main(&menu, ICON_FILE);
                 screen = SCREEN_MAIN;
             }
+            if (screen == SCREEN_CTRL) {
+                uic_step();
+            }
+        }
+        if (screen == SCREEN_FILE) {
+            int picked = uif_pad_picked(); /* A on a controller in the top row of the card grid: one hello to its controller unit */
+            if (picked) {
+                if (uic_open(&menu, picked - 1, console_is_pal())) {
+                    uif_set_pad_adapter(picked - 1, uic_adapter_name());
+                    screen = SCREEN_CTRL;
+                } else {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice(uic_why());
+                }
+            }
         }
 
         if (screen == SCREEN_SETTINGS) {
@@ -3296,6 +3323,8 @@ ui_bios_run(const bios_rom* rom) {
             bdt_sync(&dtedit);
         } else if (screen == SCREEN_FILE) {
             uif_sync();
+        } else if (screen == SCREEN_CTRL) {
+            uic_sync();
         } else if (screen == SCREEN_MUSIC) {
             bcd_sync(&cdp);
         } else if (screen == SCREEN_INTERNET) {

@@ -69,14 +69,18 @@ jobs:
             openMenu/src/openmenu/test/dc99_chat_parse_test.c openMenu/src/openmenu/src/backend/dc99_chat_parse.c -o dc99_chat_parse_test
           ./dc99_chat_parse_test
 
-      - name: DC API client test (controller adapter rows)
+      - name: DC API client, controller editor, Joy-Con motion page and pose man tests
         run: |
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
             openMenu/src/openmenu/test/dcapi_text_test.c openMenu/src/openmenu/src/vm2/dcapi_text.c -o dcapi_text_test
           ./dcapi_text_test
-          gcc -std=c99 -Wall -Wextra -Werror -Wno-format-truncation -fsanitize=address,undefined -DCTA_HOST_TEST -IopenMenu/src/openmenu/src \
-            openMenu/src/openmenu/test/ctrl_adapter_test.c openMenu/src/openmenu/src/ctrl_adapter.c openMenu/src/openmenu/src/vm2/dcapi_text.c -o ctrl_adapter_test
-          ./ctrl_adapter_test
+          S=openMenu/src/openmenu/src; T=openMenu/src/openmenu/test
+          gcc -Wall -Wextra -Werror -fsanitize=address,undefined -I$S $T/test_ui_motion.c $S/ui_motion.c $S/vm2/dcapi_text.c -o ui_motion_test
+          ./ui_motion_test
+          gcc -Wall -Wextra -Werror -fsanitize=address,undefined -I$S $T/test_ctrl_editor.c $S/ctrl_editor.c $S/ui_motion.c $S/vm2/dcapi_text.c -o ctrl_editor_test
+          ./ctrl_editor_test
+          gcc -Wall -Wextra -Werror -fsanitize=address,undefined -I$S $T/test_pose_man.c $S/pose_man.c -lm -o pose_man_test
+          ./pose_man_test
 
       - name: kosnet json test
         run: |
