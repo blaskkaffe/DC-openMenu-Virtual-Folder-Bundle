@@ -3325,6 +3325,16 @@ ui_bios_run(const bios_rom* rom) {
             online_started = 1;
             online_boot();
         }
+        { /* TEST ONLY: the performance test with the frame trace, once, 3 seconds after the menu is up */
+            static int test_bench;
+            if (!test_bench && fade_step >= FADE_STEPS && frame_no > 300 && !bench_active()) {
+                test_bench = 1;
+                bench_set_trace(1);
+                show_debug = 0;
+                bscene_cache_enable(1);
+                bench_start(1, (unsigned)video_refresh_hz(), "TEST auto", bench_out);
+            }
+        }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
                     !viewer_open && !options_open && !viewmenu_open && !svmu_active());
