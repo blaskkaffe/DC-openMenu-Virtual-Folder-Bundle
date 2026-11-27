@@ -22,13 +22,13 @@
         <!-- Which picture: the front cover, or the rest of the 3D case -->
         <StackPanel Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,0,0,8">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,6">
-            <RadioButton GroupName="ArtSlot" Content="Front" Tag="Front" IsChecked="True" Click="Slot_Click" Margin="0,0,14,0"
+            <RadioButton x:Name="SlotFront" GroupName="ArtSlot" Content="Front" Tag="Front" IsChecked="True" Click="Slot_Click" Margin="0,0,14,0"
                          ToolTip="Front cover (BOX.DAT and ICON.DAT)"/>
-            <RadioButton GroupName="ArtSlot" Content="Back" Tag="Back" Click="Slot_Click" Margin="0,0,14,0"
+            <RadioButton x:Name="SlotBack" GroupName="ArtSlot" Content="Back" Tag="Back" Click="Slot_Click" Margin="0,0,14,0"
                          ToolTip="Back cover (BACK.DAT)"/>
-            <RadioButton GroupName="ArtSlot" Content="Spine" Tag="Spine" Click="Slot_Click" Margin="0,0,14,0"
+            <RadioButton x:Name="SlotSpine" GroupName="ArtSlot" Content="Spine" Tag="Spine" Click="Slot_Click" Margin="0,0,14,0"
                          ToolTip="Spine label (SPINE.DAT)"/>
-            <RadioButton GroupName="ArtSlot" Content="Disc" Tag="Disc" Click="Slot_Click"
+            <RadioButton x:Name="SlotDisc" GroupName="ArtSlot" Content="Disc" Tag="Disc" Click="Slot_Click"
                          ToolTip="Disc label: the disc's own (from the GDI) or a picture of your choice"/>
         </StackPanel>
         <!-- The 3D case the menu shows the game in (CASES.INI) -->

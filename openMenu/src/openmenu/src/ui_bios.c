@@ -16,6 +16,7 @@
 
 #include <bios_audio.h>
 #include "bench.h"
+#include "backend/dcnow_net.h"
 #include "backend/serial_port.h"
 #include "dbglog.h"
 #include "serial_log.h"
@@ -28,6 +29,7 @@
 #include <bios_page.h>
 #include <backend/db_list.h>
 #include <kos/fs.h>
+#include <kos/thread.h>
 
 #include "clock.h"
 #include "clock_math.h"
@@ -591,6 +593,16 @@ games_sync(void) {
         gfx_art_bind_row(s, serial, serial[0] ? serial_is_pal(serial) : console_is_pal());
     }
     blist_sync(&glist);
+    { /* resting on a game: its full case for the information screen (Y) is got ready meanwhile, a step a frame (the spine label,
+       * the back cover), so opening Y makes nothing in its first frame */
+        static int rest_cursor = -1, rest;
+        const int c = uil_cursor();
+        rest = c == rest_cursor ? rest + 1 : 0;
+        rest_cursor = c;
+        if (!viewer_open && rest > 20 && gcase.cur.active && case_tag[0]) {
+            gfx_case_prepare(gcase.cur.model, case_tag, case_title);
+        }
+    }
 }
 
 /* The five buttons along the bottom (the CD player's, without their pictures) are the list's controls: X or Right from the
@@ -3267,6 +3279,14 @@ ui_bios_run(const bios_rom* rom) {
         return -1;
     }
     dbglog_boot("gfx", (unsigned)timer_ms_gettime64());
+    /* With the Internet icon: the expansion port (modem, broadband or LAN adapter) is probed now, on its worker, while the start-up
+     * loads; it is waited for before the first frame. Probed when the Internet screen first opened, it made that screen stutter for
+     * half a second (the modem's resets and self test). */
+    dcnow_device_t boot_probe = DCNOW_DEV_NONE;
+    const int probe_now = sf_dcnow[0] != DCNOW_OFF;
+    if (probe_now) {
+        dcnow_detect_device_async(&boot_probe);
+    }
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
     gfx_load_logo_texts(); /* the letters of the online logos, made from the embedded masks */
@@ -3319,6 +3339,11 @@ ui_bios_run(const bios_rom* rom) {
     }
     dbglog_boot("cases", (unsigned)timer_ms_gettime64());
     clock_extender_tick();
+
+    for (int i = 0; probe_now && i < 150 && !dcnow_detect_device_async(&boot_probe); i++) {
+        thd_sleep(10); /* the probe's end (at most 1.5 s more; it ran while the start-up loaded) */
+    }
+    dbglog_boot("probe", (unsigned)timer_ms_gettime64());
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
     for (int i = 0; i < 3; i++) {

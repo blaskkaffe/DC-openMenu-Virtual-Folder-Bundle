@@ -346,6 +346,56 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
+                        <DataGridTemplateColumn x:Name="BackArtColumn" Header="Back" Width="60" Visibility="Collapsed">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Click="ButtonBackArtwork_Click" CommandParameter="{Binding}"
+                                            Content="{Binding HasBackArtwork, Converter={StaticResource ArtworkButtonLabel}}"
+                                            ToolTip="{Binding BackArtworkButtonToolTip}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            Padding="5,2" MinWidth="55" HorizontalAlignment="Stretch">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="IsEnabled" Value="{Binding CanManageArtwork}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasBackArtwork}" Value="False">
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsArtworkEnabled, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                        <Setter Property="IsEnabled" Value="False"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn x:Name="SpineArtColumn" Header="Spine" Width="60" Visibility="Collapsed">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Click="ButtonSpineArtwork_Click" CommandParameter="{Binding}"
+                                            Content="{Binding HasSpineArtwork, Converter={StaticResource ArtworkButtonLabel}}"
+                                            ToolTip="{Binding SpineArtworkButtonToolTip}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            Padding="5,2" MinWidth="55" HorizontalAlignment="Stretch">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="IsEnabled" Value="{Binding CanManageArtwork}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasSpineArtwork}" Value="False">
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsArtworkEnabled, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                        <Setter Property="IsEnabled" Value="False"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTemplateColumn x:Name="DiscColumn" Header="Disc" Width="45">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

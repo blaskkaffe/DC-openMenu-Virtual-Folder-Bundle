@@ -572,6 +572,18 @@ namespace GDMENUCardManager.Core
                 ? "Edit currently assigned artwork"
                 : "Assign artwork";
 
+        public string BackArtworkButtonToolTip => IsArchiveMetadataPending
+            ? ArchiveMetadataToolTip
+            : HasBackArtwork
+                ? "Edit the back cover (BACK.DAT)"
+                : "Assign a back cover (BACK.DAT)";
+
+        public string SpineArtworkButtonToolTip => IsArchiveMetadataPending
+            ? ArchiveMetadataToolTip
+            : HasSpineArtwork
+                ? "Edit the spine label (SPINE.DAT)"
+                : "Assign a spine label (SPINE.DAT)";
+
         public bool CanEditParsedArchiveMetadata =>
             FileFormat == FileFormat.SevenZip && !IsArchiveMetadataPending;
 
@@ -759,6 +771,8 @@ namespace GDMENUCardManager.Core
 
         // Artwork support
         internal static BoxDatManager BoxDatManagerInstance { get; set; }
+        internal static BoxDatManager BackDatManagerInstance { get; set; }
+        internal static BoxDatManager SpineDatManagerInstance { get; set; }
 
         public bool IsMenuItem
         {
@@ -783,6 +797,17 @@ namespace GDMENUCardManager.Core
             }
         }
 
+        /// <summary>The serial the artwork DATs are looked up by (the original one until a translation is confirmed).</summary>
+        private string ArtworkLookupSerial => (WasSerialTranslated && OriginalSerial != null) ? OriginalSerial : ProductNumber;
+
+        /// <summary>A back cover in BACK.DAT, as HasArtwork for the front.</summary>
+        public bool HasBackArtwork =>
+            BackDatManagerInstance != null && BackDatManagerInstance.HasArtworkForSerial(ArtworkLookupSerial);
+
+        /// <summary>A spine label in SPINE.DAT, as HasArtwork for the front.</summary>
+        public bool HasSpineArtwork =>
+            SpineDatManagerInstance != null && SpineDatManagerInstance.HasArtworkForSerial(ArtworkLookupSerial);
+
         /// <summary>
         /// False for menu discs and for items with no usable serial.
         /// </summary>
@@ -800,6 +825,10 @@ namespace GDMENUCardManager.Core
         {
             RaisePropertyChanged(nameof(HasArtwork));
             RaisePropertyChanged(nameof(ArtworkButtonToolTip));
+            RaisePropertyChanged(nameof(HasBackArtwork));
+            RaisePropertyChanged(nameof(BackArtworkButtonToolTip));
+            RaisePropertyChanged(nameof(HasSpineArtwork));
+            RaisePropertyChanged(nameof(SpineArtworkButtonToolTip));
         }
 
 #if DEBUG

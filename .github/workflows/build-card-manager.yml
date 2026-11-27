@@ -1,6 +1,6 @@
 name: Build Card Manager
 
-# Builds the GD MENU Card Manager (WPF for Windows and the Avalonia version) and runs the scraper's offline tests.
+# Builds the GD MENU Card Manager (WPF for Windows, the Avalonia version for Linux and macOS) and runs the scraper's offline tests.
 # Every build packs this repository's openMenu (the Build NewOpenMenu workflow runs first), not the 1ST_READ.BIN
 # committed in the Card Manager's tools folder. Artifacts: the Windows build, and macOS app bundles for Apple Silicon (arm64) and Intel (x64). The bundles are
 # cross-built on Linux and ad-hoc signed with rcodesign by Derek's create-macos-bundle.sh, as his releases are (hosted
@@ -78,12 +78,80 @@ jobs:
         run: dotnet build src/GDMENUCardManager.AvaloniaUI/GDMENUCardManager.AvaloniaUI.csproj -c Release
 
       - name: Publish Windows (WPF) version
-        run: dotnet publish src/GDMENUCardManager/GDMENUCardManager.csproj -c Release -o "_out/GDMENUCardManager-win-x64"
+        run: |
+          $out = "_out/GDMENUCardManager-win-x64"
+          dotnet publish src/GDMENUCardManager/GDMENUCardManager.csproj -c Release -o $out
+          # as build.bat: the tools folder, without user-made menu options files
+          Copy-Item -Recurse -Force src/GDMENUCardManager.Core/tools "$out/tools"
+          Remove-Item -ErrorAction SilentlyContinue "$out/tools/openMenu/menu_data/DEFAULTS.INI", "$out/tools/openMenu/menu_data/BGM.ADP"
+          Copy-Item LICENSE, README.md $out
 
       - uses: actions/upload-artifact@v4
         with:
           name: GDMENUCardManager-win-x64
           path: "GD MENU Card Manager/_out/GDMENUCardManager-win-x64"
+
+  linux:
+    needs: openmenu
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: "GD MENU Card Manager"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "GD MENU Card Manager/global.json"
+
+      - name: ScreenScraper developer credentials (from secrets, when there are any)
+        env:
+          SS_DEVID: ${{ secrets.SS_DEVID }}
+          SS_DEVPASSWORD: ${{ secrets.SS_DEVPASSWORD }}
+        run: |
+          if [ -n "$SS_DEVID" ] && [ -n "$SS_DEVPASSWORD" ]; then
+            python3 - <<'PY'
+          import os
+          f = "src/GDMENUCardManager.Core/Scraper/ScreenScraperDevCredentials.cs"
+          esc = lambda v: v.replace("\\", "\\\\").replace('"', '\\"')
+          c = open(f).read()
+          c = c.replace('DevId = "";', 'DevId = "%s";' % esc(os.environ["SS_DEVID"]))
+          c = c.replace('DevPassword = "";', 'DevPassword = "%s";' % esc(os.environ["SS_DEVPASSWORD"]))
+          open(f, "w").write(c)
+          PY
+            echo "Built-in ScreenScraper developer ID set."
+          else
+            echo "No SS_DEVID / SS_DEVPASSWORD secrets: users enter their own developer ID under Advanced."
+          fi
+
+      - name: This repository's openMenu into the Card Manager's menu data
+        uses: actions/download-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: "GD MENU Card Manager/src/GDMENUCardManager.Core/tools/openMenu/menu_data"
+
+      - name: Publish (linux-x64, self-contained)
+        run: |
+          VERSION="$(tr -d '\r\n' < src/version.txt)"
+          NAME="GDMENUCardManager.$VERSION-linux-x64"
+          OUT="_releases/$NAME"
+          dotnet publish src/GDMENUCardManager.AvaloniaUI/GDMENUCardManager.AvaloniaUI.csproj -c Release \
+            --self-contained true -r linux-x64 -p:PublishSingleFile=false \
+            -p:IncludeNativeLibrariesForSelfExtract=true -o "$OUT"
+          # as build.bat: the tools folder, without user-made menu options files
+          mkdir -p "$OUT/tools"
+          cp -R src/GDMENUCardManager.Core/tools/. "$OUT/tools/"
+          rm -f "$OUT/tools/openMenu/menu_data/DEFAULTS.INI" "$OUT/tools/openMenu/menu_data/BGM.ADP"
+          cp LICENSE README.md "$OUT/"
+          chmod +x "$OUT/GDMENUCardManager" 2>/dev/null || true
+          tar -C _releases -czf "_releases/$NAME.tar.gz" "$NAME"
+          ls -l _releases/*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GDMENUCardManager-linux-x64
+          path: "GD MENU Card Manager/_releases/*.tar.gz"
 
   macos:
     needs: openmenu

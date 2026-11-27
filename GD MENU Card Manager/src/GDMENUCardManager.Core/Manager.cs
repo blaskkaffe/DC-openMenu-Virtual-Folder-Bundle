@@ -425,6 +425,8 @@ namespace GDMENUCardManager.Core
             }
 
             GdItem.BoxDatManagerInstance = BoxDat;
+            GdItem.BackDatManagerInstance = BackDat;
+            GdItem.SpineDatManagerInstance = SpineDat;
 
             foreach (var item in ItemList)
             {
@@ -704,6 +706,8 @@ namespace GDMENUCardManager.Core
 
                 // Link BoxDatManager to GdItem
                 GdItem.BoxDatManagerInstance = BoxDat;
+                GdItem.BackDatManagerInstance = BackDat;
+                GdItem.SpineDatManagerInstance = SpineDat;
 
                 return (true, string.Empty);
             }
@@ -804,6 +808,8 @@ namespace GDMENUCardManager.Core
                                 FolderArtDat.Load(GetFolderArtDatPath(), GetFolderArtMapPath());
 
                             GdItem.BoxDatManagerInstance = BoxDat;
+                            GdItem.BackDatManagerInstance = BackDat;
+                            GdItem.SpineDatManagerInstance = SpineDat;
 
                             return (true, string.Empty);
                         }
