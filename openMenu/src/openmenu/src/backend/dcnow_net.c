@@ -66,6 +66,35 @@ dcnow_detect_device(void) {
     return device_found;
 }
 
+/* The same probe on a worker below the menu, so the screen that waits for it keeps moving (a modem's probe takes a while, and the
+ * menu stood still for it). 1 and the device once it is done, 0 while it runs. */
+static volatile int probe_state; /* 0 not started, 1 running, 2 done */
+
+static void*
+probe_main(void* param) {
+    (void)param;
+    thd_set_prio(thd_get_current(), PRIO_DEFAULT + 4);
+    dcnow_detect_device();
+    probe_state = 2;
+    return NULL;
+}
+
+int
+dcnow_detect_device_async(dcnow_device_t* out) {
+    if (probe_state == 0) {
+        probe_state = 1;
+        if (!thd_create(1, probe_main, NULL)) {
+            dcnow_detect_device(); /* no thread: as before */
+            probe_state = 2;
+        }
+    }
+    if (probe_state != 2) {
+        return 0;
+    }
+    *out = device_found;
+    return 1;
+}
+
 static dcnow_device_t active_device;
 
 dcnow_device_t

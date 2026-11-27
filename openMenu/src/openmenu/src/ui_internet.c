@@ -1542,10 +1542,10 @@ uin_sync(void) {
     if (notice_frames > 0) {
         notice_frames--;
     }
-    if (!probed && anim > 1) {
-        /* the expansion port is probed once the screen shows (it can take a moment), as the main branch's window */
+    if (!probed && anim > 1 && dcnow_detect_device_async(&device)) {
+        /* the expansion port is probed once the screen shows, on a worker (a modem's probe takes a while: the screen keeps moving and says
+         * "Looking for an adapter..." meanwhile), as the main branch's window */
         probed = 1;
-        device = dcnow_detect_device();
         /* An adapter needs no Connect step (the main branch's window connects it at once); a modem, the serial cable or the W5500 wait
          * for X, since a dial takes the phone line and the others probe the serial port. Only once per start: after a hang-up the Connection row connects again. */
         dcnow_conn_poll(&conn);
@@ -2946,13 +2946,19 @@ page_icon(int i, int lit) {
             uint16_t px[UICON_SIZE * UICON_SIZE];
             enum { ICON_PAD = 128, ICON_GLYPH = 86 }; /* a power of two: the glyph (two thirds of it) in the middle of a clear picture; the button's picture area is large */
             static uint16_t big[ICON_PAD * ICON_PAD];
+            static uint8_t src_of[ICON_GLYPH]; /* the glyph's pixel for each pixel of the enlarged one */
+            for (int x = 0; x < ICON_GLYPH; x++) {
+                src_of[x] = (uint8_t)(x * UICON_SIZE / ICON_GLYPH);
+            }
             for (int l = 0; l < 2; l++) {
-                uicon_render(k, l ? 0xFF000000u : 0xFF1C2850u, px);
+                uicon_draw(k, l ? 0xFF000000u : 0xFF1C2850u, px); /* from the made table: rendering them took half a second the first time */
                 memset(big, 0, sizeof(big));
                 const int off = (ICON_PAD - ICON_GLYPH) / 2;
                 for (int y = 0; y < ICON_GLYPH; y++) {
+                    const uint16_t* row = &px[src_of[y] * UICON_SIZE];
+                    uint16_t* o = &big[(y + off) * ICON_PAD + off];
                     for (int x = 0; x < ICON_GLYPH; x++) {
-                        big[(y + off) * ICON_PAD + off + x] = px[(y * UICON_SIZE / ICON_GLYPH) * UICON_SIZE + x * UICON_SIZE / ICON_GLYPH];
+                        o[x] = row[src_of[x]];
                     }
                 }
                 ids[l][k] = gfx_dyn_create(big, ICON_PAD, ICON_PAD);

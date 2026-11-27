@@ -179,18 +179,29 @@ static cache_entry cache_entries[CACHE_ENTRIES];
 static int cache_entry_n;
 static int cache_disabled;
 
-/* Drawing states seen before: only a state that is drawn a second time is kept (an object that moves every frame
- * would only fill the pool). Keyed by the state's hash, so objects built on the fly (panels, rows) count too. */
+/* Drawing states seen before: only a state that is drawn again in the next frame (or in the same one) is kept. One that
+ * changes every frame would only fill the pool, and so would a looping motion, whose states come back every few frames: each
+ * time the pool is full it is emptied, and everything at rest is transformed again (two slow frames every 17 to 25). Keyed by
+ * the state's hash, so objects built on the fly (panels, rows) count too. */
 #define SEEN_SLOTS 512
 static uint32_t seen[SEEN_SLOTS]; /* hash | 1, 0 = free */
+static uint32_t seen_frame[SEEN_SLOTS]; /* the frame it was last drawn in */
 static int seen_n;
+static uint32_t draw_frame;
+
+void
+bscene_cache_next_frame(void) {
+    draw_frame++;
+}
 
 static int
 seen_before(uint32_t hash) {
     uint32_t key = hash | 1u, i = (hash >> 1) & (SEEN_SLOTS - 1);
     for (;;) {
         if (seen[i] == key) {
-            return 1;
+            const int recent = draw_frame - seen_frame[i] <= 1u;
+            seen_frame[i] = draw_frame;
+            return recent;
         }
         if (!seen[i]) {
             break;
@@ -203,6 +214,7 @@ seen_before(uint32_t hash) {
         i = (hash >> 1) & (SEEN_SLOTS - 1);
     }
     seen[i] = key;
+    seen_frame[i] = draw_frame;
     seen_n++;
     return 0;
 }
@@ -1168,15 +1180,24 @@ typedef struct {
 } sort_tri;
 
 static sort_tri sort_buf[BSCENE_SORT_MAX];
-typedef struct {
-    float key;
-    int idx;
-} sort_key;
-
-static sort_key sort_keys[BSCENE_SORT_MAX];
+/* Each triangle's depth as a number whose unsigned order is the float order (sort_keyof), with the triangle's index, sorted
+ * by a stable radix sort (four passes of 8 bits): the same order as comparing the floats, ties in the order the triangles came
+ * in, without qsort's comparison calls (a few milliseconds a frame for the main menu's 2800 triangles on the SH4). */
+static uint32_t sort_k[2][BSCENE_SORT_MAX];
+static uint16_t sort_i[2][BSCENE_SORT_MAX];
 static int sort_n;
 static const bscene_sink* sort_out;
 static bscene_sink sort_sink;
+
+static uint32_t
+sort_keyof(float f) {
+    uint32_t u;
+    if (f == 0.0f) {
+        f = 0.0f; /* -0 sorts as +0, as the float comparison has them equal */
+    }
+    memcpy(&u, &f, sizeof(u));
+    return (u & 0x80000000u) ? ~u : (u | 0x80000000u);
+}
 
 static void
 sort_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
@@ -1188,8 +1209,8 @@ sort_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
     sort_tri* t = &sort_buf[sort_n];
     memcpy(t->v, v, sizeof(t->v));
     t->tex = tex;
-    sort_keys[sort_n].key = v[0].invw + v[1].invw + v[2].invw; /* larger 1/w = nearer */
-    sort_keys[sort_n].idx = sort_n;
+    sort_k[0][sort_n] = sort_keyof(v[0].invw + v[1].invw + v[2].invw); /* larger 1/w = nearer: far first */
+    sort_i[0][sort_n] = (uint16_t)sort_n;
     sort_n++;
 }
 
@@ -1199,16 +1220,6 @@ sort_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     if (sort_out->text) {
         sort_out->text(sort_out->user, obj, x, y, invw);
     }
-}
-
-static int
-sort_cmp(const void* a, const void* b) {
-    const sort_key* ka = (const sort_key*)a;
-    const sort_key* kb = (const sort_key*)b;
-    if (ka->key != kb->key) {
-        return ka->key < kb->key ? -1 : 1; /* far (small 1/w) first */
-    }
-    return ka->idx - kb->idx; /* same depth: keep the order they came in */
 }
 
 const bscene_sink*
@@ -1223,9 +1234,28 @@ bscene_sort_begin(const bscene_sink* out) {
 
 void
 bscene_sort_end(void) {
-    qsort(sort_keys, (size_t)sort_n, sizeof(sort_keys[0]), sort_cmp);
+    int from = 0;
+    for (int shift = 0; shift < 32; shift += 8) {
+        uint32_t count[257];
+        memset(count, 0, sizeof(count));
+        for (int i = 0; i < sort_n; i++) {
+            count[((sort_k[from][i] >> shift) & 255u) + 1]++;
+        }
+        if (sort_n == 0 || count[((sort_k[from][0] >> shift) & 255u) + 1] == (uint32_t)sort_n) {
+            continue; /* every key has the same byte here: nothing moves */
+        }
+        for (int b = 0; b < 256; b++) {
+            count[b + 1] += count[b];
+        }
+        for (int i = 0; i < sort_n; i++) {
+            const uint32_t d = count[(sort_k[from][i] >> shift) & 255u]++;
+            sort_k[1 - from][d] = sort_k[from][i];
+            sort_i[1 - from][d] = sort_i[from][i];
+        }
+        from = 1 - from;
+    }
     for (int i = 0; i < sort_n; i++) {
-        const sort_tri* t = &sort_buf[sort_keys[i].idx];
+        const sort_tri* t = &sort_buf[sort_i[from][i]];
         sort_out->triangle(sort_out->user, t->v, t->tex);
     }
     sort_n = 0;

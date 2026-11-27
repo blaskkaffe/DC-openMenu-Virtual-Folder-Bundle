@@ -865,6 +865,79 @@ build_case(builder* b, const dc_model_t* m, uint32_t spine_tint, int clear) {
     }
 }
 
+/* The game list's case (BMODEL_LCASE_*): the full case's size and colours in a few flat boxes, only the faces the card's tilt (up to
+ * 30 degrees about the upright axis, 13 about the across one) can show: the front with its cover picture, the hinge side's strip,
+ * the top, the bottom and both sides. The spine side is the colour of the kind's spine label (the Japanese one with its coral band
+ * at the bottom end), so the list never makes a spine, back or inner label picture. */
+static void
+build_list_case(builder* b, int single, int dbl) {
+    const float S = BMODEL_CASE_HEIGHT / 125.0f;
+    const int pal = single == BMODEL_CASE_PAL;
+    const float X = 71.0f, Y = pal ? 62.7f : 62.5f;
+    const float zb = dbl ? -12.0f : (pal ? -8.5f : -5.2f), zf = dbl ? 12.0f : (pal ? 8.9f : 5.2f);
+    /* front (around the cover), top, bottom, the side away from the spine, the hinge strip, the spine label */
+    uint32_t front, top, bottom, side, hinge, spine;
+    switch (single) {
+        case BMODEL_CASE_PAL: front = 0xFF3F60A8u, top = 0xFF3A5DACu, bottom = 0xFF1E3A78u, side = 0xFF2A4D9Cu, hinge = 0xFF2A4D9Cu, spine = 0xFF2D52A7u; break;
+        case BMODEL_CASE_DARK: front = 0xFF9DA9B2u, top = 0xFFA3B1B9u, bottom = 0xFF687076u, side = 0xFF869098u, hinge = 0xFF2E2E2Eu, spine = 0xFF101012u; break;
+        case BMODEL_CASE_CLEAR_WHITE: front = 0xFFDEE2E2u, top = 0xFFC8CCCEu, bottom = 0xFF9A9EA0u, side = 0xFFB4B8BAu, hinge = 0xFFEEEEEAu, spine = 0xFFF4F4F0u; break;
+        case BMODEL_CASE_CLEAR_BLACK: front = 0xFF2F3234u, top = 0xFF3A3C3Eu, bottom = 0xFF202224u, side = 0xFF2C2E30u, hinge = 0xFF0E0E10u, spine = 0xFF101012u; break;
+        default: front = 0xFF9DA9B2u, top = 0xFFA3B1B9u, bottom = 0xFF687076u, side = 0xFF869098u, hinge = 0xFFD8D8D8u, spine = 0xFFF2F2EEu; break;
+    }
+    if (dbl) { /* the fat box: dark grey (blue for PAL) frame round a clear front, the cover over the whole width */
+        const uint32_t frame = pal ? 0xFF2A4D9Cu : 0xFF3C3E42u;
+        front = frame, top = frame, bottom = pal ? 0xFF1E3A78u : 0xFF2A2C30u;
+    }
+    const int fp = poly_new(b, -1, front, STRIP_IGNORE_LIGHT);
+    quad(b, fp, v3m(-X * S, Y * S, zf * S), v3m(X * S, Y * S, zf * S), v3m(X * S, -Y * S, zf * S), v3m(-X * S, -Y * S, zf * S), NULL, v3m(0, 0, 1));
+    const float zc = zf + 0.05f; /* the strips and the cover just in front of it */
+    float cx0 = pal ? -53.0f : NTSC_FRONT_X0, cx1 = pal ? 67.0f : NTSC_FRONT_X1;
+    if (dbl) {
+        cx0 = -69.6f, cx1 = 69.6f;
+    } else if (pal) { /* the hinge bar, and the lighter pill in its middle */
+        const int hp = poly_new(b, -1, hinge, STRIP_IGNORE_LIGHT);
+        quad(b, hp, v3m(-66.0f * S, 61.5f * S, zc * S), v3m(-58.0f * S, 61.5f * S, zc * S), v3m(-58.0f * S, -61.5f * S, zc * S),
+             v3m(-66.0f * S, -61.5f * S, zc * S), NULL, v3m(0, 0, 1));
+        const int pp = poly_new(b, -1, 0xFF2F56AFu, STRIP_IGNORE_LIGHT);
+        const float z2 = zc + 0.05f;
+        quad(b, pp, v3m(-65.6f * S, 25.5f * S, z2 * S), v3m(-58.4f * S, 25.5f * S, z2 * S), v3m(-58.4f * S, -25.5f * S, z2 * S),
+             v3m(-65.6f * S, -25.5f * S, z2 * S), NULL, v3m(0, 0, 1));
+    } else { /* the NTSC hinge side beside the cover */
+        const int hp = poly_new(b, -1, hinge, STRIP_IGNORE_LIGHT);
+        quad(b, hp, v3m(-70.5f * S, 60.0f * S, zc * S), v3m(cx0 * S, 60.0f * S, zc * S), v3m(cx0 * S, -60.0f * S, zc * S),
+             v3m(-70.5f * S, -60.0f * S, zc * S), NULL, v3m(0, 0, 1));
+    }
+    static const float uvf[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    const int cp = poly_new(b, BMODEL_TEX_FRONT, 0xFFD4D4D4u, STRIP_IGNORE_LIGHT);
+    quad(b, cp, v3m(cx0 * S, 60.0f * S, zc * S), v3m(cx1 * S, 60.0f * S, zc * S), v3m(cx1 * S, -60.0f * S, zc * S), v3m(cx0 * S, -60.0f * S, zc * S),
+         uvf, v3m(0, 0, 1));
+    const int tp = poly_new(b, -1, top, STRIP_IGNORE_LIGHT);
+    quad(b, tp, v3m(-X * S, Y * S, zb * S), v3m(X * S, Y * S, zb * S), v3m(X * S, Y * S, zf * S), v3m(-X * S, Y * S, zf * S), NULL, v3m(0, 1, 0));
+    const int bp = poly_new(b, -1, bottom, STRIP_IGNORE_LIGHT);
+    quad(b, bp, v3m(-X * S, -Y * S, zf * S), v3m(X * S, -Y * S, zf * S), v3m(X * S, -Y * S, zb * S), v3m(-X * S, -Y * S, zb * S), NULL, v3m(0, -1, 0));
+    /* the sides: the spine side (left; a double case has its labels on both) */
+    const int sp = poly_new(b, -1, spine, STRIP_IGNORE_LIGHT);
+    const int sd = dbl ? sp : poly_new(b, -1, side, STRIP_IGNORE_LIGHT);
+    quad(b, sp, v3m(-X * S, Y * S, zb * S), v3m(-X * S, Y * S, zf * S), v3m(-X * S, -Y * S, zf * S), v3m(-X * S, -Y * S, zb * S), NULL, v3m(-1, 0, 0));
+    quad(b, sd, v3m(X * S, Y * S, zf * S), v3m(X * S, Y * S, zb * S), v3m(X * S, -Y * S, zb * S), v3m(X * S, -Y * S, zf * S), NULL, v3m(1, 0, 0));
+    const float xs = X + 0.05f;
+    if (single == BMODEL_CASE_WHITE) { /* the Japanese label's coral band across its bottom end (35 mm of the 120) */
+        const int band = poly_new(b, -1, 0xFFE45E58u, STRIP_IGNORE_LIGHT);
+        const float y1 = -60.0f + 35.0f;
+        for (int k = 0; k < (dbl ? 2 : 1); k++) {
+            const float x = k ? xs : -xs;
+            quad(b, band, v3m(x * S, y1 * S, zb * S), v3m(x * S, y1 * S, zf * S), v3m(x * S, -60.0f * S, zf * S), v3m(x * S, -60.0f * S, zb * S), NULL,
+                 v3m(k ? 1.0f : -1.0f, 0, 0));
+        }
+    }
+    if (dbl) { /* the dark gap between the halves, round both sides */
+        const int g = poly_new(b, -1, 0xFF18191Bu, STRIP_IGNORE_LIGHT);
+        const float gz = DOUBLE_SPINE0 - 0.2f, xg = xs + 0.05f;
+        quad(b, g, v3m(-xg * S, Y * S, -gz * S), v3m(-xg * S, Y * S, gz * S), v3m(-xg * S, -Y * S, gz * S), v3m(-xg * S, -Y * S, -gz * S), NULL, v3m(-1, 0, 0));
+        quad(b, g, v3m(xg * S, Y * S, gz * S), v3m(xg * S, Y * S, -gz * S), v3m(xg * S, -Y * S, -gz * S), v3m(xg * S, -Y * S, gz * S), NULL, v3m(1, 0, 0));
+    }
+}
+
 int
 bmodel_build(int id, nj_object* out) {
     if (!out) {
@@ -889,6 +962,16 @@ bmodel_build(int id, nj_object* out) {
         case BMODEL_CASE_CLEAR_WHITE: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u, 1); break;
         case BMODEL_CASE_CLEAR_BLACK: build_case(&b, &dc_model_cd_case_white, 0xFF292D31u, 2); break;
         case BMODEL_CASE_PAL: build_case(&b, &dc_model_dreamcast_pal_case_blue, 0xFF20419Bu, 0); break;
+        case BMODEL_LCASE_WHITE:
+        case BMODEL_LCASE_PAL:
+        case BMODEL_LCASE_DARK:
+        case BMODEL_LCASE_CLEAR_WHITE:
+        case BMODEL_LCASE_CLEAR_BLACK:
+        case BMODEL_LCASE_WHITE_DOUBLE:
+        case BMODEL_LCASE_PAL_DOUBLE:
+        case BMODEL_LCASE_DARK_DOUBLE:
+        case BMODEL_LCASE_CLEAR_WHITE_DOUBLE:
+        case BMODEL_LCASE_CLEAR_BLACK_DOUBLE: build_list_case(&b, bmodel_case_single(id), bmodel_case_is_double(id)); break;
         default:
             builder_free(&b);
             return -1;

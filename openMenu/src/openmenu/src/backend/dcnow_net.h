@@ -18,6 +18,8 @@ typedef enum dcnow_device { DCNOW_DEV_NONE = 0, DCNOW_DEV_MODEM, DCNOW_DEV_BBA, 
 
 /* Probes the expansion slot once per boot and remembers the answer. */
 dcnow_device_t dcnow_detect_device(void);
+/* dcnow_detect_device() on a worker thread below the menu: 1 and *out once the probe is done, 0 while it runs. */
+int dcnow_detect_device_async(dcnow_device_t* out);
 
 /* Display name for the window, such as "Broadband Adapter (HIT-0400)". */
 const char* dcnow_device_name(dcnow_device_t dev);
