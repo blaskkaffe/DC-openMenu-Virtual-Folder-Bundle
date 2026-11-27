@@ -205,3 +205,12 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] Pico2Maple (unified firmware with the DC API): A opens its page: Display brightness / Flip display / Memory card icons / Memory card slot / Layout / Keyboard-mouse switch change on the device. WATCH: with the old p2m-mod 2.2 firmware a request on the controller unit once froze the pads (unified af1b852); check the pads keep working after A on a Pico2Maple with each firmware.
 - [ ] An official pad: A on it gives "No adapter on this port speaks the DC API", pads keep working.
 - [ ] Plain controllers/VMUs only: Settings opens without a pause, no adapter rows.
+
+## Frame rate (2026-11-27, measured in flycast with the performance test; check on a console)
+- [ ] Main menu at rest: no hitch every second or so (the draw cache used to empty itself every 17 to 25 frames).
+- [ ] Main menu: moving between icons, and coming back from a screen (the icons fly in): smooth. In flycast the fly-in costs about 11 ms a frame (16 for the first two); on the console it is the screen most likely to drop frames.
+- [ ] Start-up: the menu still appears without a visible extra wait (the case and disc pictures are now made then).
+- [ ] Game list: the first open, scrolling one game at a time, and the first game of each case kind (PAL, Japanese, American, clear white): at most one short hitch for a kind's first case (its spine label, 10 ms in flycast), none per game.
+- [ ] Game information screen (Y) on a game without box art: opens without a pause.
+- [ ] Leaving Settings after a change: the save to the VMU takes a moment (left on the menu's thread on purpose, so a save is never cut short).
+- [ ] Settings > Other > Performance test on the console, with the serial cable: the results compared with flycast's.
