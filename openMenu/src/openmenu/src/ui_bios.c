@@ -2847,7 +2847,8 @@ bench_begin(void) {
     bscene_cache_enable(1);
     snprintf(info, sizeof(info), "%s %s games=%d online=%d bios=%s", console_is_pal() ? "PAL" : "NTSC",
              sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3", list_all_count(), (int)sf_dcnow[0], g_rom ? g_rom->revision : "?");
-    bench_start(2, (unsigned)video_refresh_hz(), info, bench_out);
+    bench_set_trace(1); /* TEST ONLY */
+    bench_start(1, (unsigned)video_refresh_hz(), info, bench_out); /* TEST ONLY: one run (2) */
 }
 
 static void
