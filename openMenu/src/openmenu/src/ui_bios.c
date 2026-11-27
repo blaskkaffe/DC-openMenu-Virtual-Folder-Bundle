@@ -1302,7 +1302,7 @@ popup_rows_y(int rows) {
  * VM made when first needed, hidden except while a popup draws them. */
 #define POPKEY_ID(i) ((uint16_t)(0x1380 + (i)))
 #define POPKEY_MAX 4
-#define POPKEY_Z (-150.0f) /* in front of the popup's panel and its dark backing */
+#define POPKEY_Z (-20.0f) /* in front of everything 3D and of the popup's dark backing (at 1/25) */
 #define POPKEY_BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
 #define POPKEY_BTN_GAP 34.0f  /* from a word to the next oval */
 
@@ -1399,8 +1399,8 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
                         gfx_sink());
     /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows, the case) from showing
-     * through; in front of the panel (its depth) and behind the buttons' ovals, the highlight and the text */
-    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 1.0f / (-BSCENE_PANEL_Z * 0.5f) + 0.0002f, 0xE0141820u);
+     * through; nearer than anything 3D (1/w of 25 units), behind the buttons' ovals (20 units), the highlight and the text */
+    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 1.0f / 25.0f, 0xE0141820u);
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;
