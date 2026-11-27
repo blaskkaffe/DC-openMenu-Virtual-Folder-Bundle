@@ -50,6 +50,8 @@ namespace GDMENUCardManager
             get { return _DriveInfo; }
             set
             {
+                if (IsBusy)
+                    return;
                 _DriveInfo = value;
                 Manager.ItemList.Clear();
                 if (value != null)
@@ -143,6 +145,30 @@ namespace GDMENUCardManager
         {
             get { return Manager.EnableRegionPatch; }
             set { Manager.EnableRegionPatch = value; RaisePropertyChanged(); }
+        }
+
+        public DiscConversionFormat ConversionFormat
+        {
+            get { return Manager.ConversionFormat; }
+            set
+            {
+                Manager.ConversionFormat = value;
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(UseCcdConversion));
+                RaisePropertyChanged(nameof(UseCdiConversion));
+            }
+        }
+
+        public bool UseCcdConversion
+        {
+            get { return ConversionFormat == DiscConversionFormat.Ccd; }
+            set { if (value) ConversionFormat = DiscConversionFormat.Ccd; }
+        }
+
+        public bool UseCdiConversion
+        {
+            get { return ConversionFormat == DiscConversionFormat.Cdi; }
+            set { if (value) ConversionFormat = DiscConversionFormat.Cdi; }
         }
 
         public bool EnableRegionPatchExisting
@@ -268,6 +294,7 @@ namespace GDMENUCardManager
         private ArchiveMetadataField? _editingArchiveMetadataField;
         private ArchiveMetadataFieldState _editingArchiveMetadataOldState;
         private ArchiveMetadataFieldState _editingArchiveRegionOldState;
+        private bool _folderEnterPressed;
 
         // Flag to prevent duplicate serial translation dialogs
         private bool _handlingSerialTranslation;
@@ -351,10 +378,6 @@ namespace GDMENUCardManager
             bool.TryParse(ConfigurationManager.AppSettings["Debug"], out Manager.debugEnabled);
             if (bool.TryParse(ConfigurationManager.AppSettings["UseBinaryString"], out bool useBinaryString))
                 Converter.ByteSizeToStringConverter.UseBinaryString = useBinaryString;
-            if (int.TryParse(ConfigurationManager.AppSettings["CharLimit"], out int charLimit))
-                GdItem.namemaxlen = Math.Min(256, Math.Max(charLimit, 1));
-            if (int.TryParse(ConfigurationManager.AppSettings["ProductIdMaxLength"], out int productIdMaxLength))
-                GdItem.serialmaxlen = Math.Min(32, Math.Max(productIdMaxLength, 1));
             if (bool.TryParse(ConfigurationManager.AppSettings["TruncateMenuGDI"], out bool truncateMenuGDI))
                 Manager.TruncateMenuGDI = truncateMenuGDI;
             if (bool.TryParse(ConfigurationManager.AppSettings["LockCheck"], out bool lockCheck))
@@ -374,6 +397,8 @@ namespace GDMENUCardManager
                 Manager.EnableGDIShrinkExisting = gdiShrinkExisting;
             if (bool.TryParse(ConfigurationManager.AppSettings["EnableRegionPatch"], out bool regionPatch))
                 Manager.EnableRegionPatch = regionPatch;
+            Manager.ConversionFormat = Enum.TryParse(ConfigurationManager.AppSettings["ConversionFormat"], true, out DiscConversionFormat conversionFormat)
+                && Enum.IsDefined(typeof(DiscConversionFormat), conversionFormat) ? conversionFormat : DiscConversionFormat.Ccd;
             if (bool.TryParse(ConfigurationManager.AppSettings["EnableRegionPatchExisting"], out bool regionPatchExisting))
                 Manager.EnableRegionPatchExisting = regionPatchExisting;
             if (bool.TryParse(ConfigurationManager.AppSettings["EnableVgaPatch"], out bool vgaPatch))
@@ -546,6 +571,49 @@ namespace GDMENUCardManager
                     assignAltItem.Header = "Assign Additional Folder Paths";
                     assignAltItem.IsEnabled = !isMultiple;
                 }
+
+                UpdateSortSelectionMenuItems(menu, dg1.SelectedItems.Contains(clickedItem)
+                    ? dg1.SelectedItems.Cast<GdItem>()
+                    : Enumerable.Empty<GdItem>());
+            }
+        }
+
+        // Selection sort needs two or more rows that sit next to each other in the grid
+        private void UpdateSortSelectionMenuItems(ContextMenu menu, IEnumerable<GdItem> selectedItems)
+        {
+            var shownItems = (System.Collections.IList)dg1.ItemsSource;
+            var selected = new HashSet<GdItem>(selectedItems.Where(x => x.SdNumber != 1));
+            int first = -1, last = -1;
+            for (int i = 0; i < shownItems.Count; i++)
+            {
+                if (shownItems[i] is GdItem row && selected.Contains(row))
+                {
+                    if (first < 0)
+                        first = i;
+                    last = i;
+                }
+            }
+            bool canSortSelection = selected.Count > 1 && last - first == selected.Count - 1;
+
+            var sortSeparator = menu.Items.OfType<Separator>()
+                .FirstOrDefault(m => m.Name == "SeparatorSortSelection");
+            if (sortSeparator != null)
+                sortSeparator.IsVisible = canSortSelection;
+
+            var sortTitleItem = menu.Items.OfType<MenuItem>()
+                .FirstOrDefault(m => m.Name == "MenuItemSortSelectionTitle");
+            if (sortTitleItem != null)
+            {
+                sortTitleItem.IsVisible = canSortSelection;
+                sortTitleItem.IsEnabled = !IsFilterActive;
+            }
+
+            var sortFolderItem = menu.Items.OfType<MenuItem>()
+                .FirstOrDefault(m => m.Name == "MenuItemSortSelectionFolder");
+            if (sortFolderItem != null)
+            {
+                sortFolderItem.IsVisible = canSortSelection && MenuKindSelected == MenuKind.openMenu;
+                sortFolderItem.IsEnabled = !IsFilterActive;
             }
         }
 
@@ -746,6 +814,7 @@ namespace GDMENUCardManager
 
                 _editingItem = item;
                 _editingOldTitleWasUserEdited = false;
+                _folderEnterPressed = false;
                 var column = e.Column;
                 if (column.Header?.ToString() == "Title")
                 {
@@ -762,6 +831,7 @@ namespace GDMENUCardManager
                 {
                     _editingPropertyName = nameof(GdItem.Folder);
                     _editingOldValue = item.Folder;
+                    Manager.InitializeKnownFolders();
                 }
                 else if (column.Header?.ToString() == "Type")
                 {
@@ -787,8 +857,15 @@ namespace GDMENUCardManager
 
         private void DataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
+            bool folderEnterPressed = _folderEnterPressed;
+            _folderEnterPressed = false;
+
             if (e.EditAction == DataGridEditAction.Cancel)
             {
+                // Title and Folder bindings push every keystroke to the item.
+                if (_editingItem != null &&
+                    (_editingPropertyName == nameof(GdItem.Name) || _editingPropertyName == nameof(GdItem.Folder)))
+                    RevertProperty(_editingItem, _editingPropertyName, _editingOldValue);
                 ClearEditingCapture();
                 return;
             }
@@ -812,8 +889,7 @@ namespace GDMENUCardManager
             }
             else if (e.EditingElement is ComboBox comboBox)
             {
-                // Avalonia ComboBox uses SelectedItem
-                newValue = comboBox.SelectedItem;
+                newValue = comboBox.IsEditable ? comboBox.Text : comboBox.SelectedItem;
             }
             else if (e.EditingElement is Visual visual)
             {
@@ -978,12 +1054,18 @@ namespace GDMENUCardManager
                 // Check if Folder edit conflicts with an alt folder.
                 if (propertyName == nameof(GdItem.Folder) && newValue is string newFolder)
                 {
-                    var trimmed = newFolder.Trim();
-                    if (!string.IsNullOrEmpty(trimmed) && item.AlternativeFolders.Contains(trimmed))
+                    // Only Enter clears the folder. Leaving the cell with no text keeps the old one.
+                    if (string.IsNullOrWhiteSpace(newFolder) && !folderEnterPressed)
+                    {
+                        RevertProperty(item, propertyName, oldValue);
+                        return;
+                    }
+
+                    var cleaned = GdItem.CleanFolderPath(newFolder);
+                    if (!string.IsNullOrEmpty(cleaned) && item.AlternativeFolders.Contains(cleaned))
                     {
                         // Revert the property in case binding already updated it
                         RevertProperty(item, propertyName, oldValue);
-                        e.Cancel = true;
                         Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
                         {
                             await MessageBoxManager.GetMessageBoxStandard("Information",
@@ -1011,6 +1093,15 @@ namespace GDMENUCardManager
                     committedValue = item.Disc;
                 }
 
+                // Cleanup can turn the typed text back into the old value (e.g., "t-8119n"), which
+                // needs no undo step. A serial can still have a translation to confirm.
+                if (Equals(oldValue, committedValue))
+                {
+                    if (propertyName == nameof(GdItem.ProductNumber))
+                        QueueSerialTranslationDialog(item);
+                    return;
+                }
+
                 Manager.UndoManager.RecordChange(new PropertyEditOperation
                 {
                     Item = item,
@@ -1023,6 +1114,12 @@ namespace GDMENUCardManager
                 if (propertyName == nameof(GdItem.ProductNumber))
                     QueueSerialTranslationDialog(item);
             }
+        }
+
+        private void FolderComboBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+                _folderEnterPressed = true;
         }
 
         private static bool TryGetArchiveMetadataField(
@@ -1089,7 +1186,9 @@ namespace GDMENUCardManager
             object editingElement,
             string value)
         {
-            if (editingElement is ComboBox comboBox)
+            if (editingElement is ComboBox { IsEditable: true } editableCombo)
+                editableCombo.Text = value ?? "";
+            else if (editingElement is ComboBox comboBox)
                 comboBox.SelectedItem = value;
             else if (editingElement is TextBox textBox)
                 textBox.Text = value ?? "";
@@ -1368,9 +1467,9 @@ namespace GDMENUCardManager
                             WindowStartupLocation = WindowStartupLocation.CenterOwner,
                             ButtonDefinitions = new ButtonDefinition[]
                             {
-                                new ButtonDefinition { Name = "Create" },
+                                new ButtonDefinition { Name = "Create", IsDefault = true },
                                 new ButtonDefinition { Name = "Close" },
-                                new ButtonDefinition { Name = "Skip" }
+                                new ButtonDefinition { Name = "Skip", IsCancel = true }
                             }
                         }).ShowWindowDialogAsync(this);
 
@@ -1410,9 +1509,9 @@ namespace GDMENUCardManager
                             WindowStartupLocation = WindowStartupLocation.CenterOwner,
                             ButtonDefinitions = new ButtonDefinition[]
                             {
-                                new ButtonDefinition { Name = "Create" },
+                                new ButtonDefinition { Name = "Create", IsDefault = true },
                                 new ButtonDefinition { Name = "Close" },
-                                new ButtonDefinition { Name = "Skip" }
+                                new ButtonDefinition { Name = "Skip", IsCancel = true }
                             }
                         }).ShowWindowDialogAsync(this);
 
@@ -1452,9 +1551,9 @@ namespace GDMENUCardManager
                             WindowStartupLocation = WindowStartupLocation.CenterOwner,
                             ButtonDefinitions = new ButtonDefinition[]
                             {
-                                new ButtonDefinition { Name = "Generate" },
+                                new ButtonDefinition { Name = "Generate", IsDefault = true },
                                 new ButtonDefinition { Name = "Close" },
-                                new ButtonDefinition { Name = "Skip" }
+                                new ButtonDefinition { Name = "Skip", IsCancel = true }
                             }
                         }).ShowWindowDialogAsync(this);
 
@@ -1494,9 +1593,9 @@ namespace GDMENUCardManager
                             WindowStartupLocation = WindowStartupLocation.CenterOwner,
                             ButtonDefinitions = new ButtonDefinition[]
                             {
-                                new ButtonDefinition { Name = "Regenerate" },
+                                new ButtonDefinition { Name = "Regenerate", IsDefault = true },
                                 new ButtonDefinition { Name = "Proceed" },
-                                new ButtonDefinition { Name = "Skip" }
+                                new ButtonDefinition { Name = "Skip", IsCancel = true }
                             }
                         }).ShowWindowDialogAsync(this);
 
@@ -1509,7 +1608,7 @@ namespace GDMENUCardManager
                                 await MessageBoxManager.GetMessageBoxStandard("Error", $"Failed to regenerate ICON.DAT: {error}", icon: MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
                             }
                         }
-                        else if (result == "Skip")
+                        else if (result != "Proceed")
                         {
                             Manager.ArtworkDisabled = true;
                         }
@@ -1530,6 +1629,9 @@ namespace GDMENUCardManager
 
         private async Task Save()
         {
+            if (IsBusy)
+                return;
+            dg1.CommitEdit();
             IsBusy = true;
             try
             {
@@ -1545,12 +1647,12 @@ namespace GDMENUCardManager
                         WindowStartupLocation = WindowStartupLocation.CenterOwner,
                         ButtonDefinitions = new ButtonDefinition[]
                         {
-                            new ButtonDefinition { Name = "Return" },
+                            new ButtonDefinition { Name = "Return", IsDefault = true, IsCancel = true },
                             new ButtonDefinition { Name = "Proceed" }
                         }
                     }).ShowWindowDialogAsync(this);
 
-                    if (result == "Return")
+                    if (result != "Proceed")
                     {
                         IsBusy = false;
                         return;
@@ -1572,12 +1674,12 @@ namespace GDMENUCardManager
                         WindowStartupLocation = WindowStartupLocation.CenterOwner,
                         ButtonDefinitions = new ButtonDefinition[]
                         {
-                            new ButtonDefinition { Name = "Return" },
+                            new ButtonDefinition { Name = "Return", IsDefault = true, IsCancel = true },
                             new ButtonDefinition { Name = "Proceed" }
                         }
                     }).ShowWindowDialogAsync(this);
 
-                    if (result == "Return")
+                    if (result != "Proceed")
                     {
                         IsBusy = false;
                         return;
@@ -1719,6 +1821,7 @@ namespace GDMENUCardManager
                     SetOrAddSetting(config, "TempFolder", "");
                 else
                     SetOrAddSetting(config, "TempFolder", TempFolder);
+                RetiredSettings.Remove(config);
                 config.Save(System.Configuration.ConfigurationSaveMode.Modified);
                 ConfigurationManager.RefreshSection("appSettings");
             }
@@ -1737,8 +1840,10 @@ namespace GDMENUCardManager
                 SetOrAddSetting(config, "EnableGDIShrinkExisting", Manager.EnableGDIShrinkExisting.ToString());
                 SetOrAddSetting(config, "EnableRegionPatch", Manager.EnableRegionPatch.ToString());
                 SetOrAddSetting(config, "EnableRegionPatchExisting", Manager.EnableRegionPatchExisting.ToString());
+                SetOrAddSetting(config, "ConversionFormat", Manager.ConversionFormat.ToString());
                 SetOrAddSetting(config, "EnableVgaPatch", Manager.EnableVgaPatch.ToString());
                 SetOrAddSetting(config, "EnableVgaPatchExisting", Manager.EnableVgaPatchExisting.ToString());
+                RetiredSettings.Remove(config);
                 config.Save(System.Configuration.ConfigurationSaveMode.Modified);
                 ConfigurationManager.RefreshSection("appSettings");
             }
@@ -1752,6 +1857,7 @@ namespace GDMENUCardManager
             {
                 var config = ConfigurationManager.OpenExeConfiguration(System.Configuration.ConfigurationUserLevel.None);
                 SetOrAddSetting(config, "LockCheck", Manager.EnableLockCheck.ToString());
+                RetiredSettings.Remove(config);
                 config.Save(System.Configuration.ConfigurationSaveMode.Modified);
                 ConfigurationManager.RefreshSection("appSettings");
             }
@@ -1768,6 +1874,7 @@ namespace GDMENUCardManager
             {
                 var config = ConfigurationManager.OpenExeConfiguration(System.Configuration.ConfigurationUserLevel.None);
                 SetOrAddSetting(config, "FatSort", Manager.EnableFatSort.ToString());
+                RetiredSettings.Remove(config);
                 config.Save(System.Configuration.ConfigurationSaveMode.Modified);
                 ConfigurationManager.RefreshSection("appSettings");
             }
@@ -1835,6 +1942,7 @@ namespace GDMENUCardManager
                 SetOrAddSetting(config, "WindowTop", Position.Y.ToString());
                 SetOrAddSetting(config, "WindowWidth", Width.ToString());
                 SetOrAddSetting(config, "WindowHeight", Height.ToString());
+                RetiredSettings.Remove(config);
                 config.Save(System.Configuration.ConfigurationSaveMode.Modified);
                 ConfigurationManager.RefreshSection("appSettings");
             }
@@ -2501,12 +2609,28 @@ namespace GDMENUCardManager
                         OldAltFolders = new List<string>(i.AlternativeFolders)
                     }).ToList();
 
+                    var oldOrder = new List<GdItem>(Manager.ItemList);
+
                     var (updatedCount, conflictsRemoved) = Manager.ApplyFolderMappings(window.FolderMappings);
 
                     // Move any folder artwork along with the renamed paths
                     var artRekeys = Manager.RekeyFolderArtForMappings(window.FolderMappings);
 
-                    if (updatedCount > 0 || conflictsRemoved > 0)
+                    // The renames are already applied, so a failed sort still falls through to record them.
+                    bool sorted = false;
+                    string sortError = null;
+                    IsBusy = true;
+                    try
+                    {
+                        sorted = await Manager.SortFolderContents(window.FolderSorts);
+                    }
+                    catch (Exception ex)
+                    {
+                        sortError = ex.Message;
+                    }
+                    IsBusy = false;
+
+                    if (updatedCount > 0 || conflictsRemoved > 0 || sorted)
                     {
                         // Fill in new values and filter to only changed items.
                         var undoOp = new BatchFolderRenameOperation();
@@ -2521,12 +2645,26 @@ namespace GDMENUCardManager
                         undoOp.FolderArtDat = Manager.FolderArtDat;
                         undoOp.ArtRekeys = artRekeys;
 
-                        if (undoOp.Snapshots.Count > 0 || artRekeys.Count > 0)
+                        if (sorted)
+                        {
+                            undoOp.Reorder = new ListReorderOperation
+                            {
+                                ItemList = Manager.ItemList,
+                                OldOrder = oldOrder,
+                                NewOrder = new List<GdItem>(Manager.ItemList)
+                            };
+                        }
+
+                        if (undoOp.Snapshots.Count > 0 || artRekeys.Count > 0 || sorted)
                             Manager.UndoManager.RecordChange(undoOp);
 
-                        var msg = $"{updatedCount} disc image(s) updated across {window.FolderMappings.Count} folder(s).";
+                        var msg = "";
+                        if (updatedCount > 0 || conflictsRemoved > 0)
+                            msg = $"{updatedCount} disc image(s) updated across {window.FolderMappings.Count} folder(s).";
                         if (conflictsRemoved > 0)
                             msg += $"\n\n{conflictsRemoved} additional folder path(s) were automatically removed because they became duplicates of their disc image's primary folder path after renaming.";
+                        if (sorted)
+                            msg += (msg.Length > 0 ? "\n\n" : "") + $"Contents of {window.FolderSorts.Count} folder(s) sorted by title.";
                         msg += "\n\nClick 'Save Changes' to write updates to SD card.";
 
                         await MessageBoxManager.GetMessageBoxStandard("Information", msg, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
@@ -2535,6 +2673,9 @@ namespace GDMENUCardManager
                     {
                         await MessageBoxManager.GetMessageBoxStandard("Information", "No changes were made.", windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
                     }
+
+                    if (sortError != null)
+                        await MessageBoxManager.GetMessageBoxStandard("Error", sortError, icon: MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
                 }
             }
             catch (Exception ex)
@@ -2566,6 +2707,8 @@ namespace GDMENUCardManager
 
         private void ButtonRefreshDrive_Click(object sender, RoutedEventArgs e)
         {
+            if (IsBusy)
+                return;
             // Clear custom path if set
             if (IsUsingCustomPath)
             {
@@ -2598,6 +2741,8 @@ namespace GDMENUCardManager
 
         private async void ButtonBrowseSdPath_Click(object sender, RoutedEventArgs e)
         {
+            if (IsBusy)
+                return;
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
                 Title = "Select SD Card Folder",
@@ -2608,7 +2753,7 @@ namespace GDMENUCardManager
             if (!string.IsNullOrEmpty(selectedPath))
             {
                 // Check if it looks like a GDEMU SD card
-                bool hasGdemuIni = File.Exists(Path.Combine(selectedPath, Constants.MenuConfigTextFile));
+                bool hasGdemuIni = Helper.FileExistsIgnoreCase(Path.Combine(selectedPath, Constants.MenuConfigTextFile));
                 bool has01Folder = Directory.Exists(Path.Combine(selectedPath, "01"));
 
                 if (!hasGdemuIni && !has01Folder)
@@ -2622,6 +2767,8 @@ namespace GDMENUCardManager
                         MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
                 }
 
+                if (IsBusy)
+                    return;
                 // Set the custom path
                 CustomSdPath = selectedPath;
                 Manager.sdPath = selectedPath;
@@ -2636,7 +2783,7 @@ namespace GDMENUCardManager
         {
             DriveInfo[] list;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                list = DriveInfo.GetDrives().Where(x => x.IsReady && (showAllDrives || (x.DriveType == DriveType.Removable && x.DriveFormat.StartsWith("FAT")))).ToArray();
+                list = DriveInfo.GetDrives().Where(x => (showAllDrives || x.DriveType == DriveType.Removable) && x.IsReady && (showAllDrives || x.DriveFormat.StartsWith("FAT"))).ToArray();
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 //list = DriveInfo.GetDrives().Where(x => x.IsReady && (showAllDrives || x.DriveType == DriveType.Removable || x.DriveType == DriveType.Fixed)).ToArray();//todo need to test
                 list = DriveInfo.GetDrives().Where(x => x.IsReady && (showAllDrives || x.DriveType == DriveType.Removable || x.DriveType == DriveType.Fixed || (x.DriveType == DriveType.Unknown && x.DriveFormat.Equals("lifs", StringComparison.InvariantCultureIgnoreCase)))).ToArray();//todo need to test
@@ -2658,7 +2805,7 @@ namespace GDMENUCardManager
                 try
                 {
                     DriveList.Add(drive);
-                    if (SelectedDrive == null && File.Exists(Path.Combine(drive.RootDirectory.FullName, Constants.MenuConfigTextFile)))
+                    if (SelectedDrive == null && Helper.FileExistsIgnoreCase(Path.Combine(drive.RootDirectory.FullName, Constants.MenuConfigTextFile)))
                         SelectedDrive = drive;
                 }
                 catch { }
@@ -2759,6 +2906,8 @@ namespace GDMENUCardManager
                     assignAltItem.Header = "Assign Additional Folder Paths";
                     assignAltItem.IsEnabled = !isMultiple;
                 }
+
+                UpdateSortSelectionMenuItems(menu, dg1.SelectedItems.Cast<GdItem>());
 
                 // Disable context menu for menu entry (folder 01) by setting all items disabled
                 // we can't easily stop the menu from showing, but the handlers already skip SdNumber == 1
@@ -2959,7 +3108,7 @@ namespace GDMENUCardManager
 
             if (result == true)
             {
-                var folderPath = dialog.FolderPath?.Trim() ?? string.Empty;
+                var folderPath = GdItem.CleanFolderPath(dialog.FolderPath) ?? string.Empty;
 
                 // Check if the new primary folder conflicts with any item's alt folders.
                 if (!string.IsNullOrEmpty(folderPath))
@@ -2995,6 +3144,50 @@ namespace GDMENUCardManager
                     Manager.UndoManager.RecordChange(undoOp);
                 }
             }
+        }
+
+        private void MenuItemSortSelectionTitle_Click(object sender, RoutedEventArgs e)
+        {
+            SortSelectedRows(false);
+        }
+
+        private void MenuItemSortSelectionFolder_Click(object sender, RoutedEventArgs e)
+        {
+            SortSelectedRows(true);
+        }
+
+        private async void SortSelectedRows(bool byFolder)
+        {
+            dg1.CommitEdit();
+
+            var selectedItems = dg1.SelectedItems.Cast<GdItem>().Where(x => x.SdNumber != 1).ToList();
+
+            var sortDescription = byFolder
+                ? $"The {selectedItems.Count} selected disc images will be automatically sorted in alphanumeric order based on a combination of Folder and Title.\n\nDo you want to continue?"
+                : $"The {selectedItems.Count} selected disc images will be automatically sorted in alphanumeric order based on Title.\n\nDo you want to continue?";
+            var result = await MessageBoxManager.GetMessageBoxStandard(
+                "Confirmation",
+                sortDescription,
+                MsBox.Avalonia.Enums.ButtonEnum.YesNo,
+                MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
+
+            if (result != MsBox.Avalonia.Enums.ButtonResult.Yes)
+                return;
+
+            IsBusy = true;
+            try
+            {
+                await Manager.SortSelection(selectedItems, byFolder);
+            }
+            catch (Exception ex)
+            {
+                await MessageBoxManager.GetMessageBoxStandard("Error", ex.Message, icon: MsBox.Avalonia.Enums.Icon.None, windowStartupLocation: WindowStartupLocation.CenterOwner).ShowWindowDialogAsync(this);
+            }
+            IsBusy = false;
+
+            dg1.SelectedItems.Clear();
+            foreach (var item in selectedItems)
+                dg1.SelectedItems.Add(item);
         }
 
         private async void MenuItemAssignAltFolders_Click(object sender, RoutedEventArgs e)
@@ -3108,7 +3301,7 @@ namespace GDMENUCardManager
 
         private async void GridOnKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Delete && !(e.Source is TextBox))
+            if (e.Key == Key.Delete && !(e.Source is TextBox or ComboBox or ComboBoxItem))
             {
                 List<GdItem> toRemove = new List<GdItem>();
                 foreach (GdItem item in dg1.SelectedItems)
@@ -3344,6 +3537,15 @@ namespace GDMENUCardManager
             dg1.SelectedItems.Clear();
             foreach (var item in selectedItems)
                 dg1.SelectedItems.Add(item);
+        }
+
+        private void FilterTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                ButtonSearch_Click(sender, e);
+            }
         }
 
         private async void ButtonSearch_Click(object sender, RoutedEventArgs e)
