@@ -214,3 +214,18 @@ uicon_render(int id, uint32_t argb, uint16_t* out) {
         }
     }
 }
+
+#ifndef UICONS_GEN
+#include "uicons_alpha.inc"
+
+void
+uicon_draw(int id, uint32_t argb, uint16_t* out) {
+    const int r = (int)((argb >> 16) & 0xFF) / 17, g = (int)((argb >> 8) & 0xFF) / 17, b = (int)(argb & 0xFF) / 17;
+    const uint16_t rgb = (uint16_t)((r << 8) | (g << 4) | b);
+    const uint8_t* t = uicon_alpha_table[id < 0 || id >= UICON_COUNT ? 0 : id];
+    for (int i = 0; i < UICON_SIZE * UICON_SIZE; i += 2) {
+        out[i] = (uint16_t)(((t[i / 2] & 15) << 12) | rgb);
+        out[i + 1] = (uint16_t)(((t[i / 2] >> 4) << 12) | rgb);
+    }
+}
+#endif

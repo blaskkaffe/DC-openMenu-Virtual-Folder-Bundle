@@ -11,3 +11,5 @@ enum { UICON_ONLINE, UICON_PLAY, UICON_EVENTS, UICON_CHAT, UICON_SETTINGS, UICON
 
 /* Draw glyph `id` into w*h ARGB4444 pixels (w = h = UICON_SIZE): the glyph in `argb` (alpha ignored) on a clear background. */
 void uicon_render(int id, uint32_t argb, uint16_t* out);
+/* The same picture from the table made by tools/gen_uicons.c (no maths: what the console uses). */
+void uicon_draw(int id, uint32_t argb, uint16_t* out);

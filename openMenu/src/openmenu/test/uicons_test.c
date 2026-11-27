@@ -16,6 +16,16 @@ main(int argc, char** argv) {
             uint32_t colour = row == 0 ? 0xFF000000u : 0xFF1C2850u;
             int on = 0;
             uicon_render(id, colour, px);
+            {
+                uint16_t tp[UICON_SIZE * UICON_SIZE];
+                uicon_draw(id, colour, tp);
+                for (int i = 0; i < UICON_SIZE * UICON_SIZE; i++) {
+                    if (tp[i] != px[i]) {
+                        fprintf(stderr, "glyph %d: uicons_alpha.inc is out of date (run tools/gen_uicons.c)\n", id);
+                        return 1;
+                    }
+                }
+            }
             for (int i = 0; i < UICON_SIZE * UICON_SIZE; i++) {
                 on += (px[i] >> 12) != 0;
             }
