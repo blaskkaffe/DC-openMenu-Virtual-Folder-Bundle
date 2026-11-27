@@ -212,8 +212,9 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] Start-up: the menu still appears without a visible extra wait (the case and disc pictures are now made then).
 - [ ] Game list: the first open and scrolling one game at a time: no hitch (flycast: no dropped frame in either).
 - [ ] Game list card: the few-box case looks like the full one at the card's size: front picture, the hinge strip beside it (light grey white case, dark grey dark case, near white / near black clear cases, PAL blue bar with its lighter pill), the spine side in the spine label's colour (Japanese white with the coral band at the bottom, American black, clear white case white, PAL blue), double cases with their dark middle gap. Y shows the full case with its spine, back and inner label pictures.
-- [ ] Information screen (Y): the first open of each case kind may take one short hitch (its spine label is made then).
-- [ ] Internet screen: opens without the long pause (the button glyphs come from a table now); the first half second may still stutter while the expansion port is probed.
+- [ ] Information screen (Y): rest on a game a moment, then Y: no hitch (the full case's spine and back are made while the list rests).
+- [ ] Internet screen: opens and runs smoothly from the first frame (the expansion port is probed during start-up when the Internet icon is on); start-up is not noticeably longer.
+- [ ] Card Manager (Windows, Linux, macOS): Back and Spine columns beside Artwork: bold when the game has none, a click opens the artwork window on that picture; after Apply and Save the button changes.
 - [ ] Game information screen (Y) on a game without box art: opens without a pause.
 - [ ] Leaving Settings after a change: the save to the VMU takes a moment (left on the menu's thread on purpose, so a save is never cut short).
 - [ ] Settings > Other > Performance test on the console, with the serial cable: the results compared with flycast's.
