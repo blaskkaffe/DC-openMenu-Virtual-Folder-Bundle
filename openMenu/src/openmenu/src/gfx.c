@@ -1754,6 +1754,60 @@ spine_texture(int kind) {
     return _r;
 }
 
+/* The spine picture kind of a case model (the double cases' labels are narrower: kinds from SPINE_KINDS on) */
+static int
+spine_kind_of(int model) {
+    const int ca = bmodel_case_single(model);
+    return (ca == BMODEL_CASE_PAL ? SPINE_PAL : ca == BMODEL_CASE_WHITE ? SPINE_J : ca == BMODEL_CASE_CLEAR_WHITE ? SPINE_USW : SPINE_US)
+           + (bmodel_case_is_double(model) ? SPINE_KINDS : 0);
+}
+
+/* Is this game's spine (the bound title and code) made already? */
+static int
+spine_made(int kind) {
+    char key[sizeof(spine_slots[0].key)];
+    snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
+    for (int i = 0; i < SPINE_SLOTS; i++) {
+        if (spine_slots[i].tex.valid && !strcmp(spine_slots[i].key, key)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+gfx_case_prepare(int model, const char* product, const char* title) {
+    model = bmodel_case_full(model);
+    if (model < BMODEL_CASE_WHITE || model >= BMODEL_LCASE_WHITE || model == BMODEL_PODIUM || !product || !product[0]) {
+        return 1;
+    }
+    /* the back cover and the spine label from BACK.DAT / SPINE.DAT: the loader reads them, art_poll uploads them */
+    art_entry* back = art_get(product, 2);
+    art_entry* sp = art_get(product, 3);
+    if ((back && back->loading) || (sp && sp->loading)) {
+        return 0;
+    }
+    if (sp && sp->tex.valid) {
+        return 1; /* SPINE.DAT has this game's own: nothing to make */
+    }
+    const int kind = spine_kind_of(model);
+    if (!spine_base[kind] && !spine_base_tried[kind]) {
+        spine_base_of(kind); /* this step alone in this frame */
+        return 0;
+    }
+    char t[sizeof(spine_title)], c[sizeof(spine_code)];
+    strcpy(t, spine_title);
+    strcpy(c, spine_code);
+    gfx_model_bind_title(title, product);
+    int done = spine_made(kind);
+    if (!done) {
+        spine_texture(kind); /* one spine a frame at most: it may be the next call that makes it */
+        done = spine_made(kind);
+    }
+    gfx_model_bind_title(t, c);
+    return done;
+}
+
 static rom_tex*
 get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.b == 0) {
@@ -1797,8 +1851,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            const int kind = (ca == BMODEL_CASE_PAL ? SPINE_PAL : ca == BMODEL_CASE_WHITE ? SPINE_J : ca == BMODEL_CASE_CLEAR_WHITE ? SPINE_USW : SPINE_US)
-                             + (bmodel_case_is_double(ref.a) ? SPINE_KINDS : 0);
+            const int kind = spine_kind_of(ref.a);
             if (e && e->loading) {
                 rom_tex* r = spine_plain_texture(kind); /* SPINE.DAT may have one: none is made until it is known */
                 if (r) {
