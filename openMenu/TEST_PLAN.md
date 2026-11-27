@@ -20,7 +20,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
 - [ ] Settings used below: Game list > Game order / Serial VMU / Recently played; Settings > Internet > Online features On or Auto-connect,
-      Internet screen > Settings > Online time sync (a zone), Player list refresh; Clock and date > .beat time.
+      Settings > Clock and date > Online time sync (a zone); Internet screen > Settings > Player list refresh; Clock and date > .beat time.
 - [ ] Test on an NTSC-U console (orange swirl) and, if you can, a PAL one (blue swirl, region byte 2). Note the console and BIOS version.
 
 ## 2. Game list (the single box)

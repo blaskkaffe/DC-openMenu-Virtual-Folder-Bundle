@@ -310,6 +310,29 @@ poll_cards(void) {
     fs.ports = controllers();
 }
 
+/* Before a copy or a delete touches a card: is it still the card the files were listed from? The command works on the list the
+ * screen showed (names, first blocks, sizes); a card swapped for another between the listing and the command (faster than the
+ * poll notices) would otherwise lose a file of the same name. One directory read, once per command. */
+static int op_checked;
+
+static int
+same_card(const bfs_op* op) {
+    vf_file* now = (vf_file*)malloc(sizeof(vf_file) * VF_MAX_FILES);
+    int ok = now != NULL;
+    int n = ok ? vf_list(op->src, now, VF_MAX_FILES) : -1;
+    ok = n >= 0;
+    for (int k = 0; ok && k < op->nfiles; k++) {
+        const vf_file* v = &vfiles[op->src][op->files[k]];
+        int found = 0;
+        for (int i = 0; i < n && !found; i++) {
+            found = !strncmp(now[i].name, v->name, 12) && now[i].firstblk == v->firstblk && now[i].blocks == v->blocks;
+        }
+        ok = found;
+    }
+    free(now);
+    return ok;
+}
+
 /* The command the screen asked for, a file a frame. */
 static void
 run_op(bfs_op* op) {
@@ -337,8 +360,20 @@ run_op(bfs_op* op) {
         op->done = 1;
         return;
     }
+    if (!op_checked) {
+        op_checked = 1;
+        if (op->src < 0 || op->src >= BFS_SLOTS || !same_card(op)) {
+            op->failed = 1;
+            op->current = op->nfiles; /* nothing is written */
+        }
+    }
     if (op->current < op->nfiles) {
         int f = op->files[op->current];
+        if (!vf_present(op->src) || (op->kind == BFS_OP_COPY && !vf_present(op->dst))) { /* pulled out halfway */
+            op->failed = 1;
+            op->current = op->nfiles;
+            return;
+        }
         const vf_file* v = &vfiles[op->src][f];
         int rc;
         if (op->kind == BFS_OP_COPY) {
@@ -356,6 +391,7 @@ run_op(bfs_op* op) {
         return;
     }
     /* finished: the cards as they are now */
+    op_checked = 0;
     queue_card_read(op->src);
     if (op->kind == BFS_OP_COPY && op->dst >= 0) {
         queue_card_read(op->dst);
@@ -382,6 +418,7 @@ uif_open(bmenu* m) {
         cards[i].serial++;
     }
     header_card = -1;
+    op_checked = 0;
     poll_cards();
     poll_timer = 0;
     left = 0;
@@ -425,6 +462,19 @@ uif_sync(void) {
     }
     bfs_op* op = bfs_pending(&fs);
     if (op) {
+        /* never write while the reader thread is still in the middle of a read of a card: let it finish first (its answer is
+         * thrown away, the command reads the cards again when it is done) */
+        if (job.state == 1) {
+            return;
+        }
+        if (job.state == 2) {
+            if (job.kind == J_CARD && (job.slot == op->src || job.slot == op->dst)) {
+                job.state = 0; /* the list the command works on stays as the screen showed it; the card is read again after */
+                need_read[job.slot] = present[job.slot];
+            } else {
+                apply_job();
+            }
+        }
         run_op(op);
         return;
     }

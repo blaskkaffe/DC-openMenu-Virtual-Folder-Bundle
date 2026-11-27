@@ -69,6 +69,15 @@ jobs:
             openMenu/src/openmenu/test/dc99_chat_parse_test.c openMenu/src/openmenu/src/backend/dc99_chat_parse.c -o dc99_chat_parse_test
           ./dc99_chat_parse_test
 
+      - name: DC API client test (controller adapter rows)
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/dcapi_text_test.c openMenu/src/openmenu/src/vm2/dcapi_text.c -o dcapi_text_test
+          ./dcapi_text_test
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-format-truncation -fsanitize=address,undefined -DCTA_HOST_TEST -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/ctrl_adapter_test.c openMenu/src/openmenu/src/ctrl_adapter.c openMenu/src/openmenu/src/vm2/dcapi_text.c -o ctrl_adapter_test
+          ./ctrl_adapter_test
+
       - name: kosnet json test
         run: |
           gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -IopenMenu/src/openmenu/src \
