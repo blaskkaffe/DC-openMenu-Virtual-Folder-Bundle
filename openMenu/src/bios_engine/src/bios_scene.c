@@ -179,13 +179,15 @@ static cache_entry cache_entries[CACHE_ENTRIES];
 static int cache_entry_n;
 static int cache_disabled;
 
-/* Drawing states seen before: only a state that is drawn again in the next frame (or in the same one) is kept. One that
- * changes every frame would only fill the pool, and so would a looping motion, whose states come back every few frames: each
- * time the pool is full it is emptied, and everything at rest is transformed again (two slow frames every 17 to 25). Keyed by
- * the state's hash, so objects built on the fly (panels, rows) count too. */
+/* Drawing states seen before: only a state drawn in three frames in a row is kept. One that changes every frame would only fill
+ * the pool, and so would a looping motion, whose states come back every few frames, or one that moves every other frame (the
+ * globe turning at 30 steps a second): each time the pool is full it is emptied, and everything at rest is transformed again.
+ * Keyed by the state's hash, so objects built on the fly (panels, rows) count too. */
 #define SEEN_SLOTS 512
+#define SEEN_RUN 3
 static uint32_t seen[SEEN_SLOTS]; /* hash | 1, 0 = free */
 static uint32_t seen_frame[SEEN_SLOTS]; /* the frame it was last drawn in */
+static uint8_t seen_run[SEEN_SLOTS];    /* in how many frames in a row, up to then */
 static int seen_n;
 static uint32_t draw_frame;
 
@@ -199,9 +201,13 @@ seen_before(uint32_t hash) {
     uint32_t key = hash | 1u, i = (hash >> 1) & (SEEN_SLOTS - 1);
     for (;;) {
         if (seen[i] == key) {
-            const int recent = draw_frame - seen_frame[i] <= 1u;
+            if (draw_frame == seen_frame[i] + 1u) {
+                seen_run[i] = (uint8_t)(seen_run[i] < SEEN_RUN ? seen_run[i] + 1 : SEEN_RUN);
+            } else if (draw_frame != seen_frame[i]) {
+                seen_run[i] = 1; /* not in the frame before: start counting again */
+            }
             seen_frame[i] = draw_frame;
-            return recent;
+            return seen_run[i] >= SEEN_RUN;
         }
         if (!seen[i]) {
             break;
@@ -215,6 +221,7 @@ seen_before(uint32_t hash) {
     }
     seen[i] = key;
     seen_frame[i] = draw_frame;
+    seen_run[i] = 1;
     seen_n++;
     return 0;
 }

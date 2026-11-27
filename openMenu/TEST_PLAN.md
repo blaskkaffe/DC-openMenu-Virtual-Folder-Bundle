@@ -210,7 +210,10 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] Main menu at rest: no hitch every second or so (the draw cache used to empty itself every 17 to 25 frames).
 - [ ] Main menu: moving between icons, and coming back from a screen (the icons fly in): smooth. In flycast the fly-in costs about 11 ms a frame (16 for the first two); on the console it is the screen most likely to drop frames.
 - [ ] Start-up: the menu still appears without a visible extra wait (the case and disc pictures are now made then).
-- [ ] Game list: the first open, scrolling one game at a time, and the first game of each case kind (PAL, Japanese, American, clear white): at most one short hitch for a kind's first case (its spine label, 10 ms in flycast), none per game.
+- [ ] Game list: the first open and scrolling one game at a time: no hitch (flycast: no dropped frame in either).
+- [ ] Game list card: the few-box case looks like the full one at the card's size: front picture, the hinge strip beside it (light grey white case, dark grey dark case, near white / near black clear cases, PAL blue bar with its lighter pill), the spine side in the spine label's colour (Japanese white with the coral band at the bottom, American black, clear white case white, PAL blue), double cases with their dark middle gap. Y shows the full case with its spine, back and inner label pictures.
+- [ ] Information screen (Y): the first open of each case kind may take one short hitch (its spine label is made then).
+- [ ] Internet screen: opens without the long pause (the button glyphs come from a table now); the first half second may still stutter while the expansion port is probed.
 - [ ] Game information screen (Y) on a game without box art: opens without a pause.
 - [ ] Leaving Settings after a change: the save to the VMU takes a moment (left on the menu's thread on purpose, so a save is never cut short).
 - [ ] Settings > Other > Performance test on the console, with the serial cable: the results compared with flycast's.
