@@ -43,6 +43,8 @@ osk_key_at(int layer, int row, int col) {
                 return r;
             }
         }
+        r.kind = OSK_SPACE; /* the bottom row has only its own keys: no letter row there */
+        return r;
     }
     r.ch = rows[layer][row][col];
     return r;
