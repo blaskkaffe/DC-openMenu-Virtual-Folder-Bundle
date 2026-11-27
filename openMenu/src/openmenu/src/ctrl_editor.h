@@ -63,6 +63,10 @@ typedef struct ced {
     int motion_known;            /* the device has the motion keys (asked once the port is a maracas port) */
     int left_deg, right_deg, heights_ok;    /* the live heights of the Joy-Cons, degrees */
     int since_heights_ms;
+    /* the motion page's polling without waiting (ced_set_async): the front end's request that is answered on a later frame */
+    int (*begin)(void* user, const char* req);
+    int (*poll)(void* user, char* ans, size_t cap);
+    int inflight, misses;
     char msg[56];
 } ced;
 
@@ -83,6 +87,9 @@ int ced_set_cursor(ced* e, int row);
 int ced_activate(ced* e);                        /* A: returns 1 when something was sent or the page changed */
 int ced_change(ced* e, int dir);                 /* left (-1) / right (+1) on a row that has values: type, accessory, layout */
 int ced_back(ced* e);                            /* B: goes up one page; returns 1 when the editor is left */
+/* The motion page polls the adapter about seven times a second; with these it does so without waiting for the answer (begin queues
+ * a request, -1 when it cannot now; poll: > 0 the answer's length, 0 still on its way, negative failed). Without them it asks and waits. */
+void ced_set_async(ced* e, int (*begin)(void* user, const char* req), int (*poll)(void* user, char* ans, size_t cap));
 int ced_tick(ced* e, int ms);                    /* time passes: 1 when the rows changed */
 int ced_wants_man(const ced* e);                 /* the page shows the calibration man */
 int ced_man(const ced* e, float* left_deg, float* right_deg);  /* his arms: 1 when the heights are live */

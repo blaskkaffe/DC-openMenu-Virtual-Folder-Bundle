@@ -120,6 +120,10 @@ int gfx_dyn_create(const unsigned short* argb4444, int w, int h);
 void gfx_dyn_free(int id);
 void gfx_dyn_free_all(void);
 void gfx_image(int id, float x, float y, float w, float h, float z);
+/* A picture of any size, padded to the power of two sizes the PVR needs; *u1, *v1: how much of the padded texture it covers. */
+int gfx_dyn_create_pow2(const unsigned short* argb4444, int w, int h, float* u1, float* v1);
+/* A picture on any four corners (top left, top right, bottom left, bottom right): turned or skewed by the PVR. */
+void gfx_image_quad(int id, const float x[4], const float y[4], float u1, float v1, float z);
 /* The same picture multiplied by a colour (a grey picture takes the colour); 1 when `id` is a picture that is in video memory. */
 void gfx_image_tint(int id, float x, float y, float w, float h, float z, uint32_t argb);
 int gfx_dyn_valid(int id);

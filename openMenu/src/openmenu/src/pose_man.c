@@ -217,6 +217,35 @@ pose_man_leg_image(int side, int* w, int* h) {
     return side ? pm_tex_leg_r : pm_tex_leg_l;
 }
 
+const uint16_t*
+pose_man_arm_tex(int side, int* w, int* h) {
+    *w = side ? PM_TEX_ARM_R_W : PM_TEX_ARM_L_W;
+    *h = side ? PM_TEX_ARM_R_H : PM_TEX_ARM_L_H;
+    return side ? pm_tex_arm_r : pm_tex_arm_l;
+}
+
+/* Where the corners of the arm picture go for arm `side` turned to `deg`, as offsets from the shoulder in screen pixels: top left,
+ * top right, bottom left, bottom right (a strip's order). The inverse of the turn pose_man_arm_image() undoes per pixel: the PVR then
+ * turns the picture (no picture is made per angle). */
+void
+pose_man_arm_quad(int side, float deg, float f, float ox[4], float oy[4]) {
+    const int tw = side ? PM_TEX_ARM_R_W : PM_TEX_ARM_L_W, th = side ? PM_TEX_ARM_R_H : PM_TEX_ARM_L_H;
+    const pm_sprite_def* d = &pm_sprite_defs[side ? PM_SPR_ARM_R : PM_SPR_ARM_L];
+    float th_rad = deg * PI_F / 180.0f, dir = side ? 1.0f : -1.0f;
+    float vx = hand_x_ref[side ? 1 : 0] - shoulder_x[side ? 1 : 0], vy = hand_y_ref - shoulder_y;
+    float dx = dir * cosf(th_rad), dy = -sinf(th_rad);
+    float phi = atan2f(dy, dx) - atan2f(vy, vx), c = cosf(phi), s = sinf(phi);
+    float shx = (shoulder_x[side ? 1 : 0] - (float)d->x) * PM_TEXF, shy = (shoulder_y - (float)d->y) * PM_TEXF;
+    float k = PM_TEXF / f;
+    static const float cu[4] = {0.0f, 1.0f, 0.0f, 1.0f}, cv[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+
+    for (int i = 0; i < 4; i++) {
+        float du = cu[i] * (float)tw - shx, dv = cv[i] * (float)th - shy;
+        ox[i] = (c * du - s * dv) / k;
+        oy[i] = (s * du + c * dv) / k;
+    }
+}
+
 /* the arm turned about the shoulder into a picture: for each pixel the place in the arm picture it comes from (nearest) */
 void
 pose_man_arm_image(int side, float deg, float f, uint16_t* out) {

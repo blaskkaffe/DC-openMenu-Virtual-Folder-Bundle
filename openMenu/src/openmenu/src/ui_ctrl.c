@@ -57,12 +57,25 @@ static const char* why = "";
 static char adapter_name[12]; /* what the last adapter opened calls itself, short ("iBlue", "Pico2Maple") */
 /* the man: the arms are turned into pictures at run time (video memory), the legs are one picture each */
 static int arm_tex[2] = {-1, -1}, leg_tex[2] = {-1, -1};
-static float arm_deg[2] = {1000.0f, 1000.0f};
+static float arm_uv[2][2], leg_uv[2][2]; /* how much of each padded texture the picture covers */
 
 static int
 send_text(void* user, const char* req, char* ans, size_t cap) {
     (void)user;
     return dcapi_request(dev, req, ans, cap);
+}
+
+/* the motion page's polling: sent on one frame, the answer picked up on a later one (no frame waits for the bus) */
+static int
+begin_text(void* user, const char* req) {
+    (void)user;
+    return dcapi_begin(dev, req);
+}
+
+static int
+poll_text(void* user, char* ans, size_t cap) {
+    (void)user;
+    return dcapi_poll(ans, cap);
 }
 
 /* The adapter on a port: one "get hello" to the port's controller unit (unit 0), asked only when A is pressed on that controller. The DC API
@@ -174,6 +187,7 @@ uic_open(bmenu* m, int port, int pal) {
         why = "The adapter did not answer";
         return 0;
     }
+    ced_set_async(&ed, begin_text, poll_text);
     snprintf(adapter_name, sizeof(adapter_name), "%s", strstr(h.name, "iBlue") ? "iBlue" : h.name);
     id_port = port;
     build_games();
@@ -184,7 +198,6 @@ uic_open(bmenu* m, int port, int pal) {
     bvm_create(&m->vm, 6, ID_BACK, PRIO);
     anim = 0;
     on_back = 0;
-    arm_deg[0] = arm_deg[1] = 1000.0f;
     why = "";
     return 1;
 }
@@ -305,29 +318,35 @@ draw_man(float cx, float base_y, float scale, float left, float right) {
     for (int i = 0; i < ng; i++) {
         man_tri(sink, &guides[i], MAN_Z - 0.01f);
     }
-    /* the legs once, the arms again when an angle has changed by 2 degrees or more (a picture is made and uploaded) */
+    /* the four pictures are uploaded once (padded to the PVR's power of two sizes); the arms are turned by the PVR: only their corners
+     * change with the Joy-Cons, nothing is drawn or uploaded per angle */
     for (int s = 0; s < 2; s++) {
         float lx, ly, lw, lh;
         if (leg_tex[s] < 0) {
             int w, h;
             const uint16_t* px = pose_man_leg_image(s, &w, &h);
-            leg_tex[s] = gfx_dyn_create(px, w, h);
+            leg_tex[s] = gfx_dyn_create_pow2(px, w, h, &leg_uv[s][0], &leg_uv[s][1]);
+        }
+        if (arm_tex[s] < 0) {
+            int w, h;
+            const uint16_t* px = pose_man_arm_tex(s, &w, &h);
+            arm_tex[s] = gfx_dyn_create_pow2(px, w, h, &arm_uv[s][0], &arm_uv[s][1]);
         }
         pose_man_leg_rect(cx, base_y, scale, s, &lx, &ly, &lw, &lh);
-        if (leg_tex[s] >= 0) gfx_image(leg_tex[s], lx, ly, lw, lh, MAN_Z);
+        {
+            float qx[4] = {lx, lx + lw, lx, lx + lw}, qy[4] = {ly, ly, ly + lh, ly + lh};
+            gfx_image_quad(leg_tex[s], qx, qy, leg_uv[s][0], leg_uv[s][1], MAN_Z);
+        }
     }
     for (int s = 0; s < 2; s++) {
-        static uint16_t img[PM_ARM_IMG * PM_ARM_IMG];
-        float sx, sy, d = degs[s] - arm_deg[s];
-
-        if (arm_tex[s] < 0 || d >= 2.0f || d <= -2.0f) {
-            pose_man_arm_image(s, degs[s], f, img);
-            if (arm_tex[s] >= 0) gfx_dyn_free(arm_tex[s]);
-            arm_tex[s] = gfx_dyn_create(img, PM_ARM_IMG, PM_ARM_IMG);
-            arm_deg[s] = degs[s];
-        }
+        float sx, sy, ox[4], oy[4];
         pose_man_shoulder(cx, base_y, scale, s, &sx, &sy);
-        if (arm_tex[s] >= 0) gfx_image(arm_tex[s], sx - PM_ARM_IMG / 2, sy - PM_ARM_IMG / 2, PM_ARM_IMG, PM_ARM_IMG, MAN_Z);
+        pose_man_arm_quad(s, degs[s], f, ox, oy);
+        for (int i = 0; i < 4; i++) {
+            ox[i] += sx;
+            oy[i] += sy;
+        }
+        gfx_image_quad(arm_tex[s], ox, oy, arm_uv[s][0], arm_uv[s][1], MAN_Z);
     }
     pose_man_build(cx, base_y, scale, left, right, &sc);
     for (int i = 0; i < sc.ntri; i++) {
