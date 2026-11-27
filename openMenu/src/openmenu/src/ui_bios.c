@@ -3201,6 +3201,7 @@ ui_bios_run(const bios_rom* rom) {
     memset(&sec_gs, 0, sizeof(sec_gs));
 
     for (;;) {
+        memset(uin_prof, 0, sizeof(uin_prof));
         uint64_t logic_t0 = timer_us_gettime64();
         unsigned frame_period = (unsigned)(logic_t0 - frame_t0_prev);
         frame_t0_prev = logic_t0;
@@ -3450,7 +3451,6 @@ ui_bios_run(const bios_rom* rom) {
         }
         memset(gfx_prof_us, 0, sizeof(gfx_prof_us));
         memset(ui_prof_us, 0, sizeof(ui_prof_us));
-        memset(uin_prof, 0, sizeof(uin_prof));
         uint64_t draw_t0 = timer_us_gettime64();
         draw_frame(); /* pvr_wait_ready() inside paces this to the display */
         uint64_t draw_t1 = timer_us_gettime64();

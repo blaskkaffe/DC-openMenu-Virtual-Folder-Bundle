@@ -1619,7 +1619,8 @@ uin_sync(void) {
     if (notice_frames > 0) {
         notice_frames--;
     }
-    if (!probed && anim > 1 && dcnow_detect_device_async(&device)) {
+    int _pr; IPROF(2, _pr = !probed && anim > 1 && dcnow_detect_device_async(&device));
+    if (_pr) {
         /* the expansion port is probed once the screen shows, on a worker (a modem's probe takes a while: the screen keeps moving and says
          * "Looking for an adapter..." meanwhile), as the main branch's window */
         probed = 1;
@@ -1632,7 +1633,7 @@ uin_sync(void) {
         }
     }
     IPROF(5, dcnow_conn_poll(&conn));
-    IPROF(6, preview_fill());
+    preview_fill();
     if (!np_chat_nick()[0]) np_set_chat("Dreamer", "preview"); /* PREVIEW ONLY: signed in, to render the chat line */
     int online = conn.state == DCNOW_CONN_ONLINE;
     if (online && !was_online) {
@@ -1727,7 +1728,7 @@ uin_sync(void) {
     } else if (anim - ev_built >= 600) { /* the clock moves on: going on / coming up / over */
         build_events();
     }
-    IPROF(7, ntest = net_test_lines(test_lines, NT_LINES));
+    ntest = net_test_lines(test_lines, NT_LINES);
     /* The gateway: asked about when the Settings page is open and the console is online (again every half minute, or every 15 seconds while
      * none answered), and every two seconds while it joins a Wi-Fi network */
     if (online && page == PAGE_SETTINGS && !ed.active) {
@@ -3107,7 +3108,7 @@ uin_draw(void) {
         }
     }
     IPROF(1, draw_page());
-    IPROF(2, draw_footer());
+    draw_footer();
     {
         bvm_obj* po = bvm_find(&menu->vm, ID_PANEL);
         if (po) {
@@ -3158,7 +3159,7 @@ uin_draw(void) {
             /* the glyph is the button's own picture (texture 0), so it sits in the model and moves with it */
             gfx_decal_override(o->texlist, page_icon((int)(o->id - ID_BUTTON(0)), (int)(o->id - ID_BUTTON(0)) == page));
         }
-        IPROF(3, bscene_draw_object(&menu->scene, o, sink));
+        { uint64_t _q0 = timer_us_gettime64(); bscene_draw_object(&menu->scene, o, sink); unsigned _d = (unsigned)(timer_us_gettime64() - _q0); uin_prof[3] += _d; if (_d > uin_prof[6]) { uin_prof[6] = _d; uin_prof[7] = o->id | (unsigned)o->model << 16; } }
     }
     menu->scene.no_decals = 0;
     menu->scene.ovr_n = 0;
