@@ -175,7 +175,7 @@ static int options_row;
 static void draw_options(void);
 static int notice_frames;
 static char fps_text[40];
-static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
+static int show_debug; /* the fps / timing overlay and its log page: no longer switched on from the main menu (always 0) */
 static uint64_t build_us_sum;
 static uint64_t phase_us[3]; /* begin frame, background, everything else drawn (summed per second) */
 static uint64_t sync_us_sum;
@@ -1517,7 +1517,12 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
     float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
     const float rows_y = popup_rows_y(rows);
-    bscene_draw_panel(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), gfx_sink());
+    /* nearer than the panel depth: over the game list's case and rows (they are at that depth or in front of it) */
+    bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
+                        gfx_sink());
+    /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows, the case) from showing
+     * through the popup's text (over everything 3D, under the highlight and the text) */
+    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 0.6f, 0xE0141820u);
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;
@@ -2271,34 +2276,6 @@ handle_report(button_t b) {
 static void
 handle_main(button_t b) {
     switch (b) {
-        case BTN_X:
-            show_debug = !show_debug;
-            if (!show_debug) {
-                debug_iso = 0;
-                bscene_cache_enable(1);
-            }
-            break;
-        case BTN_B:
-            if (show_debug) {
-                report_page = 1;
-                report_built = 0;
-                {
-                    /* the page's numbers as text on the serial port, so they need no photo */
-                    static char text[2800];
-                    char info[40];
-                    snprintf(info, sizeof(info), "%s %s", console_is_pal() ? "PAL" : "NTSC",
-                             sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3");
-                    dbglog_text(text, sizeof(text), info);
-                    serial_log_block("log", text);
-                }
-            }
-            break;
-        case BTN_Y:
-            if (show_debug) {
-                debug_iso = (debug_iso + 1) % ISO_MODES;
-                bscene_cache_enable(debug_iso != 6); /* 6: every object is transformed, lit and projected every frame */
-            }
-            break;
         case BTN_UP:
             if (bmenu_move(&menu, BMENU_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
@@ -3547,8 +3524,7 @@ ui_bios_run(const bios_rom* rom) {
                     uif_set_pad_adapter(picked - 1, uic_adapter_name());
                     screen = SCREEN_CTRL;
                 } else {
-                    sound_sfx(BAUDIO_SFX_ERROR);
-                    show_notice(uic_why());
+                    sound_sfx(BAUDIO_SFX_ERROR); /* not a controller the editor knows: the sound alone, no notice line */
                 }
             }
         }

@@ -143,6 +143,9 @@ void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
 #define BSCENE_PANE_ARGB 0xB2444479u
 #define BSCENE_PANEL_MODEL 39
 void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
+/* The same nearer the eye (z less far than BSCENE_PANEL_Z, the same size on screen): a popup over the game list, its case and its
+ * rows, which sit at the panel depth and in front of it (the PVR sorts by depth: a panel at the usual depth showed them through). */
+void bscene_draw_panel_z(bscene* s, float x, float y, float w, float h, uint32_t accent, float z, const bscene_sink* sink);
 
 /* The File screen's blue memory card plate (model 18, node 0 only: no free-blocks bar) fitted to the pixel rectangle x, y, w, h by moving its
  * corners apart, so the rim, bevel and translucency are the BIOS's own at any size. `z` is the (negative) view depth it is drawn at. */
