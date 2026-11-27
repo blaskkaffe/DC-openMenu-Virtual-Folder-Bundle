@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 
 #include <arch/timer.h>
@@ -776,6 +777,22 @@ upload_argb4444_impl(const unsigned short* px, int w, int h, rom_tex* g) {
     g->valid = 1;
 }
 
+/* The same for a picture already in a buffer from memalign(32, ...) whose size (w * h * 2) is a multiple of 32: no copy. Frees it. */
+static void
+upload_argb4444_staged(unsigned short* staging, int w, int h, rom_tex* g) {
+    const size_t size = (size_t)w * (size_t)h * 2u;
+    pvr_ptr_t ptr = (size & 31u) == 0 ? pvr_mem_malloc(size) : NULL;
+    if (ptr) {
+        pvr_txr_load(staging, ptr, size);
+        g->ptr = ptr;
+        g->w = w;
+        g->h = h;
+        g->fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+        g->valid = 1;
+    }
+    free(staging);
+}
+
 static void
 upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     (void)0;
@@ -957,16 +974,20 @@ pack4444(float r, float g, float b) {
     return (unsigned short)(0xF000u | c[0] << 8 | c[1] << 4 | c[2]);
 }
 
+/* The 4 x 4 ordered dither of the pictures made here (pack4444_dither) */
+static const unsigned char bayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+static const float bayer4_t[16] = {0.5f / 16, 1.5f / 16, 2.5f / 16, 3.5f / 16, 4.5f / 16, 5.5f / 16, 6.5f / 16, 7.5f / 16,
+                                   8.5f / 16, 9.5f / 16, 10.5f / 16, 11.5f / 16, 12.5f / 16, 13.5f / 16, 14.5f / 16, 15.5f / 16};
+
 /* The same for a colour given as it should look on screen (0..255 per channel; a 4-bit channel shows as level * 17): the levels are ordered-dithered
  * (4 x 4) over the picture, so a flat area shows its colour on average instead of the nearest of 16 levels. */
 static unsigned short
 pack4444_dither(float r, float g, float b, int x, int y) {
-    static const unsigned char bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
-    const float t = ((float)bayer[y & 3][x & 3] + 0.5f) / 16.0f;
+    const float t = bayer4_t[bayer4[y & 3][x & 3]];
     const float v[3] = {r, g, b};
     unsigned c[3];
     for (int i = 0; i < 3; i++) {
-        float l = v[i] / 17.0f;
+        float l = v[i] * (1.0f / 17.0f);
         unsigned lo = (unsigned)l;
         c[i] = lo + ((l - (float)lo) > t ? 1u : 0u);
         c[i] = c[i] > 15u ? 15u : c[i];
@@ -981,6 +1002,31 @@ pack4444_dither_a(float r, float g, float b, float a, int x, int y) {
     unsigned al = (unsigned)(a * 15.0f + 0.5f);
     al = al > 15u ? 15u : al;
     return (unsigned short)((c & 0x0FFFu) | al << 12);
+}
+
+/* The 4-bit level of a 0..255 value, for whole-number colours: lvl_round as pack4444, lvl_dither[cell] as pack4444_dither in the cell
+ * of the 4 x 4 pattern (the same results, without the floats: level lo = v / 17 rounds up when the rest / 17 > (cell + 0.5) / 16). */
+static uint8_t lvl_round[256], lvl_dither[16][256];
+static int lvl_ready;
+static void
+lvl_init(void) {
+    if (lvl_ready) {
+        return;
+    }
+    for (int v = 0; v < 256; v++) {
+        lvl_round[v] = (uint8_t)((v + 8) >> 4 > 15 ? 15 : (v + 8) >> 4);
+        for (int c = 0; c < 16; c++) {
+            const int l = v / 17 + (32 * (v % 17) > 34 * c + 17 ? 1 : 0);
+            lvl_dither[c][v] = (uint8_t)(l > 15 ? 15 : l);
+        }
+    }
+    lvl_ready = 1;
+}
+
+/* x / 255 rounded toward zero, as C's division, for |x| <= 255 * 255 (the SH4 has no divide instruction) */
+static inline int
+div255(int x) {
+    return x >= 0 ? (x + 1 + (x >> 8)) >> 8 : -((-x + 1 + (-x >> 8)) >> 8);
 }
 
 /* The cases' fronts and backs for a game without box art, from the BIOS's own disc picture (it has the stacked Dreamcast logo with the
@@ -1052,43 +1098,66 @@ generic_cover_impl(int pal, int back) {
     const float lw_mm = pal ? (back ? 138.3f : 120.0f) : (back ? 139.6f : 120.0f);
     const float scx = sc * (back ? 119.0f : 120.0f) / lw_mm;
     const float cx = (float)N / 2.0f, cy = (float)N / 2.0f;
-    for (int y = 0; y < N; y++) {
-        for (int x = 0; x < N; x++) {
-            float r, g, b;
-            if (back) {
-                r = g = b = 255.0f;
-            } else {
-                r = (float)((bgc >> 16) & 255), g = (float)((bgc >> 8) & 255), b = (float)(bgc & 255);
+    /* The logo's pixels around its box, once, in place: the top byte becomes the pixel's distance from the light grey (its coverage
+     * is that / 150), or 255 outside the disc's rim (paper). The picture's pixels then only look up the four around them; where each
+     * falls on the disc depends on its column or on its row alone, so those are worked out once per column and once per row. */
+    const int bx0 = x0 - 1 < 0 ? 0 : x0 - 1, bx1 = x1 + 2 > 255 ? 255 : x1 + 2;
+    const int by0 = y0 - 1 < 0 ? 0 : y0 - 1, by1 = y1 + 2 > 255 ? 255 : y1 + 2;
+    for (int yy = by0; yy <= by1; yy++) {
+        for (int xx = bx0; xx <= bx1; xx++) {
+            uint32_t* c = &d[yy * 256 + xx];
+            unsigned m = 255;
+            if ((xx - 128) * (xx - 128) + (yy - 128) * (yy - 128) <= 112 * 112) {
+                const int dr = abs((int)((*c >> 16) & 255) - 204), dg = abs((int)((*c >> 8) & 255) - 204), db = abs((int)(*c & 255) - 204);
+                m = (unsigned)(dr > dg ? (dr > db ? dr : db) : (dg > db ? dg : db)); /* at most 204 */
             }
-            /* logo pixel for this picture pixel, bilinear */
-            float fx = (float)x0 + (x + 0.5f - cx) / scx + lw / 2.0f - 0.5f, fy = (float)y0 + (y + 0.5f - cy) / sc + lh / 2.0f - 0.5f;
-            if (fx >= (float)x0 - 1 && fx <= (float)x1 + 1 && fy >= (float)y0 - 1 && fy <= (float)y1 + 1) {
-                int ix = (int)floorf(fx), iy = (int)floorf(fy);
-                float ax = fx - (float)ix, ay = fy - (float)iy;
-                float cr = 0, cg = 0, cb = 0, ca = 0;
-                for (int k = 0; k < 4; k++) {
-                    int xx = ix + (k & 1), yy = iy + (k >> 1);
-                    float w = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
-                    if (xx < 0 || xx > 255 || yy < 0 || yy > 255) {
-                        continue;
-                    }
-                    if ((xx - 128) * (xx - 128) + (yy - 128) * (yy - 128) > 112 * 112) {
-                        cr += w * 255.0f * 1.25f, cg += w * 255.0f * 1.25f, cb += w * 255.0f * 1.25f; /* outside the logo: paper */
-                        continue;
-                    }
-                    uint32_t c = d[yy * 256 + xx];
-                    float rr = (float)((c >> 16) & 255), gg = (float)((c >> 8) & 255), bb = (float)(c & 255);
-                    float df = fabsf(rr - DISC_GREY), dg = fabsf(gg - DISC_GREY), db = fabsf(bb - DISC_GREY);
-                    float a = (df > dg ? (df > db ? df : db) : (dg > db ? dg : db)) / 150.0f;
-                    a = a > 1.0f ? 1.0f : a;
-                    cr += w * rr * 1.25f, cg += w * gg * 1.25f, cb += w * bb * 1.25f, ca += w * a;
+            *c = (*c & 0xFFFFFFu) | m << 24;
+        }
+    }
+    float cov_of[256];
+    for (int m = 0; m < 256; m++) {
+        cov_of[m] = (float)m / 150.0f > 1.0f ? 1.0f : (float)m / 150.0f;
+    }
+    int cix[N], ciy[N];     /* the logo pixel left of / above the picture pixel; INT_MIN: off the logo */
+    float cax[N], cay[N];   /* the weight of the one right of / below it */
+    for (int i = 0; i < N; i++) {
+        const float fx = (float)x0 + (i + 0.5f - cx) / scx + lw / 2.0f - 0.5f, fy = (float)y0 + (i + 0.5f - cy) / sc + lh / 2.0f - 0.5f;
+        cix[i] = fx >= (float)x0 - 1 && fx <= (float)x1 + 1 ? (int)floorf(fx) : INT_MIN;
+        ciy[i] = fy >= (float)y0 - 1 && fy <= (float)y1 + 1 ? (int)floorf(fy) : INT_MIN;
+        cax[i] = cix[i] != INT_MIN ? fx - (float)cix[i] : 0.0f;
+        cay[i] = ciy[i] != INT_MIN ? fy - (float)ciy[i] : 0.0f;
+    }
+    const float r0 = back ? 255.0f : (float)((bgc >> 16) & 255), g0 = back ? 255.0f : (float)((bgc >> 8) & 255), b0 = back ? 255.0f : (float)(bgc & 255);
+    const unsigned short plain = pack4444(r0, g0, b0);
+    for (int y = 0; y < N; y++) {
+        const int iy = ciy[y];
+        for (int x = 0; x < N; x++) {
+            const int ix = cix[x];
+            if (iy == INT_MIN || ix == INT_MIN) {
+                px[y * N + x] = plain;
+                continue;
+            }
+            const float ax = cax[x], ay = cay[y];
+            float cr = 0, cg = 0, cb = 0, ca = 0;
+            for (int k = 0; k < 4; k++) {
+                const int xx = ix + (k & 1), yy = iy + (k >> 1);
+                if (xx < 0 || xx > 255 || yy < 0 || yy > 255) {
+                    continue;
                 }
-                if (back) { /* its own colours, the light grey of the disc becoming the white of the paper */
-                    cr = cr > 255 ? 255 : cr, cg = cg > 255 ? 255 : cg, cb = cb > 255 ? 255 : cb;
-                    r = cr, g = cg, b = cb;
-                } else { /* white ink */
-                    r += (255.0f - r) * ca, g += (255.0f - g) * ca, b += (255.0f - b) * ca;
+                const float w = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
+                const uint32_t c = d[yy * 256 + xx];
+                if ((c >> 24) == 255) {
+                    cr += w * 255.0f * 1.25f, cg += w * 255.0f * 1.25f, cb += w * 255.0f * 1.25f; /* outside the logo: paper */
+                    continue;
                 }
+                cr += w * (float)((c >> 16) & 255) * 1.25f, cg += w * (float)((c >> 8) & 255) * 1.25f, cb += w * (float)(c & 255) * 1.25f;
+                ca += w * cov_of[c >> 24];
+            }
+            float r = r0, g = g0, b = b0;
+            if (back) { /* its own colours, the light grey of the disc becoming the white of the paper */
+                r = cr > 255 ? 255 : cr, g = cg > 255 ? 255 : cg, b = cb > 255 ? 255 : cb;
+            } else { /* white ink */
+                r += (255.0f - r) * ca, g += (255.0f - g) * ca, b += (255.0f - b) * ca;
             }
             px[y * N + x] = pack4444(r, g, b);
         }
@@ -1148,40 +1217,50 @@ pill_texture(void) {
     const float s = text_mm / ww;           /* mm per logo pixel */
     const float cx = (float)W / 2.0f, cy = 61.5f * ppm_y; /* the middle of the bar */
     const float pt = (61.5f - 25.5f) * ppm_y;
+    /* 3 x 3 samples per pixel. A sample's place along the pill (and on the wordmark's columns) depends on its row only, across on
+     * its column only: worked out once per sample row and column. */
+    const float PW = 7.25f, PH = 51.0f, R = 3.0f; /* the pill: the menu's "1-4 Players" banner turned to read upwards: a rectangle 7.25 x 51 mm
+                                                   * whose top right and bottom left corners are round with one radius (circular in mm, so not
+                                                   * stretched), the other two square */
+    float su[3 * W], sv[3 * H];
+    int16_t slx[3 * H]; /* the wordmark's column (-1: off it) */
+    int8_t sly[3 * W];  /* its row */
+    for (int i = 0; i < 3 * W; i++) {
+        const float fx = (float)(i / 3) + 0.5f, px_ = fx + ((float)(i % 3) - 1.0f) / 3.0f;
+        su[i] = (px_ - 1.5f) / ppm_x;
+        const float across = (px_ - cx) / ppm_x, ly = (float)wy0 + wh / 2.0f + across / s;
+        sly[i] = (int8_t)(ly >= (float)wy0 && ly < (float)wy1 + 1.0f ? (int)ly : -1);
+    }
+    for (int j = 0; j < 3 * H; j++) {
+        const float fy = (float)(j / 3) + 0.5f, py_ = fy + ((float)(j % 3) - 1.0f) / 3.0f;
+        sv[j] = (py_ - pt) / ppm_y;
+        const float along = (cy - py_) / ppm_y, lx = (float)wx0 + ww / 2.0f + along / s;
+        slx[j] = (int16_t)(lx >= (float)wx0 && lx < (float)wx1 + 1.0f ? (int)lx : -1);
+    }
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            float r = 47, g = 86, b = 175; float cov = 0.0f; /* the pill: the bar's blue a little lighter; the rest of the picture is clear (the bar's face under it is plain) */
-            const float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
-            {
-                /* the pill: the menu's "1-4 Players" banner turned to read upwards: a rectangle 7.25 x 51 mm whose top right and bottom left corners
-                 * are round with one radius (circular in mm, so not stretched), the other two square. 3 x 3 samples. */
-                const float PW = 7.25f, PH = 51.0f, R = 3.0f;
-                float m = 0.0f;
-                for (int sy = 0; sy < 3; sy++) {
-                    for (int sx = 0; sx < 3; sx++) {
-                        const float u = (fx + ((float)sx - 1.0f) / 3.0f - 1.5f) / ppm_x, v = (fy + ((float)sy - 1.0f) / 3.0f - pt) / ppm_y;
-                        int in = u >= 0.0f && u <= PW && v >= 0.0f && v <= PH;
-                        if (in && u > PW - R && v < R) {
-                            in = (u - (PW - R)) * (u - (PW - R)) + (v - R) * (v - R) <= R * R;
-                        } else if (in && u < R && v > PH - R) {
-                            in = (u - R) * (u - R) + (v - (PH - R)) * (v - (PH - R)) <= R * R;
-                        }
-                        m += in ? 1.0f / 9.0f : 0.0f;
-                    }
-                }
-                cov = m;
-            }
-            float a = 0.0f; /* the text's coverage: 3 x 3 samples */
+            float r = 47, g = 86, b = 175; /* the pill: the bar's blue a little lighter; the rest of the picture is clear (the bar's face under it is plain) */
+            float cov = 0.0f;
+            int at = 0;
             for (int sy = 0; sy < 3; sy++) {
+                const float v = sv[3 * y + sy];
+                const int lx = slx[3 * y + sy];
                 for (int sx = 0; sx < 3; sx++) {
-                    const float px_ = fx + ((float)sx - 1.0f) / 3.0f, py_ = fy + ((float)sy - 1.0f) / 3.0f;
-                    const float along = (cy - py_) / ppm_y, across = (px_ - cx) / ppm_x; /* mm: up the pill, and to the right */
-                    const float lx = (float)wx0 + ww / 2.0f + along / s, ly = (float)wy0 + wh / 2.0f + across / s;
-                    if (lx >= (float)wx0 && lx < (float)wx1 + 1.0f && ly >= (float)wy0 && ly < (float)wy1 + 1.0f) {
-                        a += (float)(logo[(int)ly * LOGO_W + (int)lx] >> 24) / 255.0f / 9.0f;
+                    const float u = su[3 * x + sx];
+                    int in = u >= 0.0f && u <= PW && v >= 0.0f && v <= PH;
+                    if (in && u > PW - R && v < R) {
+                        in = (u - (PW - R)) * (u - (PW - R)) + (v - R) * (v - R) <= R * R;
+                    } else if (in && u < R && v > PH - R) {
+                        in = (u - R) * (u - R) + (v - (PH - R)) * (v - (PH - R)) <= R * R;
+                    }
+                    cov += in ? 1.0f / 9.0f : 0.0f;
+                    const int ly = sly[3 * x + sx];
+                    if (lx >= 0 && ly >= 0) {
+                        at += (int)(logo[ly * LOGO_W + lx] >> 24);
                     }
                 }
             }
+            const float a = (float)at / 255.0f / 9.0f; /* the text's coverage */
             r += (17 - r) * a, g += (34 - g) * a, b += (85 - b) * a; /* dark navy lettering */
             if (a > cov) {
                 cov = a;
@@ -1285,34 +1364,56 @@ hinge_texture_impl(int dark) {
     const float sg = 5.0f / 18.0f, Ls = sega ? (float)tw * sg : 0.0f, gap = sega ? 2.0f : 0.0f; /* SEGA: 5 mm capitals */
     const float a0 = 60.0f - (Ls + gap + L) / 2.0f, b0 = a0 + Ls + gap; /* where SEGA and the logo start, mm from the bottom */
     const float lyc = (float)(y0 + y1 + 1) / 2.0f;
+    /* 2 x 2 samples per pixel. How far up the label a sample is depends only on its row and how far across only on its column, so
+     * what each sample row crosses (SEGA's letter column or the logo's column) and each sample column's row in them are worked out
+     * once: the pixels only look them up. */
+    int16_t rs[2 * H], rl[2 * H]; /* per sample row: SEGA's column (-1: none), the logo's column (-1: none); -2 in rs: on SEGA's rows, off its letters */
+    int8_t cs[2 * W], cl[2 * W];  /* per sample column: SEGA's row, the logo's row (-1: none) */
+    for (int j = 0; j < 2 * H; j++) {
+        const float fy = (float)j * 0.5f + 0.25f, along = ((float)H - fy) / ppm_y;
+        rs[j] = -1, rl[j] = -1;
+        if (sega && along >= a0 && along < a0 + Ls) {
+            const int tx = (int)((along - a0) / sg);
+            rs[j] = (int16_t)(tx >= 0 && tx < tw ? tx : -2);
+        } else if (x1 >= x0 && (dark ? along >= 3.0f : (along >= b0 && along < b0 + L))) {
+            const float kk = dark ? fmodf(along - 3.0f, L + 6.0f) : along - b0;
+            const int lx = kk < L ? x0 + (int)(kk / s) : -1;
+            rl[j] = (int16_t)(lx >= 0 && lx < LOGO_W ? lx : -1);
+        }
+    }
+    for (int i = 0; i < 2 * W; i++) {
+        const float fx = (float)i * 0.5f + 0.25f, across = fx / ppm_x - 7.0f;
+        const int ty = (int)(12.0f + across / sg), ly = x1 >= x0 ? (int)(lyc + across / s) : -1;
+        cs[i] = (int8_t)(ty >= 0 && ty < GFX_LINE_H ? ty : -1);
+        cl[i] = (int8_t)(ly >= 0 && ly < LOGO_H ? ly : -1);
+    }
+    unsigned short plain[16]; /* the label without anything on it, per cell of the dither */
+    for (int c = 0; c < 16; c++) {
+        plain[c] = pack4444_dither(bg[0], bg[1], bg[2], c & 3, c >> 2);
+    }
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
             float r = bg[0], g = bg[1], b = bg[2];
-            for (int k = 0; k < 4; k++) { /* 2 x 2 samples */
-                const float fx = (float)x + 0.25f + 0.5f * (float)(k & 1), fy = (float)y + 0.25f + 0.5f * (float)(k >> 1);
-                const float along = ((float)H - fy) / ppm_y, across = fx / ppm_x - 7.0f; /* mm: up from the bottom; right of the middle (as the PAL pill: the tops of the letters face left) */
-                float a = 0.0f;
+            int any = 0;
+            for (int k = 0; k < 4; k++) {
+                const int j = 2 * y + (k >> 1), i = 2 * x + (k & 1);
+                int al = 0;
                 const float* c = ink;
-                if (sega && along >= a0 && along < a0 + Ls) {
-                    const int tx = (int)((along - a0) / sg), ty = (int)(12.0f + across / sg);
-                    if (tx >= 0 && tx < tw && ty >= 0 && ty < GFX_LINE_H) {
-                        a = (float)sega[ty * tw + tx] / 255.0f;
+                if (rs[j] != -1) {
+                    if (rs[j] >= 0 && cs[i] >= 0) {
+                        al = sega[cs[i] * tw + rs[j]];
                     }
-                } else if (x1 >= x0 && (dark ? along >= 3.0f : (along >= b0 && along < b0 + L))) {
-                    /* white: one logo in the middle; dark: the logo repeated along the whole label from 3 mm up, 6 mm apart (swirl first) */
-                    const float kk = dark ? fmodf(along - 3.0f, L + 6.0f) : along - b0;
-                    if (kk >= L) {
-                        continue;
-                    }
-                    const int lx = x0 + (int)(kk / s), ly = (int)(lyc + across / s);
-                    if (lx >= 0 && lx < LOGO_W && ly >= 0 && ly < LOGO_H) {
-                        a = (float)(logo[ly * LOGO_W + lx] >> 24) / 255.0f;
-                        c = lx < LOGO_SWIRL_W ? sw : ink;
-                    }
+                } else if (rl[j] >= 0 && cl[i] >= 0) {
+                    al = (int)(logo[cl[i] * LOGO_W + rl[j]] >> 24);
+                    c = rl[j] < LOGO_SWIRL_W ? sw : ink;
                 }
-                r += (c[0] - bg[0]) * a / 4.0f, g += (c[1] - bg[1]) * a / 4.0f, b += (c[2] - bg[2]) * a / 4.0f;
+                if (al) {
+                    const float a = (float)al / 255.0f;
+                    r += (c[0] - bg[0]) * a / 4.0f, g += (c[1] - bg[1]) * a / 4.0f, b += (c[2] - bg[2]) * a / 4.0f;
+                    any = 1;
+                }
             }
-            px[y * W + x] = pack4444_dither(r, g, b, x, y);
+            px[y * W + x] = any ? pack4444_dither(r, g, b, x, y) : plain[(y & 3) * 4 + (x & 3)];
         }
     }
     upload_argb4444(px, W, H, &hinge_tex[dark]);
@@ -1369,11 +1470,13 @@ spine_ra(int kind) {
 /* rgb into px, the box x0..x1, y0..y1 (exclusive ends) */
 static void
 spine_pack(const uint8_t* rgb, int kind, unsigned short* px, int x0, int y0, int x1, int y1) {
+    lvl_init();
+    const int pal = kind % SPINE_KINDS == SPINE_PAL;
     for (int y = y0; y < y1; y++) {
         for (int x = x0; x < x1; x++) {
             const int i = y * SPINE_W + x;
-            const float r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
-            px[i] = kind % SPINE_KINDS == SPINE_PAL ? pack4444_dither(r, g, b, x, y) : pack4444(r, g, b);
+            const uint8_t* l = pal ? lvl_dither[bayer4[y & 3][x & 3]] : lvl_round;
+            px[i] = (unsigned short)(0xF000u | (unsigned)l[rgb[i * 3]] << 8 | (unsigned)l[rgb[i * 3 + 1]] << 4 | l[rgb[i * 3 + 2]]);
         }
     }
 }
@@ -1416,18 +1519,23 @@ spine_base_of_impl(int kind) {
     const uint8_t* word = spine_col[kind % SPINE_KINDS][5];
     const float ra = spine_ra(kind);
     const float cr = 10.0f, mx = 5.0f, my = 18.0f; /* the patch: corner radius, margins */
+    const float pw = W - 2 * mx, ph = H - 2 * my;
+    float ddx[W], ddy[H]; /* how far into a rounded corner each column / row is, squared; -1: off the patch */
+    for (int x = 0; x < W; x++) {
+        const float fx = (float)x + 0.5f - mx;
+        const float dx = fx < cr ? cr - fx : ((pw - fx) < cr ? cr - (pw - fx) : 0.0f);
+        ddx[x] = fx >= 0 && fx <= pw ? dx * dx : -1.0f;
+    }
+    for (int y = 0; y < H; y++) {
+        const float fy = (float)y + 0.5f - my;
+        const float dy = fy < cr ? cr - fy : ((ph - fy) < cr ? cr - (ph - fy) : 0.0f);
+        ddy[y] = fy >= 0 && fy <= ph ? dy * dy : -1.0f;
+    }
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
             uint8_t* o = &rgb[(y * W + x) * 3];
             const uint8_t* c = bg;
-            const float fx = (float)x + 0.5f - mx, fy = (float)y + 0.5f - my, pw = W - 2 * mx, ph = H - 2 * my;
-            int inside = fx >= 0 && fx <= pw && fy >= 0 && fy <= ph;
-            if (inside) {
-                float dx = fx < cr ? cr - fx : ((pw - fx) < cr ? cr - (pw - fx) : 0.0f);
-                float dy = fy < cr ? cr - fy : ((ph - fy) < cr ? cr - (ph - fy) : 0.0f);
-                inside = dx * dx + dy * dy <= cr * cr;
-            }
-            if (inside) {
+            if (ddx[x] >= 0.0f && ddy[y] >= 0.0f && ddx[x] + ddy[y] <= cr * cr) {
                 c = patch;
             }
             if (kind % SPINE_KINDS == SPINE_J && (float)y > H - 150.0f) {
@@ -1444,16 +1552,27 @@ spine_base_of_impl(int kind) {
             s = 0.6f * (float)W / (sh * ra);
         }
         const float cy = (float)H - (kind % SPINE_KINDS == SPINE_USW ? 62.0f : 30.0f) - sw * s / 2.0f, cx = (float)W / 2.0f; /* its centre on the picture */
+        int cly[W]; /* per column: the logo's row (-1: off it); its column per picture row below */
+        for (int x = 0; x < W; x++) {
+            const float ly = (float)ly0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
+            cly[x] = ly >= (float)ly0 && (int)ly <= ly1 ? (int)ly : -1;
+        }
         for (int y = 0; y < H; y++) {
+            const float lx = (float)lx0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s;
+            const int ix = (int)lx;
+            if (!(lx >= (float)lx0 && ix <= lx1)) {
+                continue;
+            }
+            const uint8_t* ink = ix <= LOGO_SWIRL_W ? swirl : word;
             for (int x = 0; x < W; x++) {
-                float lx = (float)lx0 + sw / 2.0f + (cy - ((float)y + 0.5f)) / s, ly = (float)ly0 + sh / 2.0f + ((float)x + 0.5f - cx) / (s * ra);
-                int ix = (int)lx, iy = (int)ly;
-                if (lx >= (float)lx0 && ix <= lx1 && ly >= (float)ly0 && iy <= ly1) {
-                    const int a = (int)(logo[iy * LOGO_W + ix] >> 24);
+                if (cly[x] < 0) {
+                    continue;
+                }
+                const int a = (int)(logo[cly[x] * LOGO_W + ix] >> 24);
+                if (a) {
                     uint8_t* o = &rgb[(y * W + x) * 3];
-                    const uint8_t* ink = ix <= LOGO_SWIRL_W ? swirl : word;
                     for (int k = 0; k < 3; k++) {
-                        o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * a) / 255);
+                        o[k] = (uint8_t)(o[k] + div255(((int)ink[k] - (int)o[k]) * a));
                     }
                 }
             }
@@ -1521,31 +1640,35 @@ spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, floa
         box[2] = xb > box[2] ? xb : box[2], box[3] = yb > box[3] ? yb : box[3];
     }
     const float isl = 1.0f / sl, ist = 1.0f / st;
+    /* text y runs to the right: per column, the coverage rows of its two samples (offsets into cov; -1: off the glyphs) */
+    int jo[W][2];
+    for (int x = xa; x < xb; x++) {
+        const float ty = 12.0f + ((float)x + 0.5f - cxp) * ist;
+        const int in = !(ty < -0.25f || ty >= (float)GFX_LINE_H + 0.25f);
+        const int jy0 = (int)(ty - 0.25f), jy1 = (int)(ty + 0.25f);
+        jo[x][0] = in && jy0 >= 0 && jy0 < GFX_LINE_H ? jy0 * tw : -1;
+        jo[x][1] = in && jy1 >= 0 && jy1 < GFX_LINE_H ? jy1 * tw : -1;
+    }
     for (int y = ya; y < yb; y++) {
-        /* text x runs up the picture, text y runs to the right; the glyph rows 2..22 are centred */
+        /* text x runs up the picture; the glyph rows 2..22 are centred */
         const float tx = (float)tw / 2.0f + (mid - ((float)y + 0.5f)) * isl;
         if (tx < -0.25f || tx >= (float)tw + 0.25f) {
             continue;
         }
         const int jx0 = (int)(tx - 0.25f), jx1 = (int)(tx + 0.25f);
+        const int ok0 = jx0 >= 0 && jx0 < tw, ok1 = jx1 >= 0 && jx1 < tw;
         for (int x = xa; x < xb; x++) {
-            const float ty = 12.0f + ((float)x + 0.5f - cxp) * ist;
-            if (ty < -0.25f || ty >= (float)GFX_LINE_H + 0.25f) {
-                continue;
-            }
-            /* two by two samples, so a squeezed text does not break up */
-            const int jy0 = (int)(ty - 0.25f), jy1 = (int)(ty + 0.25f);
-            int a = 0;
-            for (int k = 0; k < 4; k++) {
-                const int jx = k & 1 ? jx1 : jx0, jy = k & 2 ? jy1 : jy0;
-                if (jx >= 0 && jx < tw && jy >= 0 && jy < GFX_LINE_H) {
-                    a += cov[jy * tw + jx];
+            /* two by two samples, so a squeezed text does not break up; each is 0 or 255, so the sum is n * 255 */
+            int n = 0;
+            for (int k = 0; k < 2; k++) {
+                if (jo[x][k] >= 0) {
+                    n += (ok0 && cov[jo[x][k] + jx0]) + (ok1 && cov[jo[x][k] + jx1]);
                 }
             }
-            if (a) {
+            if (n) {
                 uint8_t* o = &rgb[(y * W + x) * 3];
                 for (int k = 0; k < 3; k++) {
-                    o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * a) / 1020);
+                    o[k] = (uint8_t)(o[k] + (((int)ink[k] - (int)o[k]) * n) / 4); /* as (d * n * 255) / 1020 */
                 }
             }
         }
@@ -1586,7 +1709,7 @@ spine_texture_impl(int kind) {
         return spine_plain_texture(kind); /* all in use on the screen: not now */
     }
     uint8_t* rgb = malloc((size_t)W * H * 3);
-    unsigned short* px = rgb ? malloc(sizeof(unsigned short) * W * H) : NULL;
+    unsigned short* px = rgb ? memalign(32, sizeof(unsigned short) * W * H) : NULL; /* uploaded as it is */
     if (!px) {
         free(rgb);
         return spine_plain_texture(kind);
@@ -1603,8 +1726,7 @@ spine_texture_impl(int kind) {
         pvr_mem_free(victim->tex.ptr);
     }
     memset(victim, 0, sizeof(*victim));
-    upload_argb4444(px, W, H, &victim->tex);
-    free(px);
+    upload_argb4444_staged(px, W, H, &victim->tex);
     if (!victim->tex.valid) {
         return spine_plain_texture(kind);
     }
