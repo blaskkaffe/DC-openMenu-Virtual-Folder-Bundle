@@ -1,5 +1,6 @@
 /* ui_files: see ui_files.h. The screen itself is the BIOS's (bios_filescr); this file feeds it the memory cards
  * and carries out what it asks for, one memory card access a frame so the screen keeps running. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 

@@ -326,8 +326,10 @@ fx_plate(bfs* fs, bvm_obj* o) {
         char label[2] = {(char)('A' + i - GRID_PAD0), '\0'};
         s->advance = 13;
         bsurf_print(s, 0x38, 0x20, label);
-        s->advance = 11;
-        bsurf_print(s, 0x10, 0x4B, fs->pad_name[i - GRID_PAD0][0] ? fs->pad_name[i - GRID_PAD0] : "Pad");
+        const char* name = fs->pad_name[i - GRID_PAD0][0] ? fs->pad_name[i - GRID_PAD0] : "Pad";
+        size_t len = strlen(name);
+        s->advance = len > 9 ? 9 : 11; /* "Controller" at 11 runs past the plate's edge */
+        bsurf_print(s, len > 9 ? 0x0C : 0x10, 0x4B, name);
     } else if (ok) {
         const bfs_card* c = &fs->card[i];
         char label[4] = {(char)('A' + i / 2), '-', (char)('1' + i % 2), '\0'};
