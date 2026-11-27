@@ -3330,7 +3330,7 @@ ui_bios_run(const bios_rom* rom) {
 
         if (!online_started && fade_step >= FADE_STEPS) {
             online_started = 1;
-            online_boot();
+            /* TEST ONLY: no online start (it takes the serial port, where the performance test writes) */
         }
         { /* TEST ONLY: the performance test with the frame trace, once, 3 seconds after the menu is up */
             static int test_bench;
