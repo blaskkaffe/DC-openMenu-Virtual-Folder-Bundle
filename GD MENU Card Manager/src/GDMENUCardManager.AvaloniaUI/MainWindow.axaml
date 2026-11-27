@@ -331,6 +331,44 @@
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="Back" Width="60" IsVisible="False">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <Button Click="ButtonBackArtwork_Click" CommandParameter="{Binding}"
+                          Content="{Binding HasBackArtwork, Converter={StaticResource ArtworkButtonLabel}}"
+                          FontWeight="{Binding HasBackArtwork, Converter={StaticResource ArtworkButtonFontWeight}}"
+                          ToolTip.Tip="{Binding BackArtworkButtonToolTip}"
+                          ToolTip.ShowOnDisabled="True"
+                          Padding="5,2" MinWidth="55" HorizontalAlignment="Stretch">
+                    <Button.IsEnabled>
+                      <MultiBinding Converter="{StaticResource BoolAndConverter}">
+                        <Binding Path="CanManageArtwork"/>
+                        <Binding Path="$parent[Window].DataContext.IsArtworkEnabled"/>
+                      </MultiBinding>
+                    </Button.IsEnabled>
+                  </Button>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="Spine" Width="60" IsVisible="False">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <Button Click="ButtonSpineArtwork_Click" CommandParameter="{Binding}"
+                          Content="{Binding HasSpineArtwork, Converter={StaticResource ArtworkButtonLabel}}"
+                          FontWeight="{Binding HasSpineArtwork, Converter={StaticResource ArtworkButtonFontWeight}}"
+                          ToolTip.Tip="{Binding SpineArtworkButtonToolTip}"
+                          ToolTip.ShowOnDisabled="True"
+                          Padding="5,2" MinWidth="55" HorizontalAlignment="Stretch">
+                    <Button.IsEnabled>
+                      <MultiBinding Converter="{StaticResource BoolAndConverter}">
+                        <Binding Path="CanManageArtwork"/>
+                        <Binding Path="$parent[Window].DataContext.IsArtworkEnabled"/>
+                      </MultiBinding>
+                    </Button.IsEnabled>
+                  </Button>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
             <DataGridTemplateColumn Header="Disc" Width="45">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>

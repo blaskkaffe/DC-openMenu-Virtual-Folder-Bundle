@@ -371,6 +371,7 @@ namespace GDMENUCardManager
             DataGridColumn folderColumn = null;
             DataGridColumn typeColumn = null;
             DataGridColumn artColumn = null;
+            var caseArtColumns = new List<DataGridColumn>(); // Back and Spine: as Artwork
             DataGridTextColumn discColumn = null;
 
             foreach (var col in dg1.Columns)
@@ -383,6 +384,8 @@ namespace GDMENUCardManager
                     discColumn = discTextCol;
                 else if (col.Header?.ToString() == "Artwork")
                     artColumn = col;
+                else if (col.Header?.ToString() == "Back" || col.Header?.ToString() == "Spine")
+                    caseArtColumns.Add(col);
             }
 
             if (folderColumn != null)
@@ -415,6 +418,8 @@ namespace GDMENUCardManager
             {
                 bool showArt = MenuKindSelected == MenuKind.openMenu;
                 artColumn.Visibility = showArt ? Visibility.Visible : Visibility.Collapsed;
+                foreach (var c2 in caseArtColumns)
+                    c2.Visibility = showArt ? Visibility.Visible : Visibility.Collapsed;
             }
 
             if (discColumn != null)
@@ -1251,7 +1256,14 @@ namespace GDMENUCardManager
             IsBusy = false;
         }
 
-        private async void ButtonArtwork_Click(object sender, RoutedEventArgs e)
+        private void ButtonArtwork_Click(object sender, RoutedEventArgs e) => OpenArtwork(sender, ArtSlot.Front);
+
+        private void ButtonBackArtwork_Click(object sender, RoutedEventArgs e) => OpenArtwork(sender, ArtSlot.Back);
+
+        private void ButtonSpineArtwork_Click(object sender, RoutedEventArgs e) => OpenArtwork(sender, ArtSlot.Spine);
+
+        /// <summary>The artwork window for the row's game, on the picture of the column that was clicked.</summary>
+        private async void OpenArtwork(object sender, ArtSlot slot)
         {
             // Commit any pending cell edits to ensure we read the current Serial value
             dg1.CommitEdit(DataGridEditingUnit.Cell, true);
@@ -1281,10 +1293,12 @@ namespace GDMENUCardManager
                 }
 
                 var navigableItems = Manager.ItemList.Where(i => i.CanManageArtwork).ToList();
-                new ArtworkWindow(item, Manager, navigableItems) { Owner = this }.ShowDialog();
+                new ArtworkWindow(item, Manager, navigableItems, slot) { Owner = this }.ShowDialog();
 
                 // Refresh column visibility in case BoxDat state changed
                 UpdateFolderColumnVisibility();
+                foreach (var it in Manager.ItemList)
+                    it.RefreshArtworkStatus(); // the Back and Spine columns
             }
             catch (Exception ex)
             {

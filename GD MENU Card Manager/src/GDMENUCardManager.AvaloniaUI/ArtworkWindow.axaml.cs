@@ -120,7 +120,7 @@ namespace GDMENUCardManager
             InitializeComponent();
         }
 
-        public ArtworkWindow(GdItem item, Core.Manager manager, IList<GdItem> navigableItems = null)
+        public ArtworkWindow(GdItem item, Core.Manager manager, IList<GdItem> navigableItems = null, ArtSlot initialSlot = ArtSlot.Front)
         {
             InitializeComponent();
 
@@ -137,6 +137,11 @@ namespace GDMENUCardManager
             _originalBoxPvrData = _manager.BoxDat?.GetPvrDataForSerial(Serial);
             _originalIconPvrData = _manager.IconDat?.GetPvrDataForSerial(Serial);
 
+            // Open on the picture the main window's column stands for (Artwork, Back or Spine)
+            _slot = initialSlot;
+            var slotButton = this.FindControl<RadioButton>("Slot" + initialSlot);
+            if (slotButton != null)
+                slotButton.IsChecked = true;
             LoadCurrentArtwork();
             ProbeGdTex();
             FillCaseBoxes();
