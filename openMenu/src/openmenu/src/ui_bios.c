@@ -2129,7 +2129,7 @@ handle_main(button_t b) {
                 screen = SCREEN_SETTINGS;
             } else if (menu.selected == ICON_MUSIC && (1 /* PREVIEW */ || sf_dcnow[0] != DCNOW_OFF)) {
                 sound_sfx(BAUDIO_SFX_ENTER); /* online features on: the icon is Internet */
-                uin_open(&menu, console_is_pal());
+                { uint64_t _q = timer_us_gettime64(); uin_open(&menu, console_is_pal()); uin_prof[4] += (unsigned)(timer_us_gettime64() - _q); }
                 screen = SCREEN_INTERNET;
             } else if (menu.selected == ICON_MUSIC) {
                 sound_sfx(BAUDIO_SFX_ENTER);
@@ -3386,7 +3386,7 @@ ui_bios_run(const bios_rom* rom) {
         } else if (screen == SCREEN_MUSIC) {
             bcd_sync(&cdp);
         } else if (screen == SCREEN_INTERNET) {
-            uin_sync();
+            { uint64_t _q = timer_us_gettime64(); uin_sync(); uin_prof[0] += (unsigned)(timer_us_gettime64() - _q); }
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }

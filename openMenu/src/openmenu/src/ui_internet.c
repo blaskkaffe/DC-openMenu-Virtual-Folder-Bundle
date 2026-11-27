@@ -553,8 +553,8 @@ uin_open(bmenu* m, int pal) {
     for (int i = 0; i < PAGES; i++) {
         view[i] = VIEW_A; /* the settings sub-views are left too */
     }
-    IPROF(4, build_games());
-    IPROF(4, build_events());
+    build_games();
+    build_events();
     IPROF(5, dcnow_conn_poll(&conn));
     was_online = conn.state == DCNOW_CONN_ONLINE;
     if (was_online) {
@@ -3097,7 +3097,7 @@ uin_draw(void) {
     if (!(page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU && !ed.active)) { /* the Online rows are bars of their own */
         gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
     }
-    IPROF(0, draw_status());
+    draw_status();
     say_on = 0;
     kb_slot = 0;
     panel_on = 0;
