@@ -59,7 +59,7 @@
 #include "video.h"
 #include "feature_badges.h"
 
-extern unsigned gfx_prof_us[8];
+extern unsigned gfx_prof_us[12];
 static unsigned ui_prof_us[6]; /* TEST ONLY: feature strip, side case, viewer, list, main objects, background */
 #define UPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; ui_prof_us[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET, SCREEN_CTRL } screen_t;
@@ -3459,9 +3459,9 @@ ui_bios_run(const bios_rom* rom) {
             }
             if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 11000u) { /* TEST ONLY: a heavy frame, broken down */
                 char hl[256];
-                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u tex=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
+                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u tex=%u artget=%u discface=%u romup=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
                          log_label(), (unsigned)(draw_t1 - draw_t0) - fs.wait_us, (unsigned)(logic_end - logic_t0), gfx_prof_us[0], gfx_prof_us[1],
-                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], gfx_prof_us[7], ui_prof_us[0], ui_prof_us[1],
+                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], gfx_prof_us[7], gfx_prof_us[8], gfx_prof_us[9], gfx_prof_us[10], ui_prof_us[0], ui_prof_us[1],
                          ui_prof_us[2], ui_prof_us[3], ui_prof_us[4]);
                 bench_out_test(hl);
             }

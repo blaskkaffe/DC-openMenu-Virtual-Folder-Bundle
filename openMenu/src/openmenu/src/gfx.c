@@ -40,7 +40,7 @@
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
 /* TEST ONLY: where the time of a frame's drawing goes, for the emulator measurement */
-unsigned gfx_prof_us[8];
+unsigned gfx_prof_us[12];
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
 #define MAX_LABELS 32 /* the main menu icons (4), the header clock (1), the game list rows (BLIST_MAX_SLOTS 13) and the Settings page rows (BPAGE_SLOTS 5) all keep theirs: 16 left the last two Settings rows blank once the list had been opened (it is, at start-up: bmenu_prewarm_screens) */
@@ -749,6 +749,9 @@ static bscene_texref memo_ref;
 static rom_tex* memo_tex;
 
 static rom_tex* get_rom_texture_uncached(bscene_texref ref);
+/* TEST ONLY: the time art_get takes */
+static art_entry* art_get(const char* product, int box);
+static inline art_entry* ART_GET_T(const char* p, int b) { uint64_t q = timer_us_gettime64(); art_entry* e = art_get(p, b); gfx_prof_us[8] += (unsigned)(timer_us_gettime64() - q); return e; }
 
 /* ---- The header logo and the online mode ---- */
 
@@ -1760,7 +1763,7 @@ get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
         const int ca = bmodel_case_single(ref.a); /* a double case: the single one's pictures */
         if (ref.b == BMODEL_TEX_FRONT) {
-            art_entry* e = art_get(model_front_product, 1);
+            art_entry* e = ART_GET_T(model_front_product, 1);
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1770,7 +1773,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_BACK) {
-            art_entry* e = art_get(model_front_product, 2); /* BACK.DAT */
+            art_entry* e = ART_GET_T(model_front_product, 2); /* BACK.DAT */
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1786,7 +1789,7 @@ get_rom_texture_uncached(bscene_texref ref) {
             }
         }
         if (ref.b == BMODEL_TEX_SPINE) {
-            art_entry* e = art_get(model_front_product, 3); /* SPINE.DAT */
+            art_entry* e = ART_GET_T(model_front_product, 3); /* SPINE.DAT */
             if (e && e->tex.valid) {
                 return &e->tex;
             }
@@ -1815,11 +1818,11 @@ get_rom_texture_uncached(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BLIST_TEXLIST_BASE) {
         int slot = ref.a - BLIST_TEXLIST_BASE;
         if (ref.b == 0 && slot < BLIST_MAX_SLOTS) {
-            art_entry* e = art_get(row_product[slot], 0);
+            art_entry* e = ART_GET_T(row_product[slot], 0);
             if (e && e->tex.valid) {
                 return &e->tex;
             }
-            rom_tex* face = disc_face(row_pal[slot]); /* no picture: the BIOS disc of the game's region */
+            uint64_t _q = timer_us_gettime64(); rom_tex* face = disc_face(row_pal[slot]); gfx_prof_us[9] += (unsigned)(timer_us_gettime64() - _q); /* no picture: the BIOS disc of the game's region */
             if (face) {
                 return face;
             }
@@ -1870,7 +1873,7 @@ get_rom_texture_uncached(bscene_texref ref) {
         return NULL;
     }
 
-    upload_texture(&t, g);
+    { uint64_t _q = timer_us_gettime64(); upload_texture(&t, g); gfx_prof_us[10] += (unsigned)(timer_us_gettime64() - _q); }
     return g->valid ? g : NULL;
 }
 
