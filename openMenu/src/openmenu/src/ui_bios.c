@@ -49,6 +49,7 @@
 #include "ui_internet.h"
 #include <backend/gd_list.h>
 
+#include <kos/dbgio.h>
 #include "ui_ctrl.h"
 #include "ui_files.h"
 #include <bios_cdplayer.h>
@@ -2789,6 +2790,12 @@ bench_out(const char* line) {
 }
 
 static void
+bench_out_test(const char* line) { /* TEST ONLY: straight to the debug console, even while the serial port is the DreamPi's */
+    dbgio_write_str(line);
+    dbgio_write_str("\n");
+}
+
+static void
 bench_begin(void) {
     char info[96];
     if (serial_port_is_open()) { /* the port carries PPP to the DreamPi: the results would go nowhere */
@@ -3332,7 +3339,7 @@ ui_bios_run(const bios_rom* rom) {
                 bench_set_trace(1);
                 show_debug = 0;
                 bscene_cache_enable(1);
-                bench_start(1, (unsigned)video_refresh_hz(), "TEST auto", bench_out);
+                bench_start(1, (unsigned)video_refresh_hz(), "TEST auto", bench_out_test);
             }
         }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
