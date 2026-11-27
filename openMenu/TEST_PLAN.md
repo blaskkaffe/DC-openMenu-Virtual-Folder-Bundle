@@ -193,3 +193,13 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] Main menu, Internet icon (globe): the globe sits behind the caption's pill (the pill is drawn over it), and the caption text stays still while the globe turns.
 - [ ] Settings: the VMU icon is centred in the icon column (as the lips and clock), and its row text is where the other rows' text is.
 - [ ] "Now!" / "CNET" are drawn with the logo polygon's own colour (grey 0xB4 shading, and its fade): same blue as the PAL swirl, no light border, same weight as "Dreamcast"; they slide in and fade with the bar when coming back from a menu.
+
+## File screen safety and the controller adapter (2026-11-27)
+- [ ] File: copy a save A1 -> A2, copy it again (overwrite question, "No" leaves it), delete it on A2; the other card is untouched. (Checked in flycast.)
+- [ ] File: start a delete, pull the card while the bar runs: "could not" message, the card is fine when put back.
+- [ ] File: "use full size" on a 200-block card gives 241 blocks; the saves on it still load in a game.
+- [ ] Serial VMU: back up, then check `OPENMENU/SAVES/<id>/` has SLOTn.VMU and no SLOTn.NEW left over.
+- [ ] iBlueControlMod (port A memory card on): Settings ends with "iBlueControlMod" rows Port A..D type / accessory / layout; change Port B type to Dual stick, the pad reconnects as dual; power off and on: still dual (it was committed).
+- [ ] iBlueControlMod: the game id reaches it at launch (Settings > VM2 game ID not Off).
+- [ ] Pico2Maple: no adapter rows; game id still switches its VMU.
+- [ ] Plain controllers/VMUs only: Settings opens without a pause, no adapter rows.
