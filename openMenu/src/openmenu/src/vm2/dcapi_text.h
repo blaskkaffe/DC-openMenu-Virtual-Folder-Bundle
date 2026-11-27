@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define DCAPI_CMD 0x22          /* Maple command to the memory card unit (decision D-15) */
+#define DCAPI_CMD 0x22          /* Maple command to the unit on the bus (unit 0), never a memory card (decision D-15) */
 #define DCAPI_REQ_MAX 252       /* bytes of request text */
 #define DCAPI_ANS_MAX 400       /* bytes of answer text */
 

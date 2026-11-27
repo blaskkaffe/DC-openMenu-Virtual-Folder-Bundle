@@ -8,6 +8,9 @@
 
 #include "dcapi.h"
 
+/* The DC API is spoken to the unit on the bus of a port (unit 0: the controller, or whatever the adapter presents there), never to a
+ * memory card unit. */
+
 /* The reply is copied here by the Maple callback: 4 byte header, the function code, the text */
 static uint8_t resp_buf[4 + 4 + DCAPI_ANS_MAX + 8];
 
@@ -52,7 +55,7 @@ again:
 
     maple_frame_init(&dev->frame);
     send_buf = (uint32_t*)dev->frame.recv_buf;
-    send_buf[0] = dev->unit == 0 ? MAPLE_FUNC_CONTROLLER : MAPLE_FUNC_MEMCARD; /* the controller unit needs no memory card accessory */
+    send_buf[0] = dev->info.functions; /* the unit on the bus (the controller, keyboard, mouse ...): what it is, the firmware echoes it */
     memset(&dev->frame.recv_buf[4], 0, words * 4); /* text NUL padded to whole words, like the game id */
     memcpy(&dev->frame.recv_buf[4], req, n);
     dev->frame.cmd = DCAPI_CMD;
@@ -94,7 +97,8 @@ again:
         ans[len] = 0;
         /* NUL padding to the word: the text ends at the first NUL */
         len = strlen(ans);
-        return dcapi_answer_ok(ans) ? (int)len : -3;
+        /* "dc1" first; an answer that starts with its ok / err lines straight away is taken too */
+        return dcapi_answer_ok(ans) || !strncmp(ans, "ok ", 3) || !strncmp(ans, "err ", 4) ? (int)len : -3;
     }
 }
 
