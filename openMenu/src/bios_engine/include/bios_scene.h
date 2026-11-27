@@ -179,7 +179,7 @@ void bscene_cache_clear(void);
 /* The BIOS's hidden "real mode" lighting (on) or the usual one (off); clears the draw cache. */
 void bscene_set_real_mode(int on);
 void bscene_cache_enable(int on);
-/* A new frame begins (gfx_begin_frame). A drawing state is kept only once it has been drawn in two frames in a row: an object
+/* A new frame begins (gfx_begin_frame). A drawing state is kept only once it has been drawn in three frames in a row: an object
  * whose motion loops (the same states every few frames) would otherwise fill the pool, and emptying it makes every object at
  * rest be transformed again. Without calls every draw counts as the same frame. */
 void bscene_cache_next_frame(void);
