@@ -35,6 +35,9 @@ static int engine(void* user, const char* req, char* ans, size_t cap) {
     (void)user;
     return (int)iblue_dcapi_handle(req, strlen(req), ans, cap);
 }
+static char apending[256];
+static int abegin(void* user, const char* req) { (void)user; snprintf(apending, sizeof(apending), "%s", req); return 0; }
+static int apoll(void* user, char* ans, size_t cap) { return engine(user, apending, ans, cap); }
 #endif
 
 static int silent(void* user, const char* req, char* ans, size_t cap) { (void)user; (void)req; (void)ans; (void)cap; return -1; }
@@ -274,6 +277,18 @@ int main(void) {
         CHECK(ced_tick(&e, 200) == 1);
         ced_man(&e, &a, &b);
         CHECK(a == -90.0f && b == -20.0f);
+    }
+    /* the same without waiting: the request goes out on one tick, its answer is taken on a later one */
+    {
+        float a, b;
+        ced_set_async(&e, abegin, apoll);
+        iblue_dcapi_motion_height(1, 45);
+        CHECK(ced_tick(&e, 200) == 0 && e.inflight == 1 && strstr(apending, "get motion.*") != NULL);
+        CHECK(ced_tick(&e, 17) == 1 && e.inflight == 0);
+        ced_man(&e, &a, &b);
+        CHECK(a == -90.0f && b == 45.0f);
+        CHECK(ced_tick(&e, 17) == 0 && e.inflight == 0); /* not again before 150 ms */
+        ced_set_async(&e, NULL, NULL);
     }
     /* A on the status rows does nothing; the pose rows ask the adapter */
     nreq = 0;

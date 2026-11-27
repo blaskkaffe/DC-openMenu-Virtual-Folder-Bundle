@@ -36,6 +36,8 @@ void uim_init(uim* m, uim_transport send, void* user);
 /* Reads motion.mode, motion.state, motion.left, motion.right. Returns 1 when the adapter answered with them, 0 when it did not (no
  * motion: the page says so), negative when it did not answer. */
 int uim_refresh(uim* m);
+/* The same from an answer to "get motion.*" that came another way (a request that did not wait, ctrl_editor.c). */
+int uim_take(uim* m, const char* ans);
 /* 1 when the page is of any use (the adapter has motion) */
 int uim_supported(const uim* m);
 

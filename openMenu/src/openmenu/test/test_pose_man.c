@@ -85,6 +85,34 @@ int main(void) {
     pose_man_build(cx, by, 1.0f, 30, -60, &sc);
     CHECK(sc.ntri < 250);
 
+    /* the turned quad the PVR draws lands where the per pixel turn puts the same texels */
+    {
+        static uint16_t img[PM_ARM_IMG * PM_ARM_IMG];
+        float f = pose_man_ref_scale(0.78f);
+        for (int side = 0; side < 2; side++) {
+            for (int deg = -90; deg <= 90; deg += 30) {
+                int tw, th, total = 0, same = 0;
+                const uint16_t* tex = pose_man_arm_tex(side, &tw, &th);
+                float ox[4], oy[4];
+                pose_man_arm_image(side, (float)deg, f, img);
+                pose_man_arm_quad(side, (float)deg, f, ox, oy);
+                for (int v = 0; v < th; v++) {
+                    for (int u = 0; u < tw; u++) {
+                        float a = ((float)u + 0.5f) / (float)tw, b = ((float)v + 0.5f) / (float)th;
+                        float x = ox[0] + a * (ox[1] - ox[0]) + b * (ox[2] - ox[0]) + PM_ARM_IMG / 2;
+                        float y = oy[0] + a * (oy[1] - oy[0]) + b * (oy[2] - oy[0]) + PM_ARM_IMG / 2;
+                        int ix = (int)x, iy = (int)y;
+                        if (!(tex[v * tw + u] >> 12) || ix < 0 || iy < 0 || ix >= PM_ARM_IMG || iy >= PM_ARM_IMG) continue;
+                        total++;
+                        same += (img[iy * PM_ARM_IMG + ix] >> 12) != 0; /* an opaque texel lands on an opaque pixel */
+                    }
+                }
+                CHECK(total > 50 && same * 100 >= total * 90);
+                /* a parallelogram (rotation and scale only): bottom right = top right + bottom left - top left */
+                CHECK(fabsf(ox[3] - (ox[1] + ox[2] - ox[0])) < 0.01f && fabsf(oy[3] - (oy[1] + oy[2] - oy[0])) < 0.01f);
+            }
+        }
+    }
     printf("pose_man: %d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

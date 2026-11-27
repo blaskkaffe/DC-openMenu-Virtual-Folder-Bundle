@@ -39,7 +39,7 @@ uim_init(uim* m, uim_transport send, void* user) {
 
 int
 uim_refresh(uim* m) {
-    char ans[DCAPI_ANS_MAX + 1], v[16];
+    char ans[DCAPI_ANS_MAX + 1];
     int r = ask(m, "get motion.*", ans, sizeof(ans));
 
     m->since_refresh_ms = 0;
@@ -48,6 +48,15 @@ uim_refresh(uim* m) {
         m->supported = 0;
         return r;
     }
+    return uim_take(m, ans);
+}
+
+int
+uim_take(uim* m, const char* ans) {
+    char v[16];
+
+    m->since_refresh_ms = 0;
+    m->reachable = 1;
     if (dcapi_answer(ans, "motion.mode", v, sizeof(v)) != 1) {
         m->supported = 0;
         return 0;

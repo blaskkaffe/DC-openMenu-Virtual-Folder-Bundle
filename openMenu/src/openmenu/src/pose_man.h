@@ -63,6 +63,10 @@ int pose_man_guides(float cx, float base_y, float scale, float left_deg, float r
 float pose_man_ref_scale(float scale);
 void pose_man_arm_image(int side, float deg, float f, uint16_t* out /* PM_ARM_IMG * PM_ARM_IMG */);
 const uint16_t* pose_man_leg_image(int side, int* w, int* h);
+/* The arm picture as it is (not turned), and where its corners go when turned to `deg`: offsets from the shoulder in screen pixels,
+ * top left, top right, bottom left, bottom right. The app uploads the picture once and lets the PVR turn it. */
+const uint16_t* pose_man_arm_tex(int side, int* w, int* h);
+void pose_man_arm_quad(int side, float deg, float f, float ox[4], float oy[4]);
 /* The shoulder of an arm on the screen (where the arm picture's middle goes) and the screen position of the top left corner of a leg picture */
 void pose_man_shoulder(float cx, float base_y, float scale, int side, float* x, float* y);
 void pose_man_leg_rect(float cx, float base_y, float scale, int side, float* x, float* y, float* w, float* h);

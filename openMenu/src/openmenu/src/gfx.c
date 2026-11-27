@@ -2400,6 +2400,37 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
     picture_quad(&dyn_tex[id], x, y, w, h, z, 0xFFFFFFFFu);
 }
 
+int
+gfx_dyn_create_pow2(const unsigned short* argb4444, int w, int h, float* u1, float* v1) {
+    int pw = 8, ph = 8;
+    while (pw < w) pw <<= 1;
+    while (ph < h) ph <<= 1;
+    unsigned short* buf = (unsigned short*)calloc((size_t)pw * (size_t)ph, 2);
+    if (!buf) {
+        return -1;
+    }
+    for (int y = 0; y < h; y++) {
+        memcpy(&buf[y * pw], &argb4444[y * w], (size_t)w * 2u);
+    }
+    int id = gfx_dyn_create(buf, pw, ph);
+    free(buf);
+    *u1 = (float)w / (float)pw;
+    *v1 = (float)h / (float)ph;
+    return id;
+}
+
+void
+gfx_image_quad(int id, const float x[4], const float y[4], float u1, float v1, float z) {
+    if (id < 0 || id >= DYN_MAX || !dyn_tex[id].valid) {
+        return;
+    }
+    ensure_header(&dyn_tex[id], NULL, 0);
+    send_vertex(x[0], y[0], z, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x[1], y[1], z, u1, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x[2], y[2], z, 0.0f, v1, 0xFFFFFFFFu, 0);
+    send_vertex(x[3], y[3], z, u1, v1, 0xFFFFFFFFu, 1);
+}
+
 void
 gfx_image_tint(int id, float x, float y, float w, float h, float z, uint32_t argb) {
     if (id < 0 || id >= DYN_MAX || !dyn_tex[id].valid) {

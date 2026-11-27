@@ -668,10 +668,74 @@ ced_man(const ced* e, float* l, float* r) {
     return e->heights_ok;
 }
 
+void
+ced_set_async(ced* e, int (*begin)(void* user, const char* req), int (*poll)(void* user, char* ans, size_t cap)) {
+    e->begin = begin;
+    e->poll = poll;
+    e->inflight = 0;
+    e->misses = 0;
+}
+
+/* the heights and the state from one answer to "get motion.*" */
+static int
+take_motion(ced* e, const char* ans) {
+    char a[12], b[12], s0[16], l0[16], r0[16];
+    int changed = 0;
+
+    copy(s0, sizeof(s0), e->motion.state);
+    copy(l0, sizeof(l0), e->motion.left);
+    copy(r0, sizeof(r0), e->motion.right);
+    uim_take(&e->motion, ans);
+    changed = strcmp(s0, e->motion.state) || strcmp(l0, e->motion.left) || strcmp(r0, e->motion.right);
+    {
+        int l = dcapi_answer(ans, "motion.left.height", a, sizeof(a)), r = dcapi_answer(ans, "motion.right.height", b, sizeof(b));
+        int nl = l == 1 ? atoi(a) : e->left_deg, nr = r == 1 ? atoi(b) : e->right_deg;
+
+        e->heights_ok = l == 1 || r == 1;
+        if (nl != e->left_deg || nr != e->right_deg) {
+            e->left_deg = nl;
+            e->right_deg = nr;
+            changed = 1;
+        }
+    }
+    return changed;
+}
+
 int
 ced_tick(ced* e, int ms) {
     int changed = 0;
 
+    if (e->page == CED_PAGE_MOTION && e->begin && e->poll) {
+        /* one request on its way at a time, the next one 150 ms after the last was sent; the state comes with the heights */
+        char ans[DCAPI_ANS_MAX + 1];
+
+        e->motion.since_refresh_ms = 0; /* uim_tick() does not ask again on its own: this poll reads the state too */
+        changed |= uim_tick(&e->motion, ms);
+        copy(e->msg, sizeof(e->msg), e->motion.msg);
+        e->since_heights_ms += ms;
+        if (e->inflight) {
+            int r = e->poll(e->user, ans, sizeof(ans));
+            if (r != 0) {
+                e->inflight = 0;
+                if (r > 0) {
+                    e->misses = 0;
+                    e->reachable = 1;
+                    changed |= take_motion(e, ans);
+                } else if (++e->misses >= 5) {
+                    e->reachable = 0;
+                    e->heights_ok = 0;
+                    changed = 1;
+                }
+            }
+        } else if (e->since_heights_ms >= 150) {
+            char req[DCAPI_REQ_MAX + 1];
+            if (dcapi_build(req, sizeof(req), "get motion.*\n") >= 0 && e->begin(e->user, req) == 0) {
+                e->inflight = 1;
+                e->since_heights_ms = 0;
+            }
+        }
+        return changed;
+    }
     if (e->page == CED_PAGE_MOTION) {
         changed |= uim_tick(&e->motion, ms);
         copy(e->msg, sizeof(e->msg), e->motion.msg);
