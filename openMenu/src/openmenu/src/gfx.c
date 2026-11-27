@@ -1056,7 +1056,8 @@ generic_cover_impl(int pal, int back) {
         bios_texture t;
         if (bios_texture_get(g_rom, n, &t) == 0 && t.gbix == 0 && t.width == 256 && t.height == 256) {
             if (found == (pal ? 0 : 1)) {
-                ok = bios_texture_decode(&t, d) == 0;
+                /* only the rows read below: the logo's search (90..174, the bilinear taps one more each way) and the colour at row 128 */
+                ok = bios_texture_decode_rows(&t, d, 88, 178) == 0;
             }
             found++;
         }
@@ -2358,6 +2359,19 @@ static const bscene_sink warm_sink = {NULL, warm_triangle, NULL, warm_strip};
 const bscene_sink*
 gfx_warm_sink(void) {
     return &warm_sink;
+}
+
+void
+gfx_prewarm_case_pictures(void) {
+    /* made from the ROM's pictures on the CPU: tens of milliseconds each the first time a case or disc shows them */
+    hinge_texture(0);
+    hinge_texture(1);
+    pill_texture();
+    for (int pal = 0; pal < 2; pal++) {
+        generic_cover(pal, 0);
+        generic_cover(pal, 1);
+        disc_face(pal);
+    }
 }
 
 void

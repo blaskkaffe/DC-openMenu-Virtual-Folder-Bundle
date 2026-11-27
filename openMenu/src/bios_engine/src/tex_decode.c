@@ -56,13 +56,20 @@ px16(const uint8_t* p, size_t i) {
 
 int
 bios_texture_decode(const bios_texture* t, uint32_t* argb) {
+    return t ? bios_texture_decode_rows(t, argb, 0, t->height) : -1;
+}
+
+int
+bios_texture_decode_rows(const bios_texture* t, uint32_t* argb, uint32_t y0, uint32_t y1) {
     if (!t || !argb || !t->data || t->data_size == 0) {
         return -1;
     }
     uint32_t w = t->width, h = t->height;
+    y1 = y1 > h ? h : y1;
+    y0 = y0 > y1 ? y1 : y0;
     switch (t->data_type) {
         case BIOS_PVR_TWIDDLED:
-            for (uint32_t y = 0; y < h; y++) {
+            for (uint32_t y = y0; y < y1; y++) {
                 const uint32_t ty = spread(y);
                 for (uint32_t x = 0; x < w; x++) {
                     argb[y * w + x] = convert(px16(t->data, ty | (spread(x) << 1)), t->pixel_format);
@@ -70,13 +77,13 @@ bios_texture_decode(const bios_texture* t, uint32_t* argb) {
             }
             return 0;
         case BIOS_PVR_RECTANGLE:
-            for (uint32_t i = 0; i < w * h; i++) {
+            for (uint32_t i = y0 * w; i < y1 * w; i++) {
                 argb[i] = convert(px16(t->data, i), t->pixel_format);
             }
             return 0;
         case BIOS_PVR_VQ: {
             const uint8_t* index = t->data + 2048;
-            for (uint32_t y = 0; y < h / 2; y++) {
+            for (uint32_t y = y0 / 2; y < (y1 + 1) / 2; y++) {
                 const uint32_t ty = spread(y);
                 for (uint32_t x = 0; x < w / 2; x++) {
                     uint32_t e = index[ty | (spread(x) << 1)];

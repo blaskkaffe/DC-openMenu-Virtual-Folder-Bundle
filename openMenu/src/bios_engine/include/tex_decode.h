@@ -18,6 +18,9 @@ uint32_t bios_untwiddle(uint32_t x, uint32_t y);
 
 /* Decode into `argb` (width * height entries). Returns 0, -1 for unsupported data. */
 int bios_texture_decode(const bios_texture* tex, uint32_t* argb);
+/* The same for the rows y0..y1 - 1 only (the rest of argb is left as it was); a VQ texture's rows go in pairs, so y0 is rounded down
+ * and y1 up to even. */
+int bios_texture_decode_rows(const bios_texture* tex, uint32_t* argb, uint32_t y0, uint32_t y1);
 
 #ifdef __cplusplus
 }

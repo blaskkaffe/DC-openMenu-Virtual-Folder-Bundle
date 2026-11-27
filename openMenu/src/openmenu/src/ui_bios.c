@@ -3145,6 +3145,8 @@ ui_bios_run(const bios_rom* rom) {
     dbglog_boot("warm2", (unsigned)timer_ms_gettime64());
     gfx_preload_art_index();
     dbglog_boot("art", (unsigned)timer_ms_gettime64());
+    gfx_prewarm_case_pictures();
+    dbglog_boot("cases", (unsigned)timer_ms_gettime64());
     clock_extender_tick();
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */

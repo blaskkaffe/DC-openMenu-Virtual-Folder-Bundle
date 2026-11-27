@@ -46,6 +46,9 @@ int gfx_logo_texts_loaded(void);
 void gfx_logo_badge(void);
 /* A sink that only loads the textures of what is drawn into it (see bmenu_prewarm). */
 const bscene_sink* gfx_warm_sink(void);
+/* The case and disc pictures the game list makes from the ROM (the NTSC inner labels, the PAL pill, the generic covers and discs),
+ * made at start-up so the first case or disc of each kind does not stall its frame. */
+void gfx_prewarm_case_pictures(void);
 /* Reads the tables of the art DATs now (before the menu shows) instead of when the game list first opens. */
 void gfx_preload_art_index(void);
 
