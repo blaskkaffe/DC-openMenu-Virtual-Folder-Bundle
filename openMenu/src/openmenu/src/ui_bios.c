@@ -1305,7 +1305,9 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
     float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
     const float rows_y = popup_rows_y(rows);
-    bscene_draw_panel(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), gfx_sink());
+    /* nearer than the panel depth: over the game list's case and rows (they are at that depth or in front of it) */
+    bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
+                        gfx_sink());
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;

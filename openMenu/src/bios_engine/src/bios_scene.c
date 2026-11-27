@@ -465,8 +465,13 @@ bios_offset(uint32_t specular, float d) {
 
 void
 bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink) {
+    bscene_draw_panel_z(s, x, y, w, h, accent, BSCENE_PANEL_Z, sink);
+}
+
+void
+bscene_draw_panel_z(bscene* s, float x, float y, float w, float h, uint32_t accent, float z, const bscene_sink* sink) {
     /* the model's corners sit at +-10 units; the panel is w/25 units half wide (decompile: panel_mesh_fit_rect) */
-    float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
+    float units_per_px = -z / 4000.0f;
     bvm_obj o;
     memset(&o, 0, sizeof(o));
     o.active = 1;
@@ -474,11 +479,12 @@ bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent
     o.model = BSCENE_PANEL_MODEL;
     o.pos[0] = (x + w / 2.0f - 320.0f) * units_per_px;
     o.pos[1] = (240.0f - (y + h / 2.0f)) * units_per_px;
-    o.pos[2] = BSCENE_PANEL_Z;
-    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = 1.0f;
+    o.pos[2] = z;
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = -z / -BSCENE_PANEL_Z; /* the same size on screen at any depth */
     s->panel_on = 1;
-    s->panel_fx = w * units_per_px / 2.0f - 10.0f;
-    s->panel_fy = h * units_per_px / 2.0f - 10.0f;
+    /* in the model's own units (it is scaled by z / BSCENE_PANEL_Z): as at the panel depth */
+    s->panel_fx = w * (-BSCENE_PANEL_Z / 4000.0f) / 2.0f - 10.0f;
+    s->panel_fy = h * (-BSCENE_PANEL_Z / 4000.0f) / 2.0f - 10.0f;
     s->panel_accent = accent;
     unsigned saved = s->parts;
     s->parts = BSCENE_PART_MODEL;
