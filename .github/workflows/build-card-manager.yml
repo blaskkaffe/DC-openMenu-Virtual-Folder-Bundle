@@ -9,6 +9,11 @@ name: Build Card Manager
 # SS_DEVID and SS_DEVPASSWORD, are put into the build here; they are never committed.
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a GitHub release (tag = src/version.txt without the v; notes from .github/release-notes/<tag>.md)"
+        type: boolean
+        default: false
   push:
     branches: [dev]
     paths:
@@ -235,3 +240,36 @@ jobs:
         with:
           name: GDMENUCardManager-osx-${{ matrix.arch }}
           path: "GD MENU Card Manager/_releases/*.tar.gz"
+
+  # A manual run with release ticked: one GitHub release with every build, named as UpdateManager downloads them
+  # (GDMENUCardManager.v<tag>-<platform>), and openMenu's 1ST_READ.BIN
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    needs: [openmenu, build, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: _art
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(tr -d '\r\n' < "GD MENU Card Manager/src/version.txt")"
+          TAG="${VERSION#v}"
+          mkdir -p _rel
+          (cd _art/GDMENUCardManager-win-x64 && zip -qr "$GITHUB_WORKSPACE/_rel/GDMENUCardManager.$VERSION-win-x64.zip" .)
+          cp _art/GDMENUCardManager-linux-x64/*.tar.gz _art/GDMENUCardManager-osx-*/*.tar.gz _rel/
+          cp _art/1ST_READ.BIN/1ST_READ.BIN _rel/
+          ls -l _rel
+          NOTES=".github/release-notes/$TAG.md"
+          [ -f "$NOTES" ] || { echo "no $NOTES"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists already"; exit 1
+          fi
+          gh release create "$TAG" _rel/* --target "$GITHUB_SHA" --title "openMenu Virtual Folder Bundle $TAG" --notes-file "$NOTES"
