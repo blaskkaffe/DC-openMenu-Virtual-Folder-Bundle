@@ -2784,15 +2784,54 @@ handle_datetime(button_t b) {
 }
 
 /* ---- Performance test (bench.c): scripted keys, every frame measured, results on the serial port -------------------- */
+/* TEST ONLY: the lines kept in RAM (the frame trace packed, 16 bytes a frame) and written to /vmu/a2/BENCH at the end, for the
+ * emulator, where the serial console stays off after the start-up probes of the serial pins */
+static char test_text[24000];
+static size_t test_text_n;
+static uint16_t test_trace[6000][8];
+static int test_trace_n;
+
 static void
-bench_out(const char* line) {
-    serial_log_block("bench", line + (strncmp(line, "OM bench ", 9) ? 0 : 9));
+bench_out_test(const char* line) {
+    const char* l = !strncmp(line, "OM bench ", 9) ? line + 9 : line;
+    unsigned r, st, f, per, lo, bu, wa, gp, vt, hd, tr, ar, tx;
+    if (!strncmp(l, "t ", 2) && sscanf(l + 2, "%u.%u %u %u %u %u %u %u %u %u %u %u %u", &r, &st, &f, &per, &lo, &bu, &wa, &gp, &vt, &hd,
+                                         &tr, &ar, &tx) == 13) {
+        if (test_trace_n < 6000) {
+            uint16_t* t = test_trace[test_trace_n++];
+            t[0] = (uint16_t)(st << 10 | (f & 1023));
+            t[1] = (uint16_t)(per / 10 > 65535 ? 65535 : per / 10); /* tens of microseconds */
+            t[2] = (uint16_t)(lo / 10 > 65535 ? 65535 : lo / 10);
+            t[3] = (uint16_t)(bu / 10 > 65535 ? 65535 : bu / 10);
+            t[4] = (uint16_t)(wa / 10 > 65535 ? 65535 : wa / 10);
+            t[5] = (uint16_t)(vt > 65535 ? 65535 : vt);
+            t[6] = (uint16_t)(tr > 65535 ? 65535 : tr);
+            t[7] = (uint16_t)((ar > 255 ? 255 : ar) << 8 | (tx > 255 ? 255 : tx));
+        }
+        return;
+    }
+    size_t n = strlen(l);
+    if (test_text_n + n + 2 < sizeof(test_text)) {
+        memcpy(test_text + test_text_n, l, n);
+        test_text_n += n;
+        test_text[test_text_n++] = '\n';
+    }
+    if (!strncmp(l, "done", 4)) {
+        file_t fd = fs_open("/vmu/a2/BENCH", O_WRONLY | O_TRUNC);
+        if (fd != FILEHND_INVALID) {
+            uint32_t hdr[2] = {(uint32_t)test_text_n, (uint32_t)test_trace_n};
+            fs_write(fd, hdr, sizeof(hdr));
+            fs_write(fd, test_text, test_text_n);
+            fs_write(fd, test_trace, (size_t)test_trace_n * 16u);
+            fs_close(fd);
+        }
+    }
 }
 
 static void
-bench_out_test(const char* line) { /* TEST ONLY: straight to the debug console, even while the serial port is the DreamPi's */
-    dbgio_write_str(line);
-    dbgio_write_str("\n");
+bench_out(const char* line) {
+    bench_out_test(line); /* TEST ONLY */
+    serial_log_block("bench", line + (strncmp(line, "OM bench ", 9) ? 0 : 9));
 }
 
 static void
@@ -3334,7 +3373,7 @@ ui_bios_run(const bios_rom* rom) {
         }
         { /* TEST ONLY: the performance test with the frame trace, once, 3 seconds after the menu is up */
             static int test_bench;
-            if (!test_bench && fade_step >= FADE_STEPS && frame_no > 300 && !bench_active()) {
+            if (0 && !test_bench && fade_step >= FADE_STEPS && frame_no > 300 && !bench_active()) { /* started by hand instead */
                 test_bench = 1;
                 bench_set_trace(1);
                 show_debug = 0;
