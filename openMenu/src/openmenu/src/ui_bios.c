@@ -3473,7 +3473,7 @@ ui_bios_run(const bios_rom* rom) {
                 prev_frame.text_uploads = fs.text_uploads;
                 snprintf(prev_label, sizeof(prev_label), "%s", log_label());
             }
-            if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 11000u) { /* TEST ONLY: a heavy frame, broken down */
+            if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 14000u) { /* TEST ONLY: a heavy frame, broken down */
                 char hl[256];
                 snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u tex=%u artget=%u discface=%u romup=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
                          log_label(), (unsigned)(draw_t1 - draw_t0) - fs.wait_us, (unsigned)(logic_end - logic_t0), gfx_prof_us[0], gfx_prof_us[1],
