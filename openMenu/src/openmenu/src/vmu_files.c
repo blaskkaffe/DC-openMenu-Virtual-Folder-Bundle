@@ -313,11 +313,16 @@ remove_own_icondata(maple_device_t* dev) {
     }
 }
 
+static int root_valid(const vmu_root_t* root);
+
 static int
 write_root_look(maple_device_t* dev, int shape, int custom, const unsigned char bgra[4]) {
     vmu_root_t root;
     vmufs_mutex_lock();
     int rc = vmufs_root_read(dev, &root);
+    if (rc == 0 && !root_valid(&root)) {
+        rc = -1; /* not a formatted card: its root block is not rewritten with a look */
+    }
     if (rc == 0) {
         root.icon_shape = (uint16_t)shape;
         root.use_custom = (uint8_t)(custom != 0);
@@ -396,7 +401,11 @@ vf_format(int slot, int shape, int colour_index) {
     }
     memset(zero, 0, sizeof(zero));
     vmufs_mutex_lock();
-    if (vmufs_root_read(dev, &root) != 0 || !root_valid(&root)) {
+    if (vmufs_root_read(dev, &root) != 0) { /* the card did not answer: nothing is written */
+        vmufs_mutex_unlock();
+        return -1;
+    }
+    if (!root_valid(&root)) { /* not formatted (or not in a way this formatter knows): a new standard layout */
         root_new(&root);
         if (vmufs_root_write(dev, &root) != 0) {
             vmufs_mutex_unlock();
@@ -478,8 +487,28 @@ vf_extend_capacity(int slot) {
         vmufs_mutex_unlock();
         return VF_EXT_ERROR;
     }
+    /* The new blocks become free, except any a file already uses (a card from a tool that put a file there): its chain is left
+     * as it is, so no save loses a block. */
+    uint8_t used[256];
+    memset(used, 0, sizeof(used));
+    vmu_dir_t* dir = (vmu_dir_t*)malloc((size_t)root.dir_size * 512);
+    if (!dir || vmufs_dir_read(dev, &root, dir) != 0) {
+        free(dir);
+        vmufs_mutex_unlock();
+        return VF_EXT_ERROR;
+    }
+    for (int d = 0; d < root.dir_size * 512 / (int)sizeof(vmu_dir_t); d++) {
+        int blk = dir[d].filetype ? dir[d].firstblk : 256;
+        for (int j = 0; j < dir[d].filesize && blk < 256 && !used[blk]; j++) {
+            used[blk] = 1;
+            blk = fat[blk];
+        }
+    }
+    free(dir);
     for (int i = now; i < top; i++) {
-        fat[i] = 0xFFFC; /* free: nothing of a card with 200 blocks lives there */
+        if (!used[i]) {
+            fat[i] = 0xFFFC; /* free: nothing of a card with 200 blocks lives there */
+        }
     }
     rc = vmufs_fat_write(dev, &root, fat);
     if (rc == 0) {

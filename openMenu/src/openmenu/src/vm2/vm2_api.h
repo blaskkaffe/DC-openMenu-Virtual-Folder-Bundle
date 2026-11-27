@@ -22,3 +22,6 @@ int vm2_set_id(maple_device_t* dev, const char* ID, const char* name);
 int check_vm2_present(maple_device_t* dev);
 const char* get_last_allinfo_type_name(void);
 const char* get_vmu_type_name(maple_device_t* dev);
+/* The 40 "extended" bytes of a memory card unit's device info (ALLINFO): the marker, then for a DC API device "dc1 " and its
+ * capability bits (dcapi_caps_parse). 0, or -1 when the unit did not answer. */
+int vm2_extended_info(maple_device_t* dev, char out[40]);

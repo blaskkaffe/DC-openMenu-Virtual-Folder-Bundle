@@ -107,11 +107,13 @@ slot_path(const char* serial, int slot, char* out, size_t size) {
 }
 
 /* 0 = there and the right size, 1 = not there, 2 = the wrong size */
+static void read_path(const char* serial, int slot, char* out, size_t size);
+
 static int
 file_status(const char* serial, int slot) {
     char path[256];
     struct stat st;
-    slot_path(serial, slot, path, sizeof(path));
+    read_path(serial, slot, path, sizeof(path));
     if (stat(path, &st) != 0) {
         return 1;
     }
@@ -129,21 +131,56 @@ read_image(const char* path, uint8_t* buf) {
     return n == TOTAL_SIZE ? 0 : -1;
 }
 
-static int
-write_image(const char* serial, int slot, const uint8_t* buf) {
-    char path[256];
-    if (ensure_dirs(serial) != 0) {
-        return -1;
+/* SLOT<n>.NEW: the image being written. It is written whole first, then the image itself; a write that stops halfway (SD card
+ * full or pulled, power off) leaves either the old image or the finished .NEW, never only half of one. The FAT driver has no
+ * rename, so the copy is written twice. */
+static void
+new_path(const char* serial, int slot, char* out, size_t size) {
+    snprintf(out, size, "%s/%s/SLOT%d.NEW", SAVES_DIR, serial, slot);
+}
+
+/* The image to read: SLOT<n>.NEW when it is there whole (the last backup stopped before the image itself was written), else
+ * SLOT<n>.VMU. */
+static void
+read_path(const char* serial, int slot, char* out, size_t size) {
+    struct stat st;
+    new_path(serial, slot, out, size);
+    if (stat(out, &st) == 0 && st.st_size == TOTAL_SIZE) {
+        return;
     }
-    slot_path(serial, slot, path, sizeof(path));
+    slot_path(serial, slot, out, size);
+}
+
+static int
+write_file(const char* path, const uint8_t* buf) {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         return -1;
     }
     ssize_t n = write(fd, buf, TOTAL_SIZE);
-    close(fd);
+    int rc = close(fd);
     sync_sd();
-    return n == TOTAL_SIZE ? 0 : -1;
+    return n == TOTAL_SIZE && rc == 0 ? 0 : -1;
+}
+
+static int
+write_image(const char* serial, int slot, const uint8_t* buf) {
+    char path[256], tmp[256];
+    if (ensure_dirs(serial) != 0) {
+        return -1;
+    }
+    slot_path(serial, slot, path, sizeof(path));
+    new_path(serial, slot, tmp, sizeof(tmp));
+    if (write_file(tmp, buf) != 0) {
+        unlink(tmp); /* the old image is untouched */
+        sync_sd();
+        return -1;
+    }
+    if (write_file(path, buf) == 0) {
+        unlink(tmp);
+        sync_sd();
+    } /* else the .NEW stays and is what the next restore reads */
+    return 0;
 }
 
 static void
@@ -321,7 +358,7 @@ fill_slot_texts(void) {
     for (int i = 0; i < NUM_SLOTS; i++) {
         char path[256], when[40] = "EMPTY", label[32] = "";
         struct stat st;
-        slot_path(s.serial, i + 1, path, sizeof(path));
+        read_path(s.serial, i + 1, path, sizeof(path));
         if (stat(path, &st) == 0 && st.st_size > 0) {
             used++;
             struct tm* tm = st.st_mtime > 0 ? localtime(&st.st_mtime) : NULL;
@@ -394,7 +431,7 @@ start_restore_flow(void) {
         default: break;
     }
     char path[256];
-    slot_path(s.serial, s.slot, path, sizeof(path));
+    read_path(s.serial, s.slot, path, sizeof(path));
     s.buffer = malloc(TOTAL_SIZE);
     if (!s.buffer || read_image(path, s.buffer) != 0) {
         ask(ASK_RESTORE_FAILED);

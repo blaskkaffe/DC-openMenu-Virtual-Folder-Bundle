@@ -9,6 +9,29 @@
 
 static uint8_t recv_buff[196];
 
+/* The devices that take the game id (Maple 0x21), by the marker in the first 16 bytes of their extended device info, and the
+ * name the menu gives them. iBlueControlMod's firmware answers 0x21 too and puts the "dc1" capability bits after its marker. */
+static const struct {
+    const char* marker;
+    const char* name;
+} known[] = {
+    {"VM2 by Dreamware", "VM2"},
+    {"8BITMODS VMUPro ", "VMUPro"},
+    {"USB RP2040 EMU  ", "USB4MAPLE"},
+    {"Pico2Maple USBBT", "Pico2Maple"},
+    {"iBlueControlMod ", "iBlueControlMod"},
+};
+
+static const char*
+known_name(const char* extended) {
+    for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+        if (!strncasecmp(extended, known[i].marker, 16)) {
+            return known[i].name;
+        }
+    }
+    return NULL;
+}
+
 static void
 vbl_allinfo_callback(struct maple_state_str*, maple_frame_t* frm) {
     maple_response_t* resp;
@@ -75,6 +98,7 @@ int
 vm2_set_id(maple_device_t* dev, const char* ID, const char* name) {
     maple_response_t* resp;
     uint32_t* send_buf;
+    int again = 0;
 
 wait_vm2:
 
@@ -111,7 +135,7 @@ wait_vm2:
 
     if (resp->response == MAPLE_RESPONSE_OK) {
         return 0;
-    } else if (resp->response == MAPLE_RESPONSE_AGAIN) {
+    } else if (resp->response == MAPLE_RESPONSE_AGAIN && ++again < 5) { /* a device that keeps saying so would hang the start */
         goto wait_vm2;
     }
 
@@ -120,17 +144,8 @@ wait_vm2:
 
 const char*
 get_last_allinfo_type_name(void) {
-    maple_alldevinfo_t* info = (maple_alldevinfo_t*)&recv_buff[4];
-    if (!strncasecmp(info->extended, "VM2 by Dreamware", 16)) {
-        return "VM2";
-    } else if (!strncasecmp(info->extended, "8BITMODS VMUPro ", 16)) {
-        return "VMUPro";
-    } else if (!strncasecmp(info->extended, "USB RP2040 EMU  ", 16)) {
-        return "USB4MAPLE";
-    } else if (!strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
-        return "Pico2Maple";
-    }
-    return "VMU";
+    const char* n = known_name(((maple_alldevinfo_t*)&recv_buff[4])->extended);
+    return n ? n : "VMU";
 }
 
 int
@@ -138,55 +153,34 @@ check_vm2_present(maple_device_t* dev) {
     if (!dev || !(dev->info.functions & MAPLE_FUNC_MEMCARD)) {
         return 0;
     }
-
-    /* Clear the old buffer */
     memset(recv_buff, 0, 196);
-
     if (send_allinfo(dev) != MAPLE_EOK) {
         return 0;
     }
-
-    maple_alldevinfo_t* info = (maple_alldevinfo_t*)&recv_buff[4];
-
-    if (!strncasecmp(info->extended, "VM2 by Dreamware", 16) || !strncasecmp(info->extended, "USB RP2040 EMU  ", 16)
-        || !strncasecmp(info->extended, "8BITMODS VMUPro ", 16)
-        || !strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
-        return 1;
-    }
-
-    return 0;
+    return known_name(((maple_alldevinfo_t*)&recv_buff[4])->extended) != NULL;
 }
 
 const char*
 get_vmu_type_name(maple_device_t* dev) {
-    if (!dev) {
+    if (!dev || !(dev->info.functions & MAPLE_FUNC_MEMCARD)) {
         return "None";
     }
-
-    if (!(dev->info.functions & MAPLE_FUNC_MEMCARD)) {
-        return "None";
-    }
-
-    /* Clear the old buffer */
     memset(recv_buff, 0, 196);
-
     if (send_allinfo(dev) != MAPLE_EOK) {
-        /* Can't query, assume regular VMU */
-        return "VMU";
+        return "VMU"; /* can't query, assume a regular VMU */
     }
+    return get_last_allinfo_type_name();
+}
 
-    maple_alldevinfo_t* info = (maple_alldevinfo_t*)&recv_buff[4];
-
-    if (!strncasecmp(info->extended, "VM2 by Dreamware", 16)) {
-        return "VM2";
-    } else if (!strncasecmp(info->extended, "8BITMODS VMUPro ", 16)) {
-        return "VMUPro";
-    } else if (!strncasecmp(info->extended, "USB RP2040 EMU  ", 16)) {
-        return "USB4MAPLE";
-    } else if (!strncasecmp(info->extended, "Pico2Maple USBBT", 16)) {
-        return "Pico2Maple";
+int
+vm2_extended_info(maple_device_t* dev, char out[40]) {
+    if (!dev || !(dev->info.functions & MAPLE_FUNC_MEMCARD)) {
+        return -1;
     }
-
-    /* Default: regular VMU */
-    return "VMU";
+    memset(recv_buff, 0, 196);
+    if (send_allinfo(dev) != MAPLE_EOK || ((maple_response_t*)recv_buff)->response != MAPLE_RESPONSE_ALLINFO) {
+        return -1;
+    }
+    memcpy(out, ((maple_alldevinfo_t*)&recv_buff[4])->extended, 40);
+    return 0;
 }

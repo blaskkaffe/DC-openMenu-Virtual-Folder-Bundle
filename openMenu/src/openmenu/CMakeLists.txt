@@ -63,7 +63,9 @@ set(OPENMENU_SOURCES
         src/bench.c
         src/backend/serial_port.c
         src/vm2/vm2_api.c
-        src/vm2/p2m_api.c
+        src/ctrl_adapter.c
+        src/vm2/dcapi.c
+        src/vm2/dcapi_text.c
 )
 
 add_executable(openmenu ${OPENMENU_SOURCES})
