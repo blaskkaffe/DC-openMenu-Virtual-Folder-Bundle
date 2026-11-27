@@ -1633,8 +1633,8 @@ uin_sync(void) {
         }
     }
     IPROF(5, dcnow_conn_poll(&conn));
-    preview_fill();
-    if (!np_chat_nick()[0]) np_set_chat("Dreamer", "preview"); /* PREVIEW ONLY: signed in, to render the chat line */
+    IPROF(2, preview_fill());
+    if (!np_chat_nick()[0]) IPROF(2, np_set_chat("Dreamer", "preview")); /* PREVIEW ONLY: signed in, to render the chat line */
     int online = conn.state == DCNOW_CONN_ONLINE;
     if (online && !was_online) {
         start_fetches(); /* just connected */
@@ -1677,6 +1677,7 @@ uin_sync(void) {
 #endif
     was_online = online;
 
+    { uint64_t _q4 = timer_us_gettime64();
     dcnow_fetch_poll(&pstat);
     if (pstat.generation != players_gen && pstat.list_valid) {
         players_gen = pstat.generation;
@@ -1728,7 +1729,9 @@ uin_sync(void) {
     } else if (anim - ev_built >= 600) { /* the clock moves on: going on / coming up / over */
         build_events();
     }
-    ntest = net_test_lines(test_lines, NT_LINES);
+    uin_prof[4] += (unsigned)(timer_us_gettime64() - _q4); }
+    IPROF(6, ntest = net_test_lines(test_lines, NT_LINES));
+    uint64_t _q7 = timer_us_gettime64();
     /* The gateway: asked about when the Settings page is open and the console is online (again every half minute, or every 15 seconds while
      * none answered), and every two seconds while it joins a Wi-Fi network */
     if (online && page == PAGE_SETTINGS && !ed.active) {
@@ -1802,6 +1805,7 @@ uin_sync(void) {
             o->var[0] = i == cursor; /* lit, as the CD player's selected button */
         }
     }
+    uin_prof[7] += (unsigned)(timer_us_gettime64() - _q7);
 }
 
 /* ---- drawing --------------------------------------------------------------------------------------------------------- */
@@ -3159,7 +3163,7 @@ uin_draw(void) {
             /* the glyph is the button's own picture (texture 0), so it sits in the model and moves with it */
             gfx_decal_override(o->texlist, page_icon((int)(o->id - ID_BUTTON(0)), (int)(o->id - ID_BUTTON(0)) == page));
         }
-        { uint64_t _q0 = timer_us_gettime64(); bscene_draw_object(&menu->scene, o, sink); unsigned _d = (unsigned)(timer_us_gettime64() - _q0); uin_prof[3] += _d; if (_d > uin_prof[6]) { uin_prof[6] = _d; uin_prof[7] = o->id | (unsigned)o->model << 16; } }
+        { uint64_t _q0 = timer_us_gettime64(); bscene_draw_object(&menu->scene, o, sink); unsigned _d = (unsigned)(timer_us_gettime64() - _q0); uin_prof[3] += _d; }
     }
     menu->scene.no_decals = 0;
     menu->scene.ovr_n = 0;
