@@ -898,6 +898,47 @@ test_filescr_real(const bios_rom* rom) {
     fs_steps(&m, &fs, 60, BFS_KEY_A);
     CHECK(fs.state == 0 || fs.state == 1 || fs.state == 6 || fs.state == 7);
     bsurf_free_all();
+    /* the controllers above the cards: no memory card anywhere (no VMU), controllers on A, B and C, only A and C selectable */
+    {
+        bfs fp;
+        bmenu mp;
+        bmenu_init(&mp, rom, NULL);
+        memset(fsc_cards, 0, sizeof(fsc_cards));
+        bfs_init(&fp, &mp, NULL, fsc_cards);
+        fp.ports = 7;
+        fp.pads_ok = 5;
+        bfs_open(&fp);
+        fs_steps(&mp, &fp, 40, 0);
+        CHECK(fp.g_cursor == 8); /* BACK, no card to go to */
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        CHECK(fp.g_cursor == 9); /* up from BACK reaches the first selectable controller */
+        fs_steps(&mp, &fp, 2, BFS_KEY_RIGHT);
+        CHECK(fp.g_cursor == 11); /* B is not selectable: skipped */
+        fs_steps(&mp, &fp, 2, BFS_KEY_RIGHT);
+        CHECK(fp.g_cursor == 11); /* D is not there */
+        fs_steps(&mp, &fp, 2, BFS_KEY_DOWN);
+        CHECK(fp.g_cursor == 8); /* no card: down goes to BACK */
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fs_steps(&mp, &fp, 2, BFS_KEY_A);
+        CHECK(bfs_pad_event(&fp) == 1);
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fp.warp = 2 + 9; /* the mouse on controller B (not selectable): nothing */
+        fs_steps(&mp, &fp, 3, 0);
+        CHECK(fp.g_cursor == 9);
+        fp.warp = 3 + 9; /* ... on C (selectable): the cursor goes there */
+        fs_steps(&mp, &fp, 3, 0);
+        CHECK(fp.g_cursor == 11);
+        fp.pads_ok = 0; /* none selectable: up from BACK stays */
+        fs_steps(&mp, &fp, 2, BFS_KEY_A);
+        CHECK(bfs_pad_event(&fp) == 0); /* A on a controller that stopped being selectable does nothing */
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fs_steps(&mp, &fp, 2, BFS_KEY_DOWN);
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        fs_steps(&mp, &fp, 2, BFS_KEY_DOWN);
+        fs_steps(&mp, &fp, 2, BFS_KEY_UP);
+        CHECK(fp.g_cursor == 8);
+        bmenu_free(&mp);
+    }
     bmenu_free(&m);
 }
 

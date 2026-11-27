@@ -16,6 +16,11 @@ void uif_set_pal(int pal); /* PAL console: the BACK arrow colour; call after uif
  * (a page of files, a page of icons). */
 int uif_handle(button_t b);
 
+/* The controller picked with A in the card grid's top row (1 + port), 0 if none since the last call. */
+int uif_pad_picked(void);
+/* The adapter on a port said what it is (when its screen was opened): the controller's pill shows it while it stays plugged. */
+void uif_set_pad_adapter(int port, const char* name);
+
 /* One 60 Hz step of the screen, after bmenu_update(). Returns 1 once the screen has been left. */
 int uif_step(void);
 

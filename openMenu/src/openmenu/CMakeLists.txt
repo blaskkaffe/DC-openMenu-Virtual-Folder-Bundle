@@ -63,7 +63,10 @@ set(OPENMENU_SOURCES
         src/bench.c
         src/backend/serial_port.c
         src/vm2/vm2_api.c
-        src/ctrl_adapter.c
+        src/ctrl_editor.c
+        src/ui_ctrl.c
+        src/ui_motion.c
+        src/pose_man.c
         src/vm2/dcapi.c
         src/vm2/dcapi_text.c
 )

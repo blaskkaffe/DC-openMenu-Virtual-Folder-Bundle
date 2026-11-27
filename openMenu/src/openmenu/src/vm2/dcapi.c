@@ -104,11 +104,11 @@ again:
 
 int
 dcapi_get_hello(maple_device_t* dev, dcapi_hello_t* h) {
-    char req[32], ans[DCAPI_ANS_MAX + 1];
+    char req[64], ans[DCAPI_ANS_MAX + 1];
     int r;
 
     h->name[0] = h->version[0] = 0;
-    if (dcapi_build(req, sizeof(req), "get hello\n") < 0) {
+    if (dcapi_build(req, sizeof(req), "get hello.name\nget hello.version\n") < 0) { /* the keys by name: every device has them */
         return -1;
     }
     r = dcapi_request(dev, req, ans, sizeof(ans));

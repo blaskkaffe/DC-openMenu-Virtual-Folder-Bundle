@@ -199,7 +199,9 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] File: start a delete, pull the card while the bar runs: "could not" message, the card is fine when put back.
 - [ ] File: "use full size" on a 200-block card gives 241 blocks; the saves on it still load in a game.
 - [ ] Serial VMU: back up, then check `OPENMENU/SAVES/<id>/` has SLOTn.VMU and no SLOTn.NEW left over.
-- [ ] iBlueControlMod (works with the port's memory card off too: the API never uses it): Settings ends with "iBlueControlMod" rows Port A..D type / accessory / layout; change Port B type to Dual stick, the pad reconnects as dual; power off and on: still dual (it was committed).
-- [ ] iBlueControlMod: the game id reaches it at launch (Settings > VM2 game ID not Off).
-- [ ] Pico2Maple (unified firmware with the DC API): rows Display brightness / Flip display / Memory card icons / Memory card slot / Pad layout / Keyboard-mouse switch appear, a change sticks after power off. Stock firmware: no rows (it does not answer), game id still switches its VMU.
+- [ ] File screen: up from the top card of a column selects its controller (lifted, plate "A / Controller"); left/right go between controllers; with no VMU anywhere, up from BACK reaches the first controller. Not reachable while a copy picks its destination.
+- [ ] iBlueControlMod: A on its controller opens the editor (pill says "iBlue" after). Type / Memory card / Rumble / Layout change on the adapter; Buttons page maps outputs; Save keeps them after power off, Undo goes back. Works with the port's memory card off (the DC API uses only the controller unit).
+- [ ] iBlue port set to Maracas: Joy-Con motion row; the page shows the man, his arms follow the Joy-Cons; poses count down.
+- [ ] Pico2Maple (unified firmware with the DC API): A opens its page: Display brightness / Flip display / Memory card icons / Memory card slot / Layout / Keyboard-mouse switch change on the device. WATCH: with the old p2m-mod 2.2 firmware a request on the controller unit once froze the pads (unified af1b852); check the pads keep working after A on a Pico2Maple with each firmware.
+- [ ] An official pad: A on it gives "No adapter on this port speaks the DC API", pads keep working.
 - [ ] Plain controllers/VMUs only: Settings opens without a pause, no adapter rows.

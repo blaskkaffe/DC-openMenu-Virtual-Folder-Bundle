@@ -20,7 +20,6 @@
 #include "serial_log.h"
 #include "sound.h"
 #include "ui_settings.h"
-#include "ctrl_adapter.h"
 
 typedef struct {
     int action;        /* UIS_ACTION_*, 0 for a choice */
@@ -32,7 +31,6 @@ typedef struct {
     int count;
     const char* const* names;
     int sysoff;        /* nonzero: the choice is a byte of the BIOS system settings at 0x8C000078 + sysoff */
-    int live;          /* nonzero: row live - 1 of the controller adapter (ctrl_adapter.h), read from and written to the device */
 } row_def;
 
 static const char* const sort_modes[] = {"A-Z", "SD card order", "Release year"}; /* sf_sort 0, 1 (SORT_NAME), 2 (SORT_DATE) */
@@ -118,32 +116,6 @@ static const row_def rows[] = {
      on_off},
     {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
     {UIS_ACTION_ABOUT, UIS_ICON_OTHER, "Other", "About", "Version and credits", NULL, 0, NULL},
-    /* the controller adapters' own settings (ctrl_adapter.h: Pico2Maple, iBlueControlMod), shown at the end of the list while one is
-     * plugged in: labels, groups and choices come from the adapter. CTA_ROWS of them. */
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 1},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 2},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 3},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 4},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 5},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 6},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 7},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 8},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 9},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 10},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 11},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 12},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 13},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 14},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 15},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 16},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 17},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 18},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 19},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 20},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 21},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 22},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 23},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 24},
     /* shown on the Internet screen's Settings page */
     {0, -1, "Internet", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
      refresh_modes},
@@ -152,20 +124,13 @@ static const row_def rows[] = {
 };
 
 #define NET_ROWS 2
-#define CTA_FIRST (NUM_ROWS - NET_ROWS - CTA_ROWS)
 #define NUM_ROWS ((int)(sizeof(rows) / sizeof(rows[0])))
 
 #define VALID(r) ((r) >= 0 && (r) < NUM_ROWS)
 
-/* Look for the controller adapters and read their settings; call when the Settings screen opens, before uis_count(). */
-void
-uis_refresh_devices(void) {
-    cta_refresh();
-}
-
 int
 uis_count(void) {
-    return CTA_FIRST + cta_rows();
+    return NUM_ROWS - NET_ROWS;
 }
 
 int
@@ -178,34 +143,29 @@ uis_net_count(void) {
     return NET_ROWS;
 }
 
-#define LIVE(r) (VALID(r) && rows[r].live)
-#define CTA(r) (rows[r].live - 1)
 
 const char*
 uis_label(int row) {
-    return LIVE(row) ? cta_label(CTA(row)) : VALID(row) ? rows[row].label : "";
+    return VALID(row) ? rows[row].label : "";
 }
 
 const char*
 uis_group(int row) {
-    return LIVE(row) ? cta_group(CTA(row)) : VALID(row) ? rows[row].group : "";
+    return VALID(row) ? rows[row].group : "";
 }
 
 const char*
 uis_help(int row) {
-    return LIVE(row) ? cta_help(CTA(row)) : VALID(row) ? rows[row].help : "";
+    return VALID(row) ? rows[row].help : "";
 }
 
 int
 uis_choice_count(int row) {
-    return LIVE(row) ? cta_choice_count(CTA(row)) : VALID(row) ? rows[row].count : 0;
+    return VALID(row) ? rows[row].count : 0;
 }
 
 const char*
 uis_choice_name(int row, int choice) {
-    if (LIVE(row)) {
-        return cta_choice_name(CTA(row), choice);
-    }
     return VALID(row) && choice >= 0 && choice < rows[row].count ? rows[row].names[choice] : "?";
 }
 
@@ -233,9 +193,6 @@ uis_clock_migrate(void) {
 
 int
 uis_get(int row) {
-    if (LIVE(row)) {
-        return cta_get(CTA(row));
-    }
     if (VALID(row) && rows[row].sysoff) {
         int v = SYS(row);
         return v < rows[row].count ? v : 0;
@@ -258,10 +215,6 @@ uis_get(int row) {
 
 void
 uis_set(int row, int choice) {
-    if (LIVE(row)) {
-        cta_set(CTA(row), choice); /* the adapter's answer decides: uis_get shows what it took */
-        return;
-    }
     if (VALID(row) && rows[row].sysoff && choice >= 0 && choice < rows[row].count) {
         SYS(row) = (uint8_t)choice;
         sys_dirty = 1;
@@ -343,7 +296,7 @@ uis_opens_popup(int row) {
 
 void
 uis_change(int row, int delta) {
-    if (!VALID(row) || !(rows[row].var || rows[row].sysoff || rows[row].live)) {
+    if (!VALID(row) || !(rows[row].var || rows[row].sysoff)) {
         return;
     }
     int n = uis_choice_count(row);
