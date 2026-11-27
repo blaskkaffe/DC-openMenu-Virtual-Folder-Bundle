@@ -176,26 +176,55 @@ bmenu_update(bmenu* m) {
 /* Each icon is drawn twice (0x200 + i and 0x300 + i): the same model, motion frame, rotation and colour, the second
  * one 0.117 units higher and 0.039 farther. The lighting depends on the normals only, so the second copy is the
  * first one's triangles projected again from the shifted position: no second transform and lighting. */
-#define TWIN_MAX 2048
+#define TWIN_VMAX 4096 /* vertices of the kept strips */
+#define TWIN_RMAX 1024 /* kept strips (a single triangle is a strip of 3) */
 typedef struct {
-    bscene_vtx v[3];
+    int first, n;
     bscene_texref tex;
-} twin_tri;
-static twin_tri twin_buf[TWIN_MAX];
-static int twin_n, twin_overflow;
+} twin_run;
+static bscene_vtx twin_v[TWIN_VMAX];
+static twin_run twin_runs[TWIN_RMAX];
+static int twin_vn, twin_n, twin_overflow;
 static const bscene_sink* twin_out;
 
+/* a strip (or a triangle) to a sink: as a strip if it takes them */
 static void
-twin_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
-    (void)user;
-    if (twin_n < TWIN_MAX) {
-        memcpy(twin_buf[twin_n].v, v, sizeof(twin_buf[twin_n].v));
-        twin_buf[twin_n].tex = tex;
+twin_emit(const bscene_sink* sink, const bscene_vtx* v, int n, bscene_texref tex) {
+    if (sink->strip) {
+        sink->strip(sink->user, v, n, tex);
+    } else {
+        for (int k = 0; k + 2 < n; k++) {
+            sink->triangle(sink->user, &v[k], tex);
+        }
+    }
+}
+
+static void
+twin_keep(const bscene_vtx* v, int n, bscene_texref tex) {
+    if (twin_n < TWIN_RMAX && twin_vn + n <= TWIN_VMAX) {
+        memcpy(&twin_v[twin_vn], v, sizeof(bscene_vtx) * (size_t)n);
+        twin_runs[twin_n].first = twin_vn;
+        twin_runs[twin_n].n = n;
+        twin_runs[twin_n].tex = tex;
+        twin_vn += n;
         twin_n++;
     } else {
         twin_overflow = 1;
     }
+}
+
+static void
+twin_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user;
+    twin_keep(v, 3, tex);
     twin_out->triangle(twin_out->user, v, tex);
+}
+
+static void
+twin_strip(void* user, const bscene_vtx* v, int n, bscene_texref tex) {
+    (void)user;
+    twin_keep(v, n, tex);
+    twin_emit(twin_out, v, n, tex);
 }
 
 static int
@@ -223,27 +252,38 @@ static void
 twin_replay(const bvm_obj* a, const bvm_obj* b, const bscene_sink* sink) {
     const float dx = b->pos[0] - a->pos[0], dy = b->pos[1] - a->pos[1], dz = b->pos[2] - a->pos[2];
     const float half_w = BSCENE_SCREEN_W / 2, half_h = BSCENE_SCREEN_H / 2;
-    for (int t = 0; t < twin_n; t++) {
-        bscene_vtx v[3];
-        int ok = 1;
-        for (int k = 0; k < 3; k++) {
-            const bscene_vtx* s = &twin_buf[t].v[k];
-            v[k] = *s;
-            /* back to view space (z = -1 / invw), shift, project again */
-            float w = 1.0f / s->invw;
-            float x = (s->x - half_w) * w + BSCENE_FOCAL * dx, y = (half_h - s->y) * w + BSCENE_FOCAL * dy;
-            float nw = w - dz;
-            if (nw < 1.0f) {
-                ok = 0;
-                break;
-            }
+    static bscene_vtx v[TWIN_VMAX];
+    static uint8_t ok[TWIN_VMAX];
+    /* every kept vertex once: back to view space (z = -1 / invw), shift, project again */
+    for (int i = 0; i < twin_vn; i++) {
+        const bscene_vtx* s = &twin_v[i];
+        v[i] = *s;
+        float w = 1.0f / s->invw;
+        float x = (s->x - half_w) * w + BSCENE_FOCAL * dx, y = (half_h - s->y) * w + BSCENE_FOCAL * dy;
+        float nw = w - dz;
+        ok[i] = nw >= 1.0f;
+        if (ok[i]) {
             float iw = 1.0f / nw;
-            v[k].x = half_w + x * iw;
-            v[k].y = half_h - y * iw;
-            v[k].invw = iw;
+            v[i].x = half_w + x * iw;
+            v[i].y = half_h - y * iw;
+            v[i].invw = iw;
         }
-        if (ok) {
-            sink->triangle(sink->user, v, twin_buf[t].tex);
+    }
+    for (int r = 0; r < twin_n; r++) {
+        const twin_run* run = &twin_runs[r];
+        int all = 1;
+        for (int k = 0; k < run->n; k++) {
+            all &= ok[run->first + k];
+        }
+        if (all) {
+            twin_emit(sink, &v[run->first], run->n, run->tex);
+            continue;
+        }
+        for (int k = 0; k + 2 < run->n; k++) { /* a triangle with a vertex behind the eye is left out, the rest of the strip stays */
+            const int f = run->first + k;
+            if (ok[f] && ok[f + 1] && ok[f + 2]) {
+                sink->triangle(sink->user, &v[f], run->tex);
+            }
         }
     }
 }
@@ -282,9 +322,10 @@ bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
                 bscene_draw_object(&m->scene, o, to);
                 continue;
             }
-            bscene_sink cap = {NULL, twin_triangle, to->text, NULL};
+            bscene_sink cap = {NULL, twin_triangle, to->text, twin_strip};
             twin_out = to;
             twin_n = 0;
+            twin_vn = 0;
             twin_overflow = 0;
             bscene_draw_object(&m->scene, o, &cap);
             if (twin_overflow) {
