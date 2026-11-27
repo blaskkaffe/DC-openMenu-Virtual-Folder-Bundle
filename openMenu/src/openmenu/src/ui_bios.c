@@ -815,9 +815,9 @@ draw_side_card(const gd_item* cur) {
     }
     /* the card */
     bscene_draw_plate(&menu.scene, CARD_X, CARD_Y, CARD_W, CARD_H, -357.0f, gfx_sink()); /* the File screen's blue memory card plate */
-    bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
+    UPROF(1, bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
                118.0f * (1.0f + (float)BLIST_SIDE_CASE_PCT / 100.0f), case_bind, NULL,
-               near_sink(gfx_sink()));
+               near_sink(gfx_sink())));
     if (cur && !uil_is_folder(cur)) {
         char info[2][24];
         int k = game_info_lines(cur, info);
@@ -829,13 +829,13 @@ draw_side_card(const gd_item* cur) {
     } else if (cur) {
         gfx_text("Folder", CARD_X + 10.0f, CARD_Y + CARD_H - 30.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
-    draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W, 0);
+    UPROF(0, draw_feature_strip(cur, CARD_X, CARD_Y + CARD_H + 4.0f, CARD_W, 0));
 }
 
 static void
 draw_games(void) {
     if (viewer_open) {
-        draw_viewer();
+        UPROF(2, draw_viewer());
         return;
     }
     if (glist.side) { /* the list's field: the File screen's card grid frame (BIOS model 15) without its A to D tabs, its two lines around the selected game */
@@ -844,7 +844,7 @@ draw_games(void) {
         blist_selected_row_px(&glist, &rtop, &rh);
         bscene_draw_frame(&menu.scene, lx, ly, lw, lh, rtop, rh, -355.5f, gfx_sink()); /* the rows are at -353.5: the frame stays behind them */
     }
-    blist_draw(&glist, gfx_sink());
+    UPROF(3, blist_draw(&glist, gfx_sink()));
     if (uil_count() <= 0) {
         gfx_text("No games found.", 260.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
         return;
@@ -1944,7 +1944,7 @@ draw_frame(void) {
         }
         phase_us[1] += timer_us_gettime64() - t1;
         if (debug_iso != 2 && debug_iso != 3) {
-            bmenu_draw_objects(&menu, ms);
+            UPROF(4, bmenu_draw_objects(&menu, ms));
         }
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
@@ -2786,6 +2786,9 @@ handle_datetime(button_t b) {
 /* ---- Performance test (bench.c): scripted keys, every frame measured, results on the serial port -------------------- */
 /* TEST ONLY: the lines kept in RAM (the frame trace packed, 16 bytes a frame) and written to /vmu/a2/BENCH at the end, for the
  * emulator, where the serial console stays off after the start-up probes of the serial pins */
+extern unsigned gfx_prof_us[8];
+static unsigned ui_prof_us[6]; /* TEST ONLY: feature strip, side case, viewer, list, main objects, background */
+#define UPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; ui_prof_us[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
 static char test_text[24000];
 static size_t test_text_n;
 static uint16_t test_trace[6000][8];
@@ -3426,6 +3429,8 @@ ui_bios_run(const bios_rom* rom) {
             frames_this_second = 0;
             fps_since = now;
         }
+        memset(gfx_prof_us, 0, sizeof(gfx_prof_us));
+        memset(ui_prof_us, 0, sizeof(ui_prof_us));
         uint64_t draw_t0 = timer_us_gettime64();
         draw_frame(); /* pvr_wait_ready() inside paces this to the display */
         uint64_t draw_t1 = timer_us_gettime64();
@@ -3449,6 +3454,14 @@ ui_bios_run(const bios_rom* rom) {
                 prev_frame.art_us = fs.art_us;
                 prev_frame.text_uploads = fs.text_uploads;
                 snprintf(prev_label, sizeof(prev_label), "%s", log_label());
+            }
+            if (bench_active() && (unsigned)(draw_t1 - draw_t0) - fs.wait_us > 11000u) { /* TEST ONLY: a heavy frame, broken down */
+                char hl[200];
+                snprintf(hl, sizeof(hl), "H %s build=%u logic=%u hinge=%u cover=%u spinebase=%u spine=%u text=%u upload=%u artpoll=%u feat=%u case=%u viewer=%u list=%u mainobj=%u",
+                         log_label(), (unsigned)(draw_t1 - draw_t0) - fs.wait_us, (unsigned)(logic_end - logic_t0), gfx_prof_us[0], gfx_prof_us[1],
+                         gfx_prof_us[2], gfx_prof_us[3], gfx_prof_us[4], gfx_prof_us[5], gfx_prof_us[6], ui_prof_us[0], ui_prof_us[1],
+                         ui_prof_us[2], ui_prof_us[3], ui_prof_us[4]);
+                bench_out_test(hl);
             }
             if (bench_active()) {
                 unsigned draw_us = (unsigned)(draw_t1 - draw_t0);

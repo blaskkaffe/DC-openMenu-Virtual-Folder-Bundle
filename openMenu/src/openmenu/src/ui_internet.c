@@ -1616,10 +1616,10 @@ uin_sync(void) {
     if (notice_frames > 0) {
         notice_frames--;
     }
-    if (!probed && anim > 1) {
-        /* the expansion port is probed once the screen shows (it can take a moment), as the main branch's window */
+    if (!probed && anim > 1 && dcnow_detect_device_async(&device)) {
+        /* the expansion port is probed once the screen shows, on a worker (a modem's probe takes a while: the screen keeps moving and says
+         * "Looking for an adapter..." meanwhile), as the main branch's window */
         probed = 1;
-        device = dcnow_detect_device();
         /* An adapter needs no Connect step (the main branch's window connects it at once); a modem, the serial cable or the W5500 wait
          * for X, since a dial takes the phone line and the others probe the serial port. Only once per start: after a hang-up the Connection row connects again. */
         dcnow_conn_poll(&conn);

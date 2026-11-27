@@ -38,6 +38,8 @@
 #define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 80 /* each key of the on-screen keyboard is a string of its own: 48 were too few (a slot is 2 KB for a single character) */
+/* TEST ONLY: where the time of a frame's drawing goes, for the emulator measurement */
+unsigned gfx_prof_us[8];
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
 #define MAX_LABELS 32 /* the main menu icons (4), the header clock (1), the game list rows (BLIST_MAX_SLOTS 13) and the Settings page rows (BPAGE_SLOTS 5) all keep theirs: 16 left the last two Settings rows blank once the list had been opened (it is, at start-up: bmenu_prewarm_screens) */
@@ -272,7 +274,8 @@ static int art_started;
 static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
 static dat_file dat_back, dat_back_ex, dat_spine, dat_spine_ex; /* BACK.DAT, SPINE.DAT: the case's back and spine pictures (BOX.DAT's format; _EX wins) */
 static dat_file dat_disc; /* DISC.DAT: the games' own disc labels (their 0GDTEX.PVR), collected by the card manager */
-static int dats_loaded;
+static volatile int dats_loaded;
+static volatile int dats_wanted; /* the loader thread is to load (again) the DATs that are not there */
 static int dat_ok[9], dat_tries[9];
 static uint32_t dat_retry_at;
 static art_entry art_cache[ART_SLOTS];
@@ -281,7 +284,6 @@ static int row_pal[BLIST_MAX_SLOTS]; /* the game of the row is a PAL release: th
 static int row_window[BLIST_MAX_SLOTS]; /* title scroll: visible width in px (0 = no scrolling) */
 static int row_offset[BLIST_MAX_SLOTS];
 
-static int art_jobs_idle(void);
 
 /* The DATs, parsed once; one that could not be opened or parsed is tried again a few times (the disc may not have
  * been ready), but only while the loader thread is not reading from them. */
@@ -289,7 +291,7 @@ static void
 art_load_dats(void) {
     static dat_file* const dats[9] = {&dat_disc, &dat_icon, &dat_icon_ex, &dat_box, &dat_box_ex, &dat_back, &dat_back_ex, &dat_spine, &dat_spine_ex};
     static const char* const names[9] = {"DISC.DAT", "ICON.DAT", "ICON_EX.DAT", "BOX.DAT", "BOX_EX.DAT", "BACK.DAT", "BACK_EX.DAT", "SPINE.DAT", "SPINE_EX.DAT"};
-    if (dats_loaded == 2 || (dats_loaded && (frame_no < dat_retry_at || !art_jobs_idle()))) {
+    if (dats_loaded == 2 || (dats_loaded && frame_no < dat_retry_at)) {
         return;
     }
     int pending = 0;
@@ -369,6 +371,11 @@ art_worker(void* param) {
     (void)param;
     for (;;) {
         sem_wait(&art_sem);
+        if (dats_wanted) { /* the retry of a DAT that could not be opened: here, never on the menu's thread (opening the disc's files
+                            * took the frame it happened in, 200 ms and more, as the list opened or scrolled) */
+            dats_wanted = 0;
+            art_load_dats();
+        }
         for (int i = 0; i < ART_JOBS; i++) {
             art_job* j = &art_jobs[i];
             if (j->state != JOB_QUEUED) {
@@ -422,14 +429,14 @@ art_start(void) {
     return 1;
 }
 
-static int
-art_jobs_idle(void) {
-    for (int i = 0; i < ART_JOBS; i++) {
-        if (art_jobs[i].state == JOB_QUEUED || art_jobs[i].state == JOB_READING) {
-            return 0;
-        }
+/* A DAT that could not be opened at the start is tried again a few times, 5 s apart, by the loader thread */
+static void
+art_want_dats(void) {
+    if (dats_loaded == 2 || (dats_loaded && frame_no < dat_retry_at) || dats_wanted || !art_start()) {
+        return;
     }
-    return 1;
+    dats_wanted = 1;
+    sem_signal(&art_sem);
 }
 
 /* Video memory is full: give back the picture used longest ago (not `keep`, not one being loaded). 1 if one went. */
@@ -549,7 +556,7 @@ gfx_art_front_band(const char* product) {
 
 /* Main thread, once per frame: upload the pictures the loader has finished. */
 static void
-art_poll(void) {
+art_poll_impl(void) {
     int uploads = 0;
     for (int i = 0; i < ART_JOBS; i++) {
         art_job* j = &art_jobs[i];
@@ -587,13 +594,22 @@ art_poll(void) {
     }
 }
 
+static void
+art_poll(void) {
+    (void)0;
+    uint64_t _p0 = timer_us_gettime64();
+    art_poll_impl();
+    gfx_prof_us[6] += (unsigned)(timer_us_gettime64() - _p0);
+    
+}
+
 static art_entry*
 art_get(const char* product, int box) {
     char key[20];
     if (!product || !product[0]) {
         return NULL;
     }
-    art_load_dats();
+    art_want_dats();
     const char* id = serial_santize_art(product);
     snprintf(key, sizeof(key), "%s%.17s", box == 1 ? "#" : box == 2 ? "%" : box == 3 ? "^" : "", id);
     art_entry* free_slot = NULL;
@@ -741,7 +757,7 @@ static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 #define LOGO_D_END 46 /* the wordmark's D ends here; "CNET" starts (the D is kept from the BIOS logo) */
 
 static void
-upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
+upload_argb4444_impl(const unsigned short* px, int w, int h, rom_tex* g) {
     size_t size = ((size_t)w * (size_t)h * 2u + 31u) & ~(size_t)31u;
     void* staging = memalign(32, size);
     pvr_ptr_t ptr = staging ? pvr_mem_malloc(size) : NULL;
@@ -758,6 +774,15 @@ upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     g->h = h;
     g->fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
     g->valid = 1;
+}
+
+static void
+upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
+    (void)0;
+    uint64_t _p0 = timer_us_gettime64();
+    upload_argb4444_impl(px, w, h, g);
+    gfx_prof_us[5] += (unsigned)(timer_us_gettime64() - _p0);
+    
 }
 
 /* The online logos' pictures: "Now!" orange / blue and "CNET" for the light bar, and flat copies for the dark bar (dark mode), made by
@@ -964,7 +989,7 @@ pack4444_dither_a(float r, float g, float b, float a, int x, int y) {
 static rom_tex generic_tex[2][2]; /* [pal][back] */
 static int generic_tried[2][2];
 static rom_tex*
-generic_cover(int pal, int back) {
+generic_cover_impl(int pal, int back) {
     enum { N = 128 };
     rom_tex* out = &generic_tex[pal ? 1 : 0][back ? 1 : 0];
     if (out->valid || generic_tried[pal ? 1 : 0][back ? 1 : 0] || !g_rom) {
@@ -1072,6 +1097,15 @@ generic_cover(int pal, int back) {
     free(px);
     free(d);
     return out->valid ? out : NULL;
+}
+
+static rom_tex*
+generic_cover(int pal, int back) {
+    rom_tex* _r;
+    uint64_t _p0 = timer_us_gettime64();
+    _r = generic_cover_impl(pal, back);
+    gfx_prof_us[1] += (unsigned)(timer_us_gettime64() - _p0);
+    return _r;
 }
 
 /* The PAL case's hinge bar (BMODEL_TEX_PILL): 8 x 123 mm, muted blue; the lighter rounded pill (full width, 51 mm tall, corners of 3.2 mm) in
@@ -1212,7 +1246,7 @@ text_coverage(const char* str, int* tw) {
  * reading upwards; dark cases: a black label with the logo repeated in dark grey along it. 64 x 512. */
 static rom_tex hinge_tex[2];
 static rom_tex*
-hinge_texture(int dark) {
+hinge_texture_impl(int dark) {
     enum { W = 64, H = 512 };
     static int tried[2];
     dark = dark ? 1 : 0;
@@ -1288,6 +1322,15 @@ hinge_texture(int dark) {
     return hinge_tex[dark].valid ? &hinge_tex[dark] : NULL;
 }
 
+static rom_tex*
+hinge_texture(int dark) {
+    rom_tex* _r;
+    uint64_t _p0 = timer_us_gettime64();
+    _r = hinge_texture_impl(dark);
+    gfx_prof_us[0] += (unsigned)(timer_us_gettime64() - _p0);
+    return _r;
+}
+
 /* The spines are made in two steps. The part every game of a kind shares (background, patch, the logo) is drawn once per kind into
  * spine_base and also kept as a picture of its own (spine_plain): what a case shows while its own spine is not made yet. The title
  * and the product code are drawn over a copy of it, only over the rows and columns the letters cover, with integer blending. At
@@ -1339,7 +1382,7 @@ static void spine_text(uint8_t* rgb, int kind, const char* str, float avail, flo
 
 /* The shared part of a kind's spine; NULL when it cannot be made. */
 static const uint8_t*
-spine_base_of(int kind) {
+spine_base_of_impl(int kind) {
     if (spine_base[kind] || spine_base_tried[kind] || !g_rom) {
         return spine_base[kind];
     }
@@ -1433,6 +1476,15 @@ spine_base_of(int kind) {
     return rgb;
 }
 
+static const uint8_t*
+spine_base_of(int kind) {
+    const uint8_t* _r;
+    uint64_t _p0 = timer_us_gettime64();
+    _r = spine_base_of_impl(kind);
+    gfx_prof_us[2] += (unsigned)(timer_us_gettime64() - _p0);
+    return _r;
+}
+
 /* The kind's spine without title: shown until the game's own is made. */
 static rom_tex*
 spine_plain_texture(int kind) {
@@ -1502,7 +1554,7 @@ spine_text(uint8_t* rgb, int kind, const char* str, float avail, float mid, floa
 }
 
 static rom_tex*
-spine_texture(int kind) {
+spine_texture_impl(int kind) {
     enum { W = SPINE_W, H = SPINE_H };
     char key[sizeof(spine_slots[0].key)];
     snprintf(key, sizeof(key), "%d|%s|%s", kind, spine_title, spine_code);
@@ -1559,6 +1611,15 @@ spine_texture(int kind) {
     strcpy(victim->key, key);
     victim->used = frame_no;
     return &victim->tex;
+}
+
+static rom_tex*
+spine_texture(int kind) {
+    rom_tex* _r;
+    uint64_t _p0 = timer_us_gettime64();
+    _r = spine_texture_impl(kind);
+    gfx_prof_us[3] += (unsigned)(timer_us_gettime64() - _p0);
+    return _r;
 }
 
 static rom_tex*
@@ -2232,7 +2293,7 @@ pow2_at_least(int v) {
 }
 
 static text_tex*
-get_text_texture(const char* str) {
+get_text_texture_impl(const char* str) {
     text_tex* victim = NULL;
     for (int i = 0; i < MAX_TEXT_ENTRIES; i++) {
         if (text_texes[i].ptr && !strcmp(text_texes[i].str, str)) {
@@ -2284,6 +2345,15 @@ get_text_texture(const char* str) {
     pvr_txr_load(text_canvas, victim->ptr, (size_t)w * GFX_LINE_H * 2);
     stats.text_uploads++;
     return victim;
+}
+
+static text_tex*
+get_text_texture(const char* str) {
+    text_tex* _r;
+    uint64_t _p0 = timer_us_gettime64();
+    _r = get_text_texture_impl(str);
+    gfx_prof_us[4] += (unsigned)(timer_us_gettime64() - _p0);
+    return _r;
 }
 
 void
