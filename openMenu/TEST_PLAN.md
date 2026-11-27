@@ -199,7 +199,7 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] File: start a delete, pull the card while the bar runs: "could not" message, the card is fine when put back.
 - [ ] File: "use full size" on a 200-block card gives 241 blocks; the saves on it still load in a game.
 - [ ] Serial VMU: back up, then check `OPENMENU/SAVES/<id>/` has SLOTn.VMU and no SLOTn.NEW left over.
-- [ ] iBlueControlMod (port A memory card on): Settings ends with "iBlueControlMod" rows Port A..D type / accessory / layout; change Port B type to Dual stick, the pad reconnects as dual; power off and on: still dual (it was committed).
+- [ ] iBlueControlMod (works with the port's memory card off too: the API never uses it): Settings ends with "iBlueControlMod" rows Port A..D type / accessory / layout; change Port B type to Dual stick, the pad reconnects as dual; power off and on: still dual (it was committed).
 - [ ] iBlueControlMod: the game id reaches it at launch (Settings > VM2 game ID not Off).
-- [ ] Pico2Maple: no adapter rows; game id still switches its VMU.
+- [ ] Pico2Maple (unified firmware with the DC API): rows Display brightness / Flip display / Memory card icons / Memory card slot / Pad layout / Keyboard-mouse switch appear, a change sticks after power off. Stock firmware: no rows (it does not answer), game id still switches its VMU.
 - [ ] Plain controllers/VMUs only: Settings opens without a pause, no adapter rows.

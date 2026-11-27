@@ -1,7 +1,6 @@
 /*
- * DC API client over Maple: sends a request in the language "dc1" (dcapi_text.h) to the memory card unit of an adapter
- * that said it speaks it (the capability bits behind the marker in its extended device info, see vm2_rescan() in main.c)
- * and returns the answer text. The same lines can also go to the DreamPi (POST /dcapi) later; the DreamPi hosts the
+ * DC API client over Maple: sends a request in the language "dc1" (dcapi_text.h) to the unit on the bus of a port (unit 0,
+ * the controller the adapter presents; never a memory card unit) and returns the answer text. The same lines can also go to the DreamPi (POST /dcapi) later; the DreamPi hosts the
  * communication when there is one, this is the direct route (decision D-12).
  */
 #pragma once

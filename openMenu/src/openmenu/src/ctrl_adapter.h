@@ -1,38 +1,35 @@
-/* ctrl_adapter: the controller adapter's own settings as rows of the Settings list, for an adapter that speaks the DC API ("dc1",
- * vm2/dcapi.h; iBlueControlMod today). Nothing here knows a project: the ports, their modes, accessories and layouts are what the
- * adapter answers (port.<A-D>.mode / modes, .acc / accs, .layout / layouts, .state, sys.store; docs/04-control-channel.md of
- * DC-UnifiedEcosystem). A device is only asked when its extended device info carries "dc1" and the api and port capability bits
- * behind its marker, so a plain controller, a VMU, a VM2 or a Pico2Maple (which takes the game id but has no DC API) is never sent
- * the command. The search runs when the Settings screen opens and only again when the devices on the ports changed.
+/* ctrl_adapter: the settings of controller adapters that speak the DC API ("dc1", vm2/dcapi.h) as rows of the Settings list:
+ * Pico2Maple (its unified firmware: display, memory card icons and slot, pad layout, keyboard/mouse switch) and iBlueControlMod (type,
+ * accessory and layout of each of its ports).
  *
- * The text side (parsing, the rows, the requests) is plain C; the Maple side is dcapi_request() and vm2_extended_info(). The host test
- * (test/ctrl_adapter_test.c) builds with -DCTA_HOST_TEST and gives its own transport. */
+ * Every request goes to the unit on the bus of a port (unit 0, the controller the adapter presents), never to a memory card. A port is
+ * asked "get hello.name" once when the Settings screen opens and only again when what is plugged into the ports changed; a port whose
+ * device does not answer as a known adapter is not asked anything else. One iBlueControlMod answers for all its ports, so it is asked
+ * on the first port it answered on only.
+ *
+ * The text side is plain C; the host test (test/ctrl_adapter_test.c) builds with -DCTA_HOST_TEST and gives its own transport. */
 #pragma once
 
 #include <stddef.h>
 
-#define CTA_PORTS 4
-enum { CTA_MODE, CTA_ACC, CTA_LAYOUT, CTA_KINDS };
-#define CTA_ROWS (CTA_PORTS * CTA_KINDS)
+#define CTA_ROWS 24
 
-/* Find the adapter (or keep the one found while the devices are the same) and read its ports. Call when the Settings screen opens. */
+/* Look at the ports (or keep what was found while the devices are the same) and read the adapters' settings. Call when Settings opens. */
 void cta_refresh(void);
 
-/* The adapter's name ("iBlueControlMod"), "" when there is none. */
-const char* cta_name(void);
-
-/* The rows: one per port the adapter has and per setting it offers there, port A first. */
+/* The rows: per adapter, the settings it answered for, in a fixed order. */
 int cta_rows(void);
-const char* cta_label(int row);   /* "Port A type" */
-const char* cta_help(int row);    /* "Bluetooth pad: what the console sees" */
+const char* cta_group(int row);   /* "Pico2Maple (port A)", "iBlueControlMod" */
+const char* cta_label(int row);
+const char* cta_help(int row);
 int cta_choice_count(int row);
-const char* cta_choice_name(int row, int choice); /* shown: "Dual stick" */
+const char* cta_choice_name(int row, int choice);
 int cta_get(int row);
-/* Change it on the adapter, and have the adapter store it (sys.commit) when it says changes wait for that. 0 when the adapter took it. */
+/* Change it on the adapter and have it stored ("call sys.commit" unless the adapter says it stores by itself). 0 when it took it. */
 int cta_set(int row, int choice);
 
 #ifdef CTA_HOST_TEST
-/* the host test's adapter: sends a request text, copies the answer text; returns its length or a negative number */
-typedef int (*cta_transport)(const char* req, char* ans, size_t cap);
-void cta_host_attach(const char* name, cta_transport send);
+/* the host test's ports: send a request text to the device on a port, copy the answer text; length, or negative when nothing answers */
+typedef int (*cta_transport)(int port, const char* req, char* ans, size_t cap);
+void cta_host_attach(cta_transport send);
 #endif

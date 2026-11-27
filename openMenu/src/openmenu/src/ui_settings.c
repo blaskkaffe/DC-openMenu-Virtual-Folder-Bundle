@@ -118,14 +118,32 @@ static const row_def rows[] = {
      on_off},
     {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
     {UIS_ACTION_ABOUT, UIS_ICON_OTHER, "Other", "About", "Version and credits", NULL, 0, NULL},
-    /* the controller adapter's own settings (ctrl_adapter.h), shown at the end of the list while one that speaks the DC API is plugged in:
-     * labels, groups and choices come from the adapter (one row per port and setting it has) */
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 1}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 2},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 3}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 4},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 5}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 6},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 7}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 8},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 9}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 10},
-    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 11}, {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 12},
+    /* the controller adapters' own settings (ctrl_adapter.h: Pico2Maple, iBlueControlMod), shown at the end of the list while one is
+     * plugged in: labels, groups and choices come from the adapter. CTA_ROWS of them. */
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 1},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 2},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 3},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 4},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 5},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 6},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 7},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 8},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 9},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 10},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 11},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 12},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 13},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 14},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 15},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 16},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 17},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 18},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 19},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 20},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 21},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 22},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 23},
+    {0, UIS_ICON_PAD, "", "", "", NULL, 0, NULL, 0, 24},
     /* shown on the Internet screen's Settings page */
     {0, -1, "Internet", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
      refresh_modes},
@@ -139,7 +157,7 @@ static const row_def rows[] = {
 
 #define VALID(r) ((r) >= 0 && (r) < NUM_ROWS)
 
-/* Look for the controller adapter and read its settings; call when the Settings screen opens, before uis_count(). */
+/* Look for the controller adapters and read their settings; call when the Settings screen opens, before uis_count(). */
 void
 uis_refresh_devices(void) {
     cta_refresh();
@@ -170,7 +188,7 @@ uis_label(int row) {
 
 const char*
 uis_group(int row) {
-    return LIVE(row) ? cta_name() : VALID(row) ? rows[row].group : "";
+    return LIVE(row) ? cta_group(CTA(row)) : VALID(row) ? rows[row].group : "";
 }
 
 const char*

@@ -171,16 +171,3 @@ get_vmu_type_name(maple_device_t* dev) {
     }
     return get_last_allinfo_type_name();
 }
-
-int
-vm2_extended_info(maple_device_t* dev, char out[40]) {
-    if (!dev || !(dev->info.functions & MAPLE_FUNC_MEMCARD)) {
-        return -1;
-    }
-    memset(recv_buff, 0, 196);
-    if (send_allinfo(dev) != MAPLE_EOK || ((maple_response_t*)recv_buff)->response != MAPLE_RESPONSE_ALLINFO) {
-        return -1;
-    }
-    memcpy(out, ((maple_alldevinfo_t*)&recv_buff[4])->extended, 40);
-    return 0;
-}
