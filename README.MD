@@ -56,6 +56,7 @@ The old interface and its themes are not part of this fork, so their settings ar
 - Virtual folders from the Card Manager, multi-disc sets (one entry per set, Left and Right pick the disc), PlayStation discs through Bleem! or Bloom, recently played games, remembered last game.
 - Five buttons along the bottom, as in the BIOS's CD player: **Recent**, **Favorites**, **Folders**, **Sort** (A-Z, release year, SD card order) and **Group** (more groups are coming).
 - **X** opens the game's options (start, disc, emulator, favorite, game information), **Y** opens the case viewer: rotate and zoom the case, read genre, online play, accessories and the description from `META.DAT`.
+- The list's case is a lighter model with the front picture and the spine in its label's colour; Y shows the full case with spine and back. Popups (Recent, Favorites, the View / sort menu, the game options, and the Settings and VMU menus elsewhere) sit in front of what is behind them with the same oval A and B buttons as the Internet screen.
 - Favorites are starred games kept in the menu's own file, so the list works with a VMU, an SD card or both.
 - **Serial VMU**: a game's VMU image is restored from the serial SD card before it starts and backed up the next time the menu starts, in the same folders as the original (`OPENMENU/SAVES/<serial>/SLOT1.VMU`).
 
@@ -70,6 +71,7 @@ The BIOS File screen, ported from the ROM with the same objects, positions, mess
 - **Serial VMU mark**: the VMU that the Serial VMU uses carries a small SD card at the lower right of its card. Press **X** on a VMU in the grid to open a small menu, **Set as Serial VMU** or **Serial VMU Off**.
 - **File window**: 24 tiles a page with the files' animated icons and block counts, copy-protected files in red, VMU games in green, file information, select all (the card) and select every file of the same game (X or Y).
 - **Copy and delete** with the BIOS's own questions and messages, and a copy box with a progress bar.
+- **Controller editor**: move up from a card to its controller and press A to set up an iBlueControlMod or Pico2Maple adapter (port type, memory card, rumble, layout, buttons, Joy-Con motion, display). A controller without such an adapter only plays the error sound.
 
 ![The card menu](images/file-card-menu.png)
 
@@ -137,6 +139,8 @@ A save made by an earlier build of this menu with a Swatch .beat clock (a value 
 1. Build the card with GD MENU Card Manager as usual (this repository includes the original's modified Card Manager; its own README describes it).
 2. Replace `1ST_READ.BIN` in the Card Manager's `tools/openMenu/menu_data` folder with this menu's build, and keep a copy of the original to go back. `STOCK_CARD_MANAGER.md` has the details, the optional `LOGO.PVR`, and the `[BIOSMENU]` section of `DEFAULTS.INI` that sets the menu's settings from the card.
 3. Save the card as usual. Updating openMenu from inside the Card Manager puts the original's `1ST_READ.BIN` back.
+
+Or take this repository's Card Manager from its [releases](https://github.com/blaskkaffe/DC-openMenu-Virtual-Folder-Bundle/releases): it already carries this menu, for Windows, Linux and macOS (Apple Silicon and Intel), and has **Back** and **Spine** columns beside **Artwork** that open the artwork window on the back cover or spine label.
 
 Building the menu needs Docker and takes the steps in `openMenu/BUILD_INSTRUCTIONS.md`. The menu itself needs no files from you: it reads the console's BIOS at start. Without a usable BIOS it falls back to a plain text list.
 

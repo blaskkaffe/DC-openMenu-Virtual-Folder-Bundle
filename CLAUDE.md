@@ -40,6 +40,9 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Main menu icon models: `bmenu_set_icon_model` (the Music icon is the BIOS-style globe while Online is on; `bvm_obj.model_scale`, offset dx/dy and dz (40 back: behind the caption's pill), turns while selected, the caption text is anchored without the turn; preview with `BIOS_PREVIEW_GLOBE=<scale> GX= GY= GZ=`).
 - Start-up order: `openMenu/BOOT_TIMELINE.md` (the first ten seconds, against the BIOS and KOS). Before the first frame: `bmenu_prewarm` (models/motions/textures via `gfx_warm_sink`), `gfx_preload_art_index`, the Clock extender write; Auto-Connect starts after the fade; the Serial VMU copy runs on a thread (VMU block I/O blocks for a vblank each in KOS); worker threads must sleep or yield, never spin (a woken menu thread only gets the CPU at the next tick or yield).
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
+- List case: `BMODEL_LCASE_*` (`bmodel_case_list`, built by `list_case_from_full`: the full case less its back, the spine a flat colour); the full case only in Y, its pictures made while the list rests (`gfx_case_prepare`). Case/disc pictures are table-made and prewarmed (`gfx_prewarm_case_pictures`, `fi_prewarm`); keep their output byte-identical (host harness in the scratchpad compared uploads).
+- Popups (`draw_popup`): panel by `bscene_draw_panel_z` at half `BSCENE_PANEL_Z`, a dark backing at z 1/25, text in front; the "A: x   B: y" hint is 3D oval buttons (`popup_buttons`/`popup_key`, script 0x3f objects `POPKEY_ID`, z -20). With autosort on, z decides what is on top.
+- The fps overlay / log page is no longer reachable (`show_debug` always 0); use Settings > Other > Performance test. Frame-rate work and results: NEWMENU.md "Frame rate work (2026-11)".
 
 ## Card Manager
 - `GD MENU Card Manager/` is Derek's C# app (WPF + Avalonia, shared Core). Scraper: `Core/Scraper/` (ScreenScraper,
@@ -57,6 +60,8 @@ has no right panel; real text/art only on the PVR path (hardware).
 - The Card Manager is Derek's 1.7.1 with this repo's changes on top (merged by three-way patch, not git merge: his
   openMenu sources must not come over). BOX.DAT/ICON.DAT in its menu_data are Git LFS files and still 1.7.0's: the
   cloud session cannot fetch or push LFS objects.
+- Artwork columns: Artwork (front), Back (BACK.DAT) and Spine (SPINE.DAT) in both UIs (`GdItem.HasBackArtwork`/`HasSpineArtwork`, `OpenArtwork(sender, ArtSlot)`, `ArtworkWindow(..., ArtSlot initialSlot)`).
+- Builds: Windows (WPF zip), Linux x64 (self-contained tar.gz), macOS x64 and arm64 (cross-built, ad-hoc signed app bundles). A release: `gh workflow run "Build Card Manager" --ref main -f release=true`; the tag is `version.txt` without the v, notes from `.github/release-notes/<tag>.md` (write them first), asset names as the updater expects (`GDMENUCardManager.v<tag>-<platform>`).
 
 ## Open items
 - Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.

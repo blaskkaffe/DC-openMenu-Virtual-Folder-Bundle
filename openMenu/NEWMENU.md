@@ -443,13 +443,39 @@ and after. `OM bench begin` is written before each step so a crash dump or a han
 debug overlay is switched off for the test. `tools/serial_capture.py --bench <log>` makes a markdown report from a
 capture or a DreamPi log (leak check across the two runs, slow frames, crash location). Host test: `test/bench_test.c`.
 
-## Debug log page
+## Debug overlay (removed from the main menu)
 
-X on the main menu switches the debug overlay on (it stays on in the other menus). While it is on, every second's numbers
-(fps, triangles, sync/build/wait, gpu/ta time, vertices, headers, sort mode, phase times) are stored per screen and per Y
-mode (`dbglog.c`); the first second after a change is dropped, the following ones replace each other and the lowest fps is
-kept. B on the main menu (overlay on) opens the log page: a table to photograph, then (B again) a QR code (`qr.c`, byte
-mode, level L) with the same numbers as text, then B closes. A on the table clears the log.
+The fps overlay and its log page (X, then B on the main menu) are no longer reachable: the frame rate holds 60 fps and
+the buttons are free again. The code is kept (`show_debug` in ui_bios.c is always 0, `dbglog.c` still records every
+frame longer than 1.5 refreshes); numbers now come from the performance test above.
+
+## Frame rate work (2026-11)
+
+Measured frame by frame in flycast with the performance test (TEST builds that write the results to the A2 card).
+Result: no dropped frame in the main menu, game list, information screen (Y), file grid or Internet screen. Left: one
+frame when returning to the main menu from Settings or File (the scene build, about 13 ms) and one when opening a
+card's file page (logic about 7 ms plus its text).
+
+- Draw cache: a state is kept only after 3 frames in a row (`seen_before`, `SEEN_RUN`); the cache no longer empties
+  itself every 17 to 25 frames (the main menu's hitch). The depth sort is a radix sort instead of `qsort`.
+- Case and disc pictures (`gfx.c`): hinge, spine base, spine text, generic cover and pill are made from tables, with
+  output byte-identical to before (host-compared). A spine uploads only the rows under its text. All of them, and the
+  feature icons, are made at start-up (`gfx_prewarm_case_pictures`, `fi_prewarm`).
+- Game list case: `BMODEL_LCASE_*` is the full case less its back triangles, with the spine drawn as a flat colour of
+  the case's spine label (PAL blue, black, white). Only the front picture is needed. The full case (spine and back
+  pictures) is made step by step while the list rests on a game (`gfx_case_prepare`), so Y opens without a hitch.
+- Internet screen: the expansion port is probed at start-up (after `gfx_init`, at most 1.5 s, boot mark `probe`) when
+  the Internet icon is on, so its first half second no longer stutters. Its page icons are drawn from a table
+  (`uicon_draw`, `uicons_alpha.inc` from `tools/gen_uicons.c`).
+- Twin replay (main menu fly-in) keeps strips instead of single triangles.
+
+## Popups in front of the game list
+
+`draw_popup` (ui_bios.c) draws its panel nearer than the list (`bscene_draw_panel_z` at half `BSCENE_PANEL_Z`), with a
+dark backing behind it (z 1/25) so nothing of the list shows through; the text and the highlight are in front of the
+panel. The button hint at the bottom ("A: Choose   B: Back") is drawn as the Internet screen's 3D oval buttons
+(`popup_buttons`, `popup_key`: VM objects of script 0x3f, ids `POPKEY_ID` 0x1380 and up, at z -20, coloured A red,
+B blue, X yellow, Y green). A hint that is not a button list (the Serial VMU progress line) stays plain text.
 
 ## Popup frame colours (rule)
 
