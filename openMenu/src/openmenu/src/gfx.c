@@ -2741,6 +2741,7 @@ gfx_pane(float x, float y, float w, float h, float z, uint32_t argb) {
 void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
+    bscene_cache_next_frame();
     tri_count = 0;
     logo_seen = 0;
     {

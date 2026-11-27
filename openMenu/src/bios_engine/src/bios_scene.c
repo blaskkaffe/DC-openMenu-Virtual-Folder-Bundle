@@ -196,18 +196,29 @@ static cache_entry cache_entries[CACHE_ENTRIES];
 static int cache_entry_n;
 static int cache_disabled;
 
-/* Drawing states seen before: only a state that is drawn a second time is kept (an object that moves every frame
- * would only fill the pool). Keyed by the state's hash, so objects built on the fly (panels, rows) count too. */
+/* Drawing states seen before: only a state that is drawn again in the next frame (or in the same one) is kept. One that
+ * changes every frame would only fill the pool, and so would a looping motion, whose states come back every few frames: each
+ * time the pool is full it is emptied, and everything at rest is transformed again (two slow frames every 17 to 25). Keyed by
+ * the state's hash, so objects built on the fly (panels, rows) count too. */
 #define SEEN_SLOTS 512
 static uint32_t seen[SEEN_SLOTS]; /* hash | 1, 0 = free */
+static uint32_t seen_frame[SEEN_SLOTS]; /* the frame it was last drawn in */
 static int seen_n;
+static uint32_t draw_frame;
+
+void
+bscene_cache_next_frame(void) {
+    draw_frame++;
+}
 
 static int
 seen_before(uint32_t hash) {
     uint32_t key = hash | 1u, i = (hash >> 1) & (SEEN_SLOTS - 1);
     for (;;) {
         if (seen[i] == key) {
-            return 1;
+            const int recent = draw_frame - seen_frame[i] <= 1u;
+            seen_frame[i] = draw_frame;
+            return recent;
         }
         if (!seen[i]) {
             break;
@@ -220,6 +231,7 @@ seen_before(uint32_t hash) {
         i = (hash >> 1) & (SEEN_SLOTS - 1);
     }
     seen[i] = key;
+    seen_frame[i] = draw_frame;
     seen_n++;
     return 0;
 }
