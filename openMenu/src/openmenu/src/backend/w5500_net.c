@@ -50,6 +50,7 @@ give_pins_back(void) {
 
 int
 w5500_net_probe(void) {
+    return 0; /* TEST ONLY: no W5500 probe (in flycast it keeps the debug output switched off) */
     int found = 0;
     mutex_lock(&bus_mutex);
     if (!pins_taken) {
