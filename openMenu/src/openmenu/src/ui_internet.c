@@ -83,6 +83,9 @@ static struct {
     button_t b;
 } pbtn[4];
 static int npbtn;
+unsigned uin_prof[8]; /* TEST ONLY */
+#define IPROF(i, call) do { uint64_t _q0 = timer_us_gettime64(); call; uin_prof[i] += (unsigned)(timer_us_gettime64() - _q0); } while (0)
+
 
 #define ITEM_H 46.0f /* events and news: two lines per item */
 #define ITEM_ROWS 4
@@ -550,9 +553,9 @@ uin_open(bmenu* m, int pal) {
     for (int i = 0; i < PAGES; i++) {
         view[i] = VIEW_A; /* the settings sub-views are left too */
     }
-    build_games();
-    build_events();
-    dcnow_conn_poll(&conn);
+    IPROF(4, build_games());
+    IPROF(4, build_events());
+    IPROF(5, dcnow_conn_poll(&conn));
     was_online = conn.state == DCNOW_CONN_ONLINE;
     if (was_online) {
         start_fetches();
@@ -1628,8 +1631,8 @@ uin_sync(void) {
             connect_or_hang_up();
         }
     }
-    dcnow_conn_poll(&conn);
-    preview_fill();
+    IPROF(5, dcnow_conn_poll(&conn));
+    IPROF(6, preview_fill());
     if (!np_chat_nick()[0]) np_set_chat("Dreamer", "preview"); /* PREVIEW ONLY: signed in, to render the chat line */
     int online = conn.state == DCNOW_CONN_ONLINE;
     if (online && !was_online) {
@@ -1724,7 +1727,7 @@ uin_sync(void) {
     } else if (anim - ev_built >= 600) { /* the clock moves on: going on / coming up / over */
         build_events();
     }
-    ntest = net_test_lines(test_lines, NT_LINES);
+    IPROF(7, ntest = net_test_lines(test_lines, NT_LINES));
     /* The gateway: asked about when the Settings page is open and the console is online (again every half minute, or every 15 seconds while
      * none answered), and every two seconds while it joins a Wi-Fi network */
     if (online && page == PAGE_SETTINGS && !ed.active) {
@@ -3087,7 +3090,7 @@ uin_draw(void) {
     if (!(page == PAGE_ONLINE && view[PAGE_ONLINE] == ON_MENU && !ed.active)) { /* the Online rows are bars of their own */
         gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
     }
-    draw_status();
+    IPROF(0, draw_status());
     say_on = 0;
     kb_slot = 0;
     panel_on = 0;
@@ -3097,8 +3100,8 @@ uin_draw(void) {
             k->flags |= BVM_F_HIDE;
         }
     }
-    draw_page();
-    draw_footer();
+    IPROF(1, draw_page());
+    IPROF(2, draw_footer());
     {
         bvm_obj* po = bvm_find(&menu->vm, ID_PANEL);
         if (po) {
@@ -3149,7 +3152,7 @@ uin_draw(void) {
             /* the glyph is the button's own picture (texture 0), so it sits in the model and moves with it */
             gfx_decal_override(o->texlist, page_icon((int)(o->id - ID_BUTTON(0)), (int)(o->id - ID_BUTTON(0)) == page));
         }
-        bscene_draw_object(&menu->scene, o, sink);
+        IPROF(3, bscene_draw_object(&menu->scene, o, sink));
     }
     menu->scene.no_decals = 0;
     menu->scene.ovr_n = 0;
