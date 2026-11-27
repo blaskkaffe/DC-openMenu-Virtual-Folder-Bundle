@@ -1167,7 +1167,23 @@ test_models(const bios_rom* rom) {
         if (bmodel_case_single(id) == BMODEL_CASE_WHITE || bmodel_case_single(id) == BMODEL_CASE_PAL || bmodel_case_single(id) == BMODEL_CASE_DARK || bmodel_case_single(id) == BMODEL_CASE_CLEAR_WHITE || bmodel_case_single(id) == BMODEL_CASE_CLEAR_BLACK) {
             CHECK(front_tris == 2 && back_tris == (bmodel_case_is_list(id) ? 0 : 2)); /* one picture slot on the front, one on the back (not the list's) */
             if (bmodel_case_is_list(id)) {
-                CHECK(total <= 24); /* the list's cases: a few boxes */
+                static nj_object full;
+                CHECK(bmodel_build(bmodel_case_full(id), &full) == 0);
+                int ft = 0;
+                for (int k = 0; k < full.count; k++) {
+                    if (full.nodes[k].mesh) {
+                        for (int q = 0; q < full.nodes[k].mesh->npolys; q++) {
+                            ft += full.nodes[k].mesh->polys[q].ntris;
+                        }
+                    }
+                }
+                CHECK(total == ft - 2); /* the list's case: the full one less its back cover's two triangles */
+                for (int k = 0; k < obj.count; k++) {
+                    for (int q = 0; obj.nodes[k].mesh && q < obj.nodes[k].mesh->npolys; q++) {
+                        CHECK(obj.nodes[k].mesh->polys[q].tex != BMODEL_TEX_SPINE); /* the spine is a flat colour */
+                    }
+                }
+                nj_object_free(&full);
             }
         } else {
             CHECK(front_tris == 0 && back_tris == 0);

@@ -36,9 +36,9 @@ enum {
     BMODEL_CASE_DARK_DOUBLE,
     BMODEL_CASE_CLEAR_WHITE_DOUBLE,
     BMODEL_CASE_CLEAR_BLACK_DOUBLE,
-    /* the same ten cases for the game list's card (bmodel_case_list): a few boxes, only the faces the card's tilt can show (no back),
-     * one picture (the front); the spine is the colour of the kind's spine label, the hinge side and the edges flat colours. The
-     * game list makes no spine, back or inner label picture with them: those come with the full case in the information screen. */
+    /* the same ten cases for the game list's card (bmodel_case_list): the full case without its back cover (the card's tilt never
+     * shows it) and with the spine label a flat colour (the kind's label colour). The game list makes no spine or back picture with
+     * them: those come with the full case in the information screen. */
     BMODEL_LCASE_WHITE,
     BMODEL_LCASE_PAL,
     BMODEL_LCASE_DARK,

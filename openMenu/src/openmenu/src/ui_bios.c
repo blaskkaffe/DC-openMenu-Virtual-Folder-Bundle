@@ -175,7 +175,7 @@ static int options_row;
 static void draw_options(void);
 static int notice_frames;
 static char fps_text[40];
-static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
+static int show_debug; /* the fps / timing overlay and its log page: no longer switched on from the main menu (always 0) */
 static uint64_t build_us_sum;
 static uint64_t phase_us[3]; /* begin frame, background, everything else drawn (summed per second) */
 static uint64_t sync_us_sum;
@@ -2063,34 +2063,6 @@ handle_report(button_t b) {
 static void
 handle_main(button_t b) {
     switch (b) {
-        case BTN_X:
-            show_debug = !show_debug;
-            if (!show_debug) {
-                debug_iso = 0;
-                bscene_cache_enable(1);
-            }
-            break;
-        case BTN_B:
-            if (show_debug) {
-                report_page = 1;
-                report_built = 0;
-                {
-                    /* the page's numbers as text on the serial port, so they need no photo */
-                    static char text[2800];
-                    char info[40];
-                    snprintf(info, sizeof(info), "%s %s", console_is_pal() ? "PAL" : "NTSC",
-                             sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3");
-                    dbglog_text(text, sizeof(text), info);
-                    serial_log_block("log", text);
-                }
-            }
-            break;
-        case BTN_Y:
-            if (show_debug) {
-                debug_iso = (debug_iso + 1) % ISO_MODES;
-                bscene_cache_enable(debug_iso != 6); /* 6: every object is transformed, lit and projected every frame */
-            }
-            break;
         case BTN_UP:
             if (bmenu_move(&menu, BMENU_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
@@ -3342,8 +3314,7 @@ ui_bios_run(const bios_rom* rom) {
                     uif_set_pad_adapter(picked - 1, uic_adapter_name());
                     screen = SCREEN_CTRL;
                 } else {
-                    sound_sfx(BAUDIO_SFX_ERROR);
-                    show_notice(uic_why());
+                    sound_sfx(BAUDIO_SFX_ERROR); /* not a controller the editor knows: the sound alone, no notice line */
                 }
             }
         }
