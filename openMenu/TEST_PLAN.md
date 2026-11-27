@@ -126,8 +126,8 @@ Features still open (see ROADMAP.md)
 
 ## Stutter at start and random frame drops
 
-Every frame longer than 1.5 refreshes is recorded from the first frame on (`dbglog_hitch`, no debug overlay needed). Open the debug log page
-(QR code, also sent over serial as `OM log`) and read the `HITCH` lines (the first 12 of 48 kept; `HITCH n total` is the count):
+Every frame longer than 1.5 refreshes is recorded from the first frame on (`dbglog_hitch`). The debug log page is no longer reachable from
+the main menu (the fps overlay is gone); use Settings > Other > Performance test, or bring the page back in a test build, and read and read the `HITCH` lines (the first 12 of 48 kept; `HITCH n total` is the count):
 `frame|ms|period|logic|build|wait|art|art_us|text|screen` in microseconds. Reading them:
 - many hitches in the first 5 s, `art_us` or `text` high: pictures and text built on first use (preload or spread them);
 - `logic` high: Auto-Connect, list build, VMU/SD access on the main thread (move to a thread or spread);
@@ -206,12 +206,18 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] An official pad: A on it gives "No adapter on this port speaks the DC API", pads keep working.
 - [ ] Plain controllers/VMUs only: Settings opens without a pause, no adapter rows.
 
+## Popups and screens (2026-11-28)
+- [ ] Play: the sort popup, Recent, Favorites and the game options are in front of the list and readable (nothing of the list shows through).
+- [ ] Their bottom line shows oval A (red) and B (blue) buttons with the word beside each, as on the Internet screen.
+- [ ] Main menu: no fps overlay; X, B and Y on the main menu do nothing debug-related.
+- [ ] File screen: selecting a controller without a supported adapter and pressing A plays the error sound only (no text at the bottom).
+
 ## Frame rate (2026-11-27, measured in flycast with the performance test; check on a console)
 - [ ] Main menu at rest: no hitch every second or so (the draw cache used to empty itself every 17 to 25 frames).
 - [ ] Main menu: moving between icons, and coming back from a screen (the icons fly in): smooth. In flycast the fly-in costs about 11 ms a frame (16 for the first two); on the console it is the screen most likely to drop frames.
 - [ ] Start-up: the menu still appears without a visible extra wait (the case and disc pictures are now made then).
 - [ ] Game list: the first open and scrolling one game at a time: no hitch (flycast: no dropped frame in either).
-- [ ] Game list card: the few-box case looks like the full one at the card's size: front picture, the hinge strip beside it (light grey white case, dark grey dark case, near white / near black clear cases, PAL blue bar with its lighter pill), the spine side in the spine label's colour (Japanese white with the coral band at the bottom, American black, clear white case white, PAL blue), double cases with their dark middle gap. Y shows the full case with its spine, back and inner label pictures.
+- [ ] Game list card: the list case is the full case less its back: clean top and bottom edges, front picture, hinge, the spine side a flat colour of its label (PAL blue, black, clear white case white), double cases with their middle gap. The small preview cases look the same. Y shows the full case with its spine, back and inner label pictures.
 - [ ] Information screen (Y): rest on a game a moment, then Y: no hitch (the full case's spine and back are made while the list rests).
 - [ ] Internet screen: opens and runs smoothly from the first frame (the expansion port is probed during start-up when the Internet icon is on); start-up is not noticeably longer.
 - [ ] Card Manager (Windows, Linux, macOS): Back and Spine columns beside Artwork: bold when the game has none, a click opens the artwork window on that picture; after Apply and Save the button changes.

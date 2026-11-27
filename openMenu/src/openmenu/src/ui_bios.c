@@ -1509,7 +1509,97 @@ popup_rows_y(int rows) {
     return 240.0f - panel_h / 2.0f + 50.0f;
 }
 
-/* A BIOS-style popup list: title, a few rows with the selected one highlighted, a hint line. */
+/* The popups' buttons, as the Internet screen's: the 3D oval of the BIOS clock screen's Select button (script 0x3f) in the colour of
+ * the controller button (A red, B blue, X yellow, Y green) under the first letter of the word. The ovals are objects of the menu's
+ * VM made when first needed, hidden except while a popup draws them. */
+#define POPKEY_ID(i) ((uint16_t)(0x1380 + (i)))
+#define POPKEY_MAX 4
+#define POPKEY_Z (-20.0f) /* in front of everything 3D and of the popup's dark backing (at 1/25) */
+#define POPKEY_BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
+#define POPKEY_BTN_GAP 34.0f  /* from a word to the next oval */
+
+static void
+popup_key(int slot, float cx, float cy, uint32_t col) {
+    bvm_obj* o = bvm_find(&menu.vm, POPKEY_ID(slot));
+    if (!o) {
+        o = bvm_create(&menu.vm, 0x3f, POPKEY_ID(slot), 0x1000);
+    }
+    if (!o) {
+        return;
+    }
+    const float ppu = BSCENE_FOCAL / -POPKEY_Z; /* pixels per unit at its depth */
+    const float sc = 0.68f * -POPKEY_Z / 335.74f; /* the Internet screen's 0.68 at the panel depth: the same size on screen */
+    o->flags &= ~(uint32_t)BVM_F_ATTACHED;
+    o->pos_tw[0].cur = o->pos[0] = (cx - 320.0f) / ppu;
+    o->pos_tw[1].cur = o->pos[1] = (240.0f - cy) / ppu;
+    o->pos_tw[2].cur = o->pos[2] = POPKEY_Z;
+    o->pos_tw[0].step = o->pos_tw[1].step = o->pos_tw[2].step = 0;
+    o->scale_tw[0].cur = o->scale_tw[1].cur = sc;
+    o->scale_tw[2].cur = 1.0f;
+    o->var[1] = 1; /* lit */
+    o->flags &= ~(uint32_t)BVM_F_HIDE;
+    menu.scene.ovr[0].model = o->model; /* the oval's one polygon in the button's colour */
+    menu.scene.ovr[0].node = 0;
+    menu.scene.ovr[0].poly = 0;
+    menu.scene.ovr[0].argb = col;
+    menu.scene.ovr[0].lit = 0;
+    menu.scene.ovr_n = 1;
+    bscene_draw_object(&menu.scene, o, gfx_sink());
+    menu.scene.ovr_n = 0;
+    o->flags |= BVM_F_HIDE; /* drawn here only: the screen's own drawing of the VM's objects leaves it out */
+}
+
+/* A hint "A: select   B: back" as a row of buttons in the middle of x0..x1 at y: each button's oval and its word ("Select"). */
+static void
+popup_buttons(const char* hint, float x0, float x1, float y) {
+    struct {
+        char key;
+        char word[24];
+    } b[POPKEY_MAX];
+    int n = 0;
+    for (const char* p = hint; *p && n < POPKEY_MAX;) {
+        while (*p == ' ') {
+            p++;
+        }
+        if (!(p[0] >= 'A' && p[0] <= 'Z' && p[1] == ':')) {
+            break;
+        }
+        b[n].key = p[0];
+        p += 2;
+        while (*p == ' ') {
+            p++;
+        }
+        int k = 0;
+        while (*p && !(p[0] == ' ' && p[1] == ' ') && k < (int)sizeof(b[n].word) - 1) {
+            b[n].word[k++] = *p++;
+        }
+        b[n].word[k] = '\0';
+        if (k > 0 && b[n].word[0] >= 'a' && b[n].word[0] <= 'z') {
+            b[n].word[0] = (char)(b[n].word[0] - 'a' + 'A');
+        }
+        n++;
+    }
+    if (n == 0) { /* not buttons (a progress line): the words as they are */
+        gfx_text(hint, x0 + 16.0f, y, 0.7f, 0xFFA0A0A0u, 0);
+        return;
+    }
+    float total = -POPKEY_BTN_GAP;
+    for (int i = 0; i < n; i++) {
+        total += POPKEY_BTN_LEFT + (float)gfx_text_width(b[i].word) + POPKEY_BTN_GAP;
+    }
+    float x = (x0 + x1) / 2.0f - total / 2.0f + POPKEY_BTN_LEFT;
+    for (int i = 0; i < n; i++) {
+        const uint32_t col = b[i].key == 'A'   ? 0xF0E03C3Cu
+                             : b[i].key == 'B' ? 0xF02F6FE0u
+                             : b[i].key == 'X' ? 0xF0E0C030u
+                                               : 0xF02FB050u;
+        popup_key(i, x - 6.0f, y + 14.0f, col);
+        gfx_text(b[i].word, x, y, 0.7f, 0xFFFFFFFFu, 1);
+        x += (float)gfx_text_width(b[i].word) + POPKEY_BTN_GAP + POPKEY_BTN_LEFT;
+    }
+}
+
+/* A BIOS-style popup list: title, a few rows with the selected one highlighted, its buttons at the bottom. */
 static void
 draw_popup(const char* title, const char* hint, int count, int sel, popup_name_fn name, popup_dim_fn dim) {
     char line[64];
@@ -1521,8 +1611,8 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
                         gfx_sink());
     /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows, the case) from showing
-     * through the popup's text (over everything 3D, under the highlight and the text) */
-    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 0.6f, 0xE0141820u);
+     * through; nearer than anything 3D (1/w of 25 units), behind the buttons' ovals (20 units), the highlight and the text */
+    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 1.0f / 25.0f, 0xE0141820u);
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;
@@ -1534,7 +1624,7 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
         uint32_t col = dim && dim(first + i) ? 0xFF707070u : (is_sel ? 0xFFFFFFFFu : 0xFFC0C0C0u);
         gfx_text(line, POPUP_X + 16.0f, y, 0.7f, col, is_sel);
     }
-    gfx_text(hint, POPUP_X + 16.0f, rows_y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
+    popup_buttons(hint, POPUP_X, POPUP_X + POPUP_W, rows_y + (float)rows * GFX_LINE_H + 2.0f);
 }
 
 static int
