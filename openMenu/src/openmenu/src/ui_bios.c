@@ -1686,6 +1686,10 @@ draw_settings_info(void) {
 
 static void
 draw_settings(void) {
+    if (credits_open) { /* a page of its own: the rows and their help would show through its panel */
+        draw_credits();
+        return;
+    }
     bpage_draw(&page, gfx_sink()); /* the green arrows for more rows above / below are part of it */
     {
         float tx, ty, tw, th; /* the scroll bar between the arrows */
@@ -1696,9 +1700,6 @@ draw_settings(void) {
     draw_settings_info();
     if (about_open) {
         draw_about();
-    }
-    if (credits_open) {
-        draw_credits();
     }
     if (settings_popup) {
         draw_popup(uis_label(page.cursor), "A: choose   B: cancel", uis_choice_count(page.cursor), settings_popup_sel,
