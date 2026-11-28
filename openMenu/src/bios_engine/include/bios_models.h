@@ -29,14 +29,13 @@ enum {
     BMODEL_PODIUM,               /* winners' stand in Dreamcast colours; the numbers 1 2 3 are the CD player's digits (bmodel_podium_digits) */
     BMODEL_CASE_CLEAR_WHITE,     /* clear CD jewel case, white tray: a white inner label with the colour logo behind the clear front spine */
     BMODEL_CASE_CLEAR_BLACK,     /* clear CD jewel case, black tray: a black inner label with a dark grey logo */
-    /* the double cases (two or more discs, 24 mm deep): ribbed dark grey top and bottom, clear front, back and sides, two spine labels
-     * per side; the style picks the spine label (and blue edges for PAL) */
+    /* the double cases (two or more discs, 24 mm deep; NTSC only: a PAL game of two discs has the regular PAL case, which holds two):
+     * ribbed dark grey top and bottom, clear front, back and sides, two spine labels per side; the style picks the spine label */
     BMODEL_CASE_WHITE_DOUBLE,
-    BMODEL_CASE_PAL_DOUBLE,
     BMODEL_CASE_DARK_DOUBLE,
     BMODEL_CASE_CLEAR_WHITE_DOUBLE,
     BMODEL_CASE_CLEAR_BLACK_DOUBLE,
-    /* the same ten cases for the game list's card (bmodel_case_list): the full case without its back cover (the card's tilt never
+    /* the same nine cases for the game list's card (bmodel_case_list): the full case without its back cover (the card's tilt never
      * shows it) and with the spine label a flat colour (the kind's label colour). The game list makes no spine or back picture with
      * them: those come with the full case in the information screen. */
     BMODEL_LCASE_WHITE,
@@ -45,7 +44,6 @@ enum {
     BMODEL_LCASE_CLEAR_WHITE,
     BMODEL_LCASE_CLEAR_BLACK,
     BMODEL_LCASE_WHITE_DOUBLE,
-    BMODEL_LCASE_PAL_DOUBLE,
     BMODEL_LCASE_DARK_DOUBLE,
     BMODEL_LCASE_CLEAR_WHITE_DOUBLE,
     BMODEL_LCASE_CLEAR_BLACK_DOUBLE,
@@ -56,16 +54,15 @@ enum {
 /* a game list case's full one (any other model as it is) */
 static inline int
 bmodel_case_full(int id) {
-    static const int full[10] = {BMODEL_CASE_WHITE, BMODEL_CASE_PAL, BMODEL_CASE_DARK, BMODEL_CASE_CLEAR_WHITE, BMODEL_CASE_CLEAR_BLACK,
-                                 BMODEL_CASE_WHITE_DOUBLE, BMODEL_CASE_PAL_DOUBLE, BMODEL_CASE_DARK_DOUBLE, BMODEL_CASE_CLEAR_WHITE_DOUBLE,
-                                 BMODEL_CASE_CLEAR_BLACK_DOUBLE};
+    static const int full[9] = {BMODEL_CASE_WHITE, BMODEL_CASE_PAL, BMODEL_CASE_DARK, BMODEL_CASE_CLEAR_WHITE, BMODEL_CASE_CLEAR_BLACK,
+                                BMODEL_CASE_WHITE_DOUBLE, BMODEL_CASE_DARK_DOUBLE, BMODEL_CASE_CLEAR_WHITE_DOUBLE, BMODEL_CASE_CLEAR_BLACK_DOUBLE};
     return id >= BMODEL_LCASE_WHITE && id <= BMODEL_LCASE_CLEAR_BLACK_DOUBLE ? full[id - BMODEL_LCASE_WHITE] : id;
 }
 
 /* a case's game list one (any other model as it is) */
 static inline int
 bmodel_case_list(int id) {
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 9; i++) {
         if (bmodel_case_full(BMODEL_LCASE_WHITE + i) == id) {
             return BMODEL_LCASE_WHITE + i;
         }
@@ -83,7 +80,7 @@ static inline int
 bmodel_case_single(int id) {
     switch (id) {
         case BMODEL_CASE_WHITE_DOUBLE: case BMODEL_LCASE_WHITE: case BMODEL_LCASE_WHITE_DOUBLE: return BMODEL_CASE_WHITE;
-        case BMODEL_CASE_PAL_DOUBLE: case BMODEL_LCASE_PAL: case BMODEL_LCASE_PAL_DOUBLE: return BMODEL_CASE_PAL;
+        case BMODEL_LCASE_PAL: return BMODEL_CASE_PAL;
         case BMODEL_CASE_DARK_DOUBLE: case BMODEL_LCASE_DARK: case BMODEL_LCASE_DARK_DOUBLE: return BMODEL_CASE_DARK;
         case BMODEL_CASE_CLEAR_WHITE_DOUBLE: case BMODEL_LCASE_CLEAR_WHITE: case BMODEL_LCASE_CLEAR_WHITE_DOUBLE: return BMODEL_CASE_CLEAR_WHITE;
         case BMODEL_CASE_CLEAR_BLACK_DOUBLE: case BMODEL_LCASE_CLEAR_BLACK: case BMODEL_LCASE_CLEAR_BLACK_DOUBLE: return BMODEL_CASE_CLEAR_BLACK;
@@ -96,7 +93,7 @@ static inline int
 bmodel_case_double(int id) {
     switch (id) {
         case BMODEL_CASE_WHITE: return BMODEL_CASE_WHITE_DOUBLE;
-        case BMODEL_CASE_PAL: return BMODEL_CASE_PAL_DOUBLE;
+        /* BMODEL_CASE_PAL: no double, the PAL case holds two discs */
         case BMODEL_CASE_DARK: return BMODEL_CASE_DARK_DOUBLE;
         case BMODEL_CASE_CLEAR_WHITE: return BMODEL_CASE_CLEAR_WHITE_DOUBLE;
         case BMODEL_CASE_CLEAR_BLACK: return BMODEL_CASE_CLEAR_BLACK_DOUBLE;

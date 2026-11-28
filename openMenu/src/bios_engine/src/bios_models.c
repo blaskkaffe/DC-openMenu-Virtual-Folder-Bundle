@@ -620,16 +620,16 @@ build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf
 #define RIB_MM 9.1f
 
 /* The double CD case (two to four discs, the "fat box"): 142 x 125 x 24 mm. Its top and bottom edges are dark grey and ribbed over the
- * whole depth (blue and plain for PAL); the front, back and both sides are clear. Under the front the cover (the whole width: no hinge
+ * whole depth; the front, back and both sides are clear. Under the front the cover (the whole width: no hinge
  * strip), under the back the back cover, and on each side two spine labels, one per half, with a dark gap between the halves. */
 #define DOUBLE_HZ 12.0f   /* half the depth */
 #define DOUBLE_SPINE0 1.0f  /* a spine label from here (the gap's edge) ... */
 #define DOUBLE_SPINE1 11.0f /* ... to here, on each half (10 mm: the spine pictures of the double kinds are made for that) */
 static void
-build_double_case(builder* b, int pal) {
+build_double_case(builder* b) {
     const float S = BMODEL_CASE_HEIGHT / 125.0f;
     const float X = 71.0f, Y = 62.5f, Z = DOUBLE_HZ;
-    const uint32_t frame = pal ? 0xFF2A4D9Cu : 0xFF3C3E42u;
+    const uint32_t frame = 0xFF3C3E42u;
     /* the inside, dark, behind the clear sides (so they are not see-through) */
     {
         int in = poly_new(b, -1, frame, STRIP_INNER | STRIP_IGNORE_LIGHT);
@@ -639,12 +639,12 @@ build_double_case(builder* b, int pal) {
     }
     /* the top and bottom edges */
     {
-        int e = poly_new(b, pal ? -1 : BMODEL_TEX_RIBS, frame, 0);
+        int e = poly_new(b, BMODEL_TEX_RIBS, frame, 0);
         const float u0 = -X / RIB_MM, u1 = X / RIB_MM;
         const float v0 = 0.25f - 0.8f / (2 * Z - 1.6f) * 0.5f, v1 = 0.75f + 0.8f / (2 * Z - 1.6f) * 0.5f;
         const float uvt[4][2] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
-        quad(b, e, v3m(-X * S, Y * S, -Z * S), v3m(X * S, Y * S, -Z * S), v3m(X * S, Y * S, Z * S), v3m(-X * S, Y * S, Z * S), pal ? NULL : uvt, v3m(0, 1, 0));
-        quad(b, e, v3m(-X * S, -Y * S, -Z * S), v3m(X * S, -Y * S, -Z * S), v3m(X * S, -Y * S, Z * S), v3m(-X * S, -Y * S, Z * S), pal ? NULL : uvt, v3m(0, -1, 0));
+        quad(b, e, v3m(-X * S, Y * S, -Z * S), v3m(X * S, Y * S, -Z * S), v3m(X * S, Y * S, Z * S), v3m(-X * S, Y * S, Z * S), uvt, v3m(0, 1, 0));
+        quad(b, e, v3m(-X * S, -Y * S, -Z * S), v3m(X * S, -Y * S, -Z * S), v3m(X * S, -Y * S, Z * S), v3m(-X * S, -Y * S, Z * S), uvt, v3m(0, -1, 0));
         /* the gap between the halves: a dark band round the sides */
         int g = poly_new(b, -1, 0xFF18191Bu, STRIP_IGNORE_LIGHT);
         const float gz = DOUBLE_SPINE0 - 0.2f, xg = X - 0.3f;
@@ -894,10 +894,9 @@ build_by_id(builder* b, int id) {
     switch (id) {
         case BMODEL_PHONE: build_phone(b); return 0;
         case BMODEL_CASE_WHITE_DOUBLE:
-        case BMODEL_CASE_PAL_DOUBLE:
         case BMODEL_CASE_DARK_DOUBLE:
         case BMODEL_CASE_CLEAR_WHITE_DOUBLE:
-        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: build_double_case(b, bmodel_case_single(id) == BMODEL_CASE_PAL); return 0;
+        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: build_double_case(b); return 0;
         case BMODEL_GLOBE: build_globe(b); return 0;
         case BMODEL_PODIUM: build_podium(b); return 0;
         case BMODEL_CASE_WHITE: build_case(b, &dc_model_cd_case_white, 0xFF292D31u, 0); return 0;
