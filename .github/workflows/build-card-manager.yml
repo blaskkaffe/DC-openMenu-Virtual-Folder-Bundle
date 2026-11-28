@@ -252,9 +252,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # by name: the Docker build record artifact (*.dockerbuild) cannot be extracted and fails a download of all
       - uses: actions/download-artifact@v4
         with:
+          pattern: GDMENUCardManager-*
           path: _art
+      - uses: actions/download-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: _art/1ST_READ.BIN
 
       - name: Release
         env:
