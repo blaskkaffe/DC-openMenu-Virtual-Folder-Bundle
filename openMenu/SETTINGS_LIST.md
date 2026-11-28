@@ -12,57 +12,62 @@ Label limit 17 characters (the value pill starts at x 304), value limit 27, help
                    help (39): Start the disc in the drive at power on <- cut at 36
  4 Clock and date  Date and time         13  (opens the editor; shows MM-DD HH:MM)
                    help (28): Set the clock of the console
- 5 Clock and date  Clock                 3  On (12-Hour), On (24-Hour), Off   (sf_clock, shared with openMenu 1.7; default 24 hour)
- 5 Clock and date  .beat time            2  Off, On
-                   help (36): .beat uses the Online time sync zone
- 6 Clock and date  Memory card clock     17  (action; shows Done (n) / No memory card / Failed (n/m))
+ 5 Clock and date  Clock                  5  On (12-Hour), On (24-Hour), Off   [longest 12]
+                   help (43): The header clock (shared with openMenu 1.7) <- cut at 36
+ 6 Clock and date  .beat time            10  Off, On   [longest 3]
+                   help (43): After the clock; zone from Online time sync <- cut at 36
+ 7 Clock and date  Memory card clock     17  (action; shows Done (n) / No memory card / Failed (n/m))
                    help (33): Set the clock of the memory cards
- 7 Clock and date  Clock extender        14  Off, On   [longest 3]
+ 8 Clock and date  Clock extender        14  Off, On   [longest 3]
                    help (36): Keep the date in flash at each start
- 8 Clock and date  VMU time sync         13  Off, On   [longest 3]
+ 9 Clock and date  VMU time sync         13  Off, On   [longest 3]
                    help (33): Set the clock from a VMU at start
- 9 Clock and date  Online time sync      16  Off, On (UTC-12), On (UTC-11), ... (39 values, e.g. On (UTC+3:30))   [longest 14]
+10 Clock and date  Online time sync      16  Off, On (UTC-12), On (UTC-11), ... (39 values, e.g. On (UTC+3:30))   [longest 14]
                    help (31): Set the clock from the internet
-10 Display         Aspect ratio          12  4:3, 16:9   [longest 4]
+11 Display         Aspect ratio          12  4:3, 16:9   [longest 4]
                    help (29): 16:9 is squeezed for wide TVs
-11 Display         Background            10  BIOS blue, Green, Orange, Purple, Red, Grey   [longest 9]
+12 Display         Background            10  BIOS blue, Green, Orange, Purple, Red, Grey   [longest 9]
                    help (29): Colour of the menu background
-12 Display         Dark mode              9  Off, On   [longest 3]
+13 Display         Dark mode              9  Off, On   [longest 3]
                    help (18): Dim the background
-13 Game list       Game order            10  A-Z, SD card order, Release year   [longest 13]
+14 Display         Real mode              9  Off, On   [longest 3]
+                   help (44): The BIOS's hidden mode: teal sky, side light <- cut at 36
+15 Display         Japanese logos        14  Original, English   [longest 8]
+                   help (29): Japanese games' feature logos
+16 Game list       Game order            10  A-Z, SD card order, Release year   [longest 13]
                    help (18): Order of the games
-14 Game list       Multi-disc games      16  Show all discs, Compact   [longest 14]
+17 Game list       Multi-disc games      16  Show all discs, Compact   [longest 14]
                    help (36): List every disc or one entry per set
-15 Game list       Disc sets from        14  Anywhere, Same folder only   [longest 16]
+18 Game list       Disc sets from        14  Anywhere, Same folder only   [longest 16]
                    help (36): Where the other discs are looked for
-16 Game list       Recently played       15  Off, Last 10, Last 20, Last 30, Last 40, Last 50   [longest 7]
+19 Game list       Recently played       15  Off, Last 10, Last 20, Last 30, Last 40, Last 50   [longest 7]
                    help (33): Games in the Recent button's list
-17 Game list       Remember last game    18  Off, On   [longest 3] <- LONG LABEL
+20 Game list       Remember last game    18  Off, On   [longest 3] <- LONG LABEL
                    help (33): Start browsing where you left off
-18 Game list       Serial VMU            10  Off, On (A1), On (A2), ... (9 values, e.g. On (B2))   [longest 7]
+21 Game list       Serial VMU            10  Off, On (A1), On (A2), ... (9 values, e.g. On (B2))   [longest 7]
                    help (48): Each game's VMU image kept on the serial SD card <- cut at 36
-19 Game list       Serial VMU Slots      16  Off, On   [longest 3]
+22 Game list       Serial VMU Slots      16  Off, On   [longest 3]
                    help (45): Five VMU images per game, asked at each start <- cut at 36
-20 Starting games  Boot animation        14  Full, License only, Animation only, Fast   [longest 14]
+23 Starting games  Boot animation        14  Full, License only, Animation only, Fast   [longest 14]
                    help (33): What the BIOS shows before a game
-21 Starting games  Exit to BIOS          12  Standard, Alternate, Alternate 3D   [longest 12]
+24 Starting games  Exit to BIOS          12  Standard, Alternate, Alternate 3D   [longest 12]
                    help (34): How other discs return to the BIOS
-22 System          VMU beep on save      16  Off, On   [longest 3]
+25 System          VMU beep on save      16  Off, On   [longest 3]
                    help (36): The VMU beeps when a save is written
-23 System          VM2 game ID           11  Send to all, Send to first, Off   [longest 13]
+26 System          VM2 game ID           11  Send to all, Send to first, Off   [longest 13]
                    help (34): Tell VM2, VMU Pro and co. the game
-24 Internet        Online features       15  Off, On (Manual Connect), On (Auto-Connect)   [longest 19]
+27 Internet        Online features       15  Off, On (Manual Connect), On (Auto-Connect)   [longest 19]
                    help (35): On: the Music icon becomes Internet
-25 Other           Card defaults         13  Off, On   [longest 3]
+28 Other           Card defaults         13  Off, On   [longest 3]
                    help (36): Use DEFAULTS.INI [BIOSMENU] at start
-26 Other           Performance test      16  (action)
+29 Other           Performance test      16  (action)
                    help (36): Scripted run, results on serial port
-27 Other           About                  5  (opens a box)
-                   help (19): Version and credits
-28 Internet        Player list refresh   19  Off, 10 seconds, 20 seconds, 30 seconds, 45 seconds, 60 seconds   [longest 10] <- LONG LABEL  [Internet screen]
+30 Other           About                  5  (opens a box)
+                   help (16): Version and BIOS
+31 Other           Credits                7  (opens a box)
+                   help (32): The people this menu is built on
+32 Internet        Player list refresh   19  Off, 10 seconds, 20 seconds, 30 seconds, 45 seconds, 60 seconds   [longest 10] <- LONG LABEL  [Internet screen]
                    help (33): How often the online lists update
-29 Internet        VMU online status     17  Off, On   [longest 3]  [Internet screen]
+33 Internet        VMU online status     17  Off, On   [longest 3]  [Internet screen]
                    help (31): Online status on the VMU screen
-30 Internet        Online time sync      16  Off, On (UTC-12), On (UTC-11), ... (39 values, e.g. On (UTC+3:30))   [longest 14]  [Internet screen]
-                   help (31): Set the clock from the internet
 ```

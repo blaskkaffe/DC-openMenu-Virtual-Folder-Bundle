@@ -15,7 +15,7 @@ for m in re.finditer(r'\{(UIS_ACTION_\w+|0), (-?\w+), "([^"]*)", "([^"]*)", "([^
     rest = (a + " " + (b or "")).replace("\n", " ")
     names = next((arrays[n] for n in re.findall(r"\b(\w+)\b", rest) if n in arrays), None)
     rows.append((group, label, help_, action, names))
-net_first = len(rows) - 3
+net_first = len(rows) - 2  # NET_ROWS in ui_settings.c
 print(f"{'#':>2} {'Group':15} {'Label':20} {'len':>3}  Values")
 for i, (group, label, help_, action, names) in enumerate(rows, 1):
     flags = " <- LONG LABEL" if len(label) > LABEL_MAX else ""
@@ -27,7 +27,7 @@ for i, (group, label, help_, action, names) in enumerate(rows, 1):
         vals = ", ".join(shown) + f"   [longest {longest}]"
     else:
         vals = {"UIS_ACTION_DATETIME": "(opens the editor; shows MM-DD HH:MM)", "UIS_ACTION_VMUCLOCK": "(action; shows Done (n) / No memory card / Failed (n/m))",
-                "UIS_ACTION_BENCH": "(action)", "UIS_ACTION_ABOUT": "(opens a box)"}.get(action, "")
+                "UIS_ACTION_BENCH": "(action)", "UIS_ACTION_ABOUT": "(opens a box)", "UIS_ACTION_CREDITS": "(opens a box)"}.get(action, "")
     where = "  [Internet screen]" if i > net_first else ""
     print(f"{i:>2} {group:15} {label:20} {len(label):>3}  {vals}{flags}{where}")
     print(f"{'':>2} {'':15} help ({len(help_)}): {help_}" + (" <- cut at 36" if len(help_) > 36 else ""))

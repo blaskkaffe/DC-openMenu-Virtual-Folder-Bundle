@@ -117,7 +117,8 @@ static const row_def rows[] = {
     {0, -1, "Other", "Card defaults", "Use DEFAULTS.INI [BIOSMENU] at start", &sf_honor_defaults, HONOR_DEFAULTS_END + 1,
      on_off},
     {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
-    {UIS_ACTION_ABOUT, UIS_ICON_OTHER, "Other", "About", "Version and credits", NULL, 0, NULL},
+    {UIS_ACTION_ABOUT, UIS_ICON_OTHER, "Other", "About", "Version and BIOS", NULL, 0, NULL},
+    {UIS_ACTION_CREDITS, UIS_ICON_OTHER, "Other", "Credits", "The people this menu is built on", NULL, 0, NULL},
     /* shown on the Internet screen's Settings page */
     {0, -1, "Internet", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
      refresh_modes},

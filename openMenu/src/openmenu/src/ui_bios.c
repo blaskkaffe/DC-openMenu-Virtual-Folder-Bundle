@@ -153,6 +153,8 @@ static int have_meta;               /* META.DAT loaded: players, VMU blocks */
 static bcdplayer cdp;                 /* the Music screen: the BIOS CD player, its buttons do nothing yet */
 static bdt dtedit;                    /* the date and time editor */
 static int about_open;                /* the About box over the settings */
+static int credits_open;              /* the Credits box over the settings */
+static int credits_top;               /* its first line shown */
 static int saved_page_cursor, saved_page_top;
 static const bios_rom* g_rom;
 static mouse_t pointer;
@@ -1558,6 +1560,75 @@ draw_about(void) {
     gfx_text("A: close", 144.0f, 316.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
+/* ---- Credits (Settings > Other > Credits): who this menu is built on, Derek Pascarella (ateam) first. Up / Down scroll. ---- */
+static const struct {
+    char head; /* a name (white) or what they did (grey) */
+    const char* text;
+} credits_lines[] = {
+    {1, "Derek Pascarella (ateam)"},
+    {0, "openMenu Virtual Folder Bundle,"},
+    {0, "which this menu is a fork of:"},
+    {0, "virtual folders, the Card"},
+    {0, "Manager, Dreamcast Now!,"},
+    {0, "Serial VMU, multi-disc games,"},
+    {0, "recently played and much more"},
+    {1, "mrneo240 (Hayden Kowalchuk)"},
+    {0, "the original openMenu"},
+    {1, "megavolt85"},
+    {0, "new features"},
+    {1, "sbstnc"},
+    {0, "the Docker development setup"},
+    {1, "Sonik"},
+    {0, "GD MENU Card Manager"},
+    {1, "darc"},
+    {0, "Redump2CDI"},
+    {1, "The Dreamcast scene"},
+    {0, "GDEMU, KallistiOS, VM2,"},
+    {0, "VMU Pro, USB4Maple, Pico2Maple,"},
+    {0, "DreamPi, Dreamcast Now!, DCNET,"},
+    {0, "Bleem!, Bloom, and everyone"},
+    {0, "who documented the BIOS"},
+    {1, "Testers of the original"},
+    {0, "NO HXRO, SEGA RPG FAN, Kanji,"},
+    {0, "agarpac, null, Ade, NeoGohan,"},
+    {0, "pipporamone, Tongara,"},
+    {0, "Chris Daioglou,"},
+    {0, "Retro Repair Corner, Farkus,"},
+    {0, "FMRad10, Colin L.,"},
+    {0, "PlayerGameSK, Virtua Shenmue,"},
+    {0, "Nachosonic, Patrick Graham,"},
+    {0, "onlycodered, Hass, RazorX"},
+    {1, "This version: blaskkaffe"},
+};
+#define CREDITS_N ((int)(sizeof(credits_lines) / sizeof(credits_lines[0])))
+#define CREDITS_ROWS 8
+#define CREDITS_X 90.0f
+#define CREDITS_W 460.0f
+#define CREDITS_Y 92.0f /* the title's line */
+
+static void
+draw_credits(void) {
+    const float h = (float)(CREDITS_ROWS + 2) * GFX_LINE_H + 16.0f;
+    bscene_draw_panel_z(&menu.scene, CREDITS_X - 10.0f, CREDITS_Y - 18.0f, CREDITS_W + 20.0f, h + 20.0f, screen_accent(),
+                        BSCENE_PANEL_Z * 0.5f, gfx_sink());
+    gfx_rect(CREDITS_X - 2.0f, CREDITS_Y - 10.0f, CREDITS_W + 4.0f, h + 4.0f, 1.0f / 25.0f, 0xE0141820u);
+    gfx_text("Credits", CREDITS_X + 16.0f, CREDITS_Y, 0.7f, 0xFFFFFFFFu, 1);
+    const float rows_y = CREDITS_Y + (float)GFX_LINE_H + 6.0f;
+    for (int i = 0; i < CREDITS_ROWS && credits_top + i < CREDITS_N; i++) {
+        const int k = credits_top + i;
+        const int head = credits_lines[k].head;
+        gfx_text(credits_lines[k].text, CREDITS_X + (head ? 16.0f : 32.0f), rows_y + (float)i * GFX_LINE_H, 0.7f,
+                 head ? 0xFFFFFFFFu : 0xFFB0B0B0u, head);
+    }
+    /* the scroll bar on the right */
+    const float bar_h = (float)CREDITS_ROWS * GFX_LINE_H;
+    const float th = bar_h * (float)CREDITS_ROWS / (float)CREDITS_N;
+    const float ty = rows_y + (bar_h - th) * (float)credits_top / (float)(CREDITS_N - CREDITS_ROWS);
+    gfx_rect(CREDITS_X + CREDITS_W - 12.0f, rows_y, 4.0f, bar_h, 0.66f, 0x40FFFFFFu);
+    gfx_rect(CREDITS_X + CREDITS_W - 12.0f, ty, 4.0f, th, 0.67f, 0xC0FFFFFFu);
+    popup_buttons("B: back", CREDITS_X, CREDITS_X + CREDITS_W, rows_y + (float)CREDITS_ROWS * GFX_LINE_H + 2.0f);
+}
+
 /* Draw `text` in the menu font at its own size, in at most `max_w` pixels: a longer text is cut and ends in "..". */
 static void
 text_fitted(const char* text, float x, float y, uint32_t color, float max_w) {
@@ -1625,6 +1696,9 @@ draw_settings(void) {
     draw_settings_info();
     if (about_open) {
         draw_about();
+    }
+    if (credits_open) {
+        draw_credits();
     }
     if (settings_popup) {
         draw_popup(uis_label(page.cursor), "A: choose   B: cancel", uis_choice_count(page.cursor), settings_popup_sel,
@@ -2924,7 +2998,7 @@ bench_apply(const bench_cmd* c) {
         char line[64];
         snprintf(line, sizeof(line), "forced back to the main menu from %s", log_label());
         serial_log_block("bench", line);
-        recent_open = options_open = viewmenu_open = viewer_open = settings_popup = about_open = report_page = vmu_menu_open = 0;
+        recent_open = options_open = viewmenu_open = viewer_open = settings_popup = about_open = credits_open = report_page = vmu_menu_open = 0;
         if (screen == SCREEN_SETTINGS || screen == SCREEN_DATETIME) {
             uis_commit();
         }
@@ -2947,6 +3021,19 @@ handle_settings(button_t b) {
     if (about_open) {
         if (b == BTN_A || b == BTN_B || b == BTN_START) {
             about_open = 0;
+            sound_sfx(BAUDIO_SFX_CANCEL);
+        }
+        return;
+    }
+    if (credits_open) {
+        if (b == BTN_UP && credits_top > 0) {
+            credits_top--;
+            sound_sfx(BAUDIO_SFX_CURSOR);
+        } else if (b == BTN_DOWN && credits_top < CREDITS_N - CREDITS_ROWS) {
+            credits_top++;
+            sound_sfx(BAUDIO_SFX_CURSOR);
+        } else if (b == BTN_A || b == BTN_B || b == BTN_START) {
+            credits_open = 0;
             sound_sfx(BAUDIO_SFX_CANCEL);
         }
         return;
@@ -3003,6 +3090,10 @@ handle_settings(button_t b) {
             } else if (uis_action(row) == UIS_ACTION_ABOUT) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 about_open = 1;
+            } else if (uis_action(row) == UIS_ACTION_CREDITS) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                credits_top = 0;
+                credits_open = 1;
             } else if (uis_action(row) == UIS_ACTION_VMUCLOCK) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uis_run(row);
@@ -3062,7 +3153,7 @@ apply_hover(void) {
         files_over = popup_sel >= 0; /* for the VMU menu: a click outside its rows does nothing */
         return;
     }
-    if (about_open) {
+    if (about_open || credits_open) {
         return;
     }
     switch (screen) {
@@ -3435,7 +3526,7 @@ ui_bios_run(const bios_rom* rom) {
             online_boot();
         }
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
-        online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
+        online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open && !credits_open &&
                     !viewer_open && !options_open && !viewmenu_open && !svmu_active());
         clock_extender_tick(); /* openMenu 1.7.1's Clock extender: one date write per run when it is on */
 
