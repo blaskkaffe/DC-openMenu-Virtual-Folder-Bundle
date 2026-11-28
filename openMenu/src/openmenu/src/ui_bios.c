@@ -1310,12 +1310,13 @@ popup_rows_y(int rows) {
  * VM made when first needed, hidden except while a popup draws them. */
 #define POPKEY_ID(i) ((uint16_t)(0x1380 + (i)))
 #define POPKEY_MAX 4
-/* The popups' layers, back to front (1/w; the PVR sorts by it): the screen's own 2D text (0.5), the dark backing
- * (POPUP_BACK_Z), the ovals (POPKEY_Z: 1/w 0.6, behind their words), the highlight (0.65), the text (0.7). The panel's frame
- * is drawn at POPUP_PANEL_Z: in front of the game list's case (near_sink) but behind the backing. */
-#define POPUP_PANEL_Z (-5.0f)
-#define POPUP_BACK_Z 0.55f
-#define POPKEY_Z (-1.0f / 0.6f)
+/* The popups' layers (1/w; the PVR sorts by it): the panel nearer than the screen's 3D (half the panel depth), the dark
+ * backing in front of anything 3D (1/25), the ovals in front of it (20 units), the highlight (0.65) and the text (0.7). The
+ * screen's own 2D text (0.5) would show over the backing: popups are placed clear of it (popup_x). The ovals do not render
+ * the same much nearer (tried at 1.7 units: they moved). */
+#define POPUP_PANEL_Z (BSCENE_PANEL_Z * 0.5f)
+#define POPUP_BACK_Z (1.0f / 25.0f)
+#define POPKEY_Z (-20.0f)
 #define POPKEY_BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
 #define POPKEY_BTN_GAP 34.0f  /* from a word to the next oval */
 
