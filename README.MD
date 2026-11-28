@@ -6,7 +6,7 @@ A menu for SEGA Dreamcast [GDEMU](https://gdemu.wordpress.com/about/) users that
 
 It is a fork of **openMenu Virtual Folder Bundle** by Derek Pascarella (ateam), which in turn builds on the openMenu of mrneo240, megavolt85 and sbstnc. The game list, virtual folders, disc sets, per-game VMUs and the card layout all come from that work, and the menu keeps working with the same SD card and the same save files (see [Compatibility](#compatibility-with-the-original-virtual-folder-bundle)). What is new is the look and the screens around it.
 
-The pictures in this file are renders made on a PC with the real menu code and a BIOS dump (`openMenu/tools/screenshots/make_screenshots.sh`), not captures from a console.
+The pictures in this file are screenshots of this menu running in the flycast emulator with a BIOS dump and a card of sample games (made up titles and covers), not captures from a console.
 
 ---
 
@@ -51,14 +51,23 @@ The old interface and its themes are not part of this fork, so their settings ar
 
 ![The game list](images/list.png)
 
-- One box of seven lines. The selected game has a lit pill and a 3D GD-ROM disc that spins as in the BIOS's CD player, carrying the game's own disc label when the card has it (the Card Manager stores them in `DISC.DAT`), else the icon art, else the BIOS disc of its region (blue for PAL, red otherwise).
-- On the right: the jewel case with the box art (`BOX.DAT`), the game's name, product code, region, players, VMU blocks and disc count.
+- The games on the right, seven lines in the File screen's frame. The selected game has a lit pill and a 3D GD-ROM disc that spins as in the BIOS's CD player, carrying the game's own disc label when the card has it (the Card Manager stores them in `DISC.DAT`), else the icon art, else the BIOS disc of its region (blue for PAL, red otherwise).
+- On the left, on a blue card in the File screen's style: the folder and the position in the list, the jewel case with the box art (`BOX.DAT`), the year, region, disc and players.
 - Virtual folders from the Card Manager, multi-disc sets (one entry per set, Left and Right pick the disc), PlayStation discs through Bleem! or Bloom, recently played games, remembered last game.
-- Five buttons along the bottom, as in the BIOS's CD player: **Recent**, **Favorites**, **Folders**, **Sort** (A-Z, release year, SD card order) and **Group** (more groups are coming).
+- One button at the bottom (left of it BACK; B from the list goes there) shows the current view and opens the **View** menu: **Recent**, **Favorites**, **Folders**, **Sort** (A-Z, release year, SD card order) and **Group** (more groups are coming).
 - **X** opens the game's options (start, disc, emulator, favorite, game information), **Y** opens the case viewer: rotate and zoom the case, read genre, online play, accessories and the description from `META.DAT`.
-- The list's case is a lighter model with the front picture and the spine in its label's colour; Y shows the full case with spine and back. Popups (Recent, Favorites, the View / sort menu, the game options, and the Settings and VMU menus elsewhere) sit in front of what is behind them with the same oval A and B buttons as the Internet screen.
+- The list's case is a lighter model with the front picture and the spine in its label's colour; Y shows the full case with spine and back.
 - Favorites are starred games kept in the menu's own file, so the list works with a VMU, an SD card or both.
 - **Serial VMU**: a game's VMU image is restored from the serial SD card before it starts and backed up the next time the menu starts, in the same folders as the original (`OPENMENU/SAVES/<serial>/SLOT1.VMU`).
+
+<p>
+<img width="49%" src="images/popup-view.png" alt="The View popup">
+<img width="49%" src="images/game-options.png" alt="The game options popup">
+</p>
+
+Popups (View, Recent, Favorites, the game options, and the Settings and VMU menus elsewhere) open in the middle of the screen, in front of the list and its case, with oval buttons as in the File screen's menus: A red, B blue.
+
+![The case viewer](images/viewer.png)
 
 ### File
 
@@ -87,6 +96,11 @@ A on the card opens its menu:
 
 ![Use full size](images/file-full-size.png)
 
+<p>
+<img width="49%" src="images/file-window.png" alt="The file window">
+<img width="49%" src="images/file-look.png" alt="Change Color and Logo">
+</p>
+
 Copying, deleting, resetting and extending write to real memory cards: back up a card first and try them on a spare one.
 
 ### Music and Internet
@@ -95,11 +109,25 @@ Copying, deleting, resetting and extending write to real memory cards: back up a
 - With **Settings > Online features** on, the icon becomes **Internet**: players online, the games being played (A starts a game that is on the card), upcoming events and the connection settings, through Dreamcast Now! or DCNET. News needs the DreamPi companion and is not there yet. The header logo follows the network, with a turning swirl while connecting.
 - Connection through a modem, a broadband adapter, a LAN adapter or the serial cable to a DreamPi.
 
+<p>
+<img width="49%" src="images/internet.png" alt="The Internet screen">
+<img width="49%" src="images/internet-settings.png" alt="The Internet screen's network settings">
+</p>
+
 ### Settings
 
 ![Settings](images/settings.png)
 
-The BIOS Settings screen: four rows with an icon, a pill and a text line, and a help box under them. Rows with more than two choices open a popup. The BIOS's own settings (language, date and time, sound, auto start, memory card clock) come first and are written to the console's flash exactly as the BIOS writes them. The other rows are listed in the [settings reference](#settings-reference).
+The BIOS Settings screen: five rows with an icon, a pill and a text line, and a help box under them. Rows with more than two choices open a popup. The BIOS's own settings (language, date and time, sound, auto start, memory card clock) come first and are written to the console's flash exactly as the BIOS writes them. The other rows are listed in the [settings reference](#settings-reference).
+
+
+**Settings > Other > Credits** names the people this menu is built on, Derek Pascarella (ateam) first: Up and Down scroll it.
+
+![Credits](images/credits.png)
+
+When a GDEMU boots the card, the console's licence screen shows this menu's logo:
+
+![Boot logo](images/boot-logo.png)
 
 ---
 
@@ -225,7 +253,7 @@ Licensed under the Modified BSD License (3-Clause BSD License)
 The original openMenu project was created by Hayden Kowalchuk (mrneo240), with subsequent forks and contributions by megavolt85, sbstnc and Derek Pascarella (ateam). For the full license text, see `/openMenu/LICENSE.md`.
 
 ### The BIOS
-No BIOS data is shipped, committed or copied by this project. The menu reads the boot ROM of the console it runs on at run time. The pictures in `images/` show the menu as drawn from a BIOS dump on a PC; the Dreamcast BIOS, its models, its typeface and its sounds are the property of SEGA.
+No BIOS data is shipped, committed or copied by this project. The menu reads the boot ROM of the console it runs on at run time. The pictures in `images/` show the menu running in an emulator with a BIOS dump; the Dreamcast BIOS, its models, its typeface and its sounds are the property of SEGA.
 
 ### GD MENU Card Manager
 This project includes a modified version of GD MENU Card Manager by Sonik:
