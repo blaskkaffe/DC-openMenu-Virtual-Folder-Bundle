@@ -109,12 +109,12 @@ function Get-VersionPoints([string]$Text) {
     return ,$points
 }
 
-# A version too wide for the line (such as v1.7.2-blaskkaffe) is drawn without its leading v.
-$points = Get-VersionPoints $Version
-$width = ($points.X | Measure-Object -Maximum).Maximum - ($points.X | Measure-Object -Minimum).Minimum + 1
-if ($width -gt 126 -and $Version.StartsWith('v')) {
-    $points = Get-VersionPoints $Version.Substring(1)
-}
+# Every character is checked, but only the number is drawn: v1.7.2-blaskkaffe shows as 1.7.2.
+$null = Get-VersionPoints $Version
+$number = $Version.TrimStart('v')
+if ($number.IndexOf('-') -gt 0) { $number = $number.Substring(0, $number.IndexOf('-')) }
+$points = Get-VersionPoints $number
+if ($points.Count -eq 0) { throw 'The version has no number to draw.' }
 $minX = ($points.X | Measure-Object -Minimum).Minimum
 $maxX = ($points.X | Measure-Object -Maximum).Maximum
 $width = $maxX - $minX + 1
