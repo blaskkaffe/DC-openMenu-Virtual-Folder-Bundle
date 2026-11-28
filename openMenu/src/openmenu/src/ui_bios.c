@@ -791,6 +791,33 @@ near_sink(const bscene_sink* out) {
     return &s;
 }
 
+/* The same with a scale of one's own: the popups' panels, brought in front of the game list's case (near_sink, 1/w about
+ * 0.012) but kept behind their dark backing (1/25). */
+#define POPUP_PANEL_SCALE 5.0f
+static void
+panel_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    const near_wrap* w = (const near_wrap*)user;
+    bscene_vtx n[3] = {v[0], v[1], v[2]};
+    for (int i = 0; i < 3; i++) {
+        n[i].invw *= POPUP_PANEL_SCALE;
+    }
+    w->out->triangle(w->out->user, n, tex);
+}
+
+static void
+panel_text(void* user, const bvm_obj* o, float x, float y, float invw) {
+    const near_wrap* w = (const near_wrap*)user;
+    w->out->text(w->out->user, o, x, y, invw * POPUP_PANEL_SCALE);
+}
+
+static const bscene_sink*
+panel_sink(const bscene_sink* out) {
+    static near_wrap w;
+    static bscene_sink s = {&w, panel_triangle, panel_text, NULL};
+    w.out = out;
+    return &s;
+}
+
 static void draw_viewer(void);
 static int viewer_open;
 
@@ -814,6 +841,12 @@ draw_strip_bg(float x, float y, float w, float h) {
 }
 
 static float draw_feature_strip(const gd_item* cur, float x, float y, float w, int full);
+
+/* a popup is over the game list (recently played / favorites, game options, View, Serial VMU) */
+static int
+list_popup_up(void) {
+    return recent_open || options_open || viewmenu_open || svmu_active();
+}
 
 static void
 draw_side_card(const gd_item* cur) {
@@ -839,7 +872,9 @@ draw_side_card(const gd_item* cur) {
     bcase_draw(&gcase, &menu.scene, CARD_X + CARD_W / 2.0f, CARD_Y + 8.0f + 58.0f + BLIST_SIDE_DY / 2.0f,
                118.0f * (1.0f + (float)BLIST_SIDE_CASE_PCT / 100.0f), case_bind, NULL,
                near_sink(gfx_sink()));
-    if (cur && !uil_is_folder(cur)) {
+    if (list_popup_up()) {
+        /* its 2D text would show over the popup's backing: nothing (the popup covers the card) */
+    } else if (cur && !uil_is_folder(cur)) {
         char info[2][24];
         int k = game_info_lines(cur, info);
         float y = CARD_Y + CARD_H - 4.0f - (float)k * (GFX_LINE_H - 8.0f);
@@ -1269,13 +1304,7 @@ handle_viewer(button_t b) {
     }
 }
 
-/* Popups are centred on the screen, except over the game list's side layout: there they sit over the list (x 228..628), clear of
- * the card on the left, whose 2D text and case would otherwise show over them (emulators do not always sort them by depth). */
-static float
-popup_x(void) {
-    return screen == SCREEN_GAMES && glist.side && !viewer_open ? 228.0f : 120.0f;
-}
-#define POPUP_X popup_x()
+#define POPUP_X 120.0f /* centred on the screen */
 #define POPUP_W 400.0f
 #define POPUP_ROWS 8
 
@@ -1310,10 +1339,10 @@ popup_rows_y(int rows) {
  * VM made when first needed, hidden except while a popup draws them. */
 #define POPKEY_ID(i) ((uint16_t)(0x1380 + (i)))
 #define POPKEY_MAX 4
-/* The popups' layers (1/w; the PVR sorts by it): the panel nearer than the screen's 3D (half the panel depth), the dark
- * backing in front of anything 3D (1/25), the ovals in front of it (20 units), the highlight (0.65) and the text (0.7). The
- * screen's own 2D text (0.5) would show over the backing: popups are placed clear of it (popup_x). The ovals do not render
- * the same much nearer (tried at 1.7 units: they moved). */
+/* The popups' layers (1/w; the PVR sorts by it): the panel at half the panel depth, through panel_sink (in front of the game
+ * list's case), the dark backing in front of anything 3D (1/25), the ovals in front of it (20 units), the highlight (0.65)
+ * and the text (0.7). The game list card's own 2D text (0.5) is not drawn while a popup is up (list_popup_up). The ovals do
+ * not render the same much nearer (tried at 1.7 units: they moved). */
 #define POPUP_PANEL_Z (BSCENE_PANEL_Z * 0.5f)
 #define POPUP_BACK_Z (1.0f / 25.0f)
 #define POPKEY_Z (-20.0f)
@@ -1395,7 +1424,7 @@ popup_buttons(const char* hint, float x0, float x1, float y) {
                              : b[i].key == 'B' ? 0xF02F6FE0u
                              : b[i].key == 'X' ? 0xF0E0C030u
                                                : 0xF02FB050u;
-        popup_key(i, x - 6.0f, y + 14.0f, col);
+        popup_key(i, x - 2.0f, y + 2.0f, col); /* as the File screen's: the word starts at the oval's middle, level with it */
         gfx_text(b[i].word, x, y, 0.7f, 0xFFFFFFFFu, 1);
         x += (float)gfx_text_width(b[i].word) + POPKEY_BTN_GAP + POPKEY_BTN_LEFT;
     }
@@ -1411,7 +1440,7 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     const float rows_y = popup_rows_y(rows);
     /* nearer than the panel depth: over the game list's case and rows (they are at that depth or in front of it) */
     bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), POPUP_PANEL_Z,
-                        gfx_sink());
+                        panel_sink(gfx_sink()));
     /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows and card, the case)
      * from showing through (the layers: POPUP_BACK_Z) */
     gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, POPUP_BACK_Z, 0xE0141820u);
@@ -1622,7 +1651,7 @@ static void
 draw_credits(void) {
     const float h = (float)(CREDITS_ROWS + 2) * GFX_LINE_H + 16.0f;
     bscene_draw_panel_z(&menu.scene, CREDITS_X - 10.0f, CREDITS_Y - 18.0f, CREDITS_W + 20.0f, h + 20.0f, screen_accent(),
-                        POPUP_PANEL_Z, gfx_sink());
+                        POPUP_PANEL_Z, panel_sink(gfx_sink()));
     gfx_rect(CREDITS_X - 2.0f, CREDITS_Y - 10.0f, CREDITS_W + 4.0f, h + 4.0f, POPUP_BACK_Z, 0xE0141820u);
     gfx_text("Credits", CREDITS_X + 16.0f, CREDITS_Y, 0.7f, 0xFFFFFFFFu, 1);
     const float rows_y = CREDITS_Y + (float)GFX_LINE_H + 6.0f;
