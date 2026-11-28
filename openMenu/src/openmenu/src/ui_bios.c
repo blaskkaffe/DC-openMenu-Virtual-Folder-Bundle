@@ -1304,7 +1304,12 @@ popup_rows_y(int rows) {
  * VM made when first needed, hidden except while a popup draws them. */
 #define POPKEY_ID(i) ((uint16_t)(0x1380 + (i)))
 #define POPKEY_MAX 4
-#define POPKEY_Z (-20.0f) /* in front of everything 3D and of the popup's dark backing (at 1/25) */
+/* The popups' layers, back to front (1/w; the PVR sorts by it): the screen's own 2D text (0.5), the dark backing
+ * (POPUP_BACK_Z), the ovals (POPKEY_Z: 1/w 0.6, behind their words), the highlight (0.65), the text (0.7). The panel's frame
+ * is drawn at POPUP_PANEL_Z: in front of the game list's case (near_sink) but behind the backing. */
+#define POPUP_PANEL_Z (-5.0f)
+#define POPUP_BACK_Z 0.55f
+#define POPKEY_Z (-1.0f / 0.6f)
 #define POPKEY_BTN_LEFT 22.0f /* the oval sticks out this far left of its word */
 #define POPKEY_BTN_GAP 34.0f  /* from a word to the next oval */
 
@@ -1398,11 +1403,11 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
     const float rows_y = popup_rows_y(rows);
     /* nearer than the panel depth: over the game list's case and rows (they are at that depth or in front of it) */
-    bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), BSCENE_PANEL_Z * 0.5f,
+    bscene_draw_panel_z(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), POPUP_PANEL_Z,
                         gfx_sink());
-    /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows, the case) from showing
-     * through; nearer than anything 3D (1/w of 25 units), behind the buttons' ovals (20 units), the highlight and the text */
-    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, 1.0f / 25.0f, 0xE0141820u);
+    /* the panel is see-through: a dark backing inside its frame keeps what is behind (the list's rows and card, the case)
+     * from showing through (the layers: POPUP_BACK_Z) */
+    gfx_rect(POPUP_X - 2.0f, rows_y - 42.0f, POPUP_W + 4.0f, h + 4.0f, POPUP_BACK_Z, 0xE0141820u);
     gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = rows_y + (float)i * GFX_LINE_H;
@@ -1610,8 +1615,8 @@ static void
 draw_credits(void) {
     const float h = (float)(CREDITS_ROWS + 2) * GFX_LINE_H + 16.0f;
     bscene_draw_panel_z(&menu.scene, CREDITS_X - 10.0f, CREDITS_Y - 18.0f, CREDITS_W + 20.0f, h + 20.0f, screen_accent(),
-                        BSCENE_PANEL_Z * 0.5f, gfx_sink());
-    gfx_rect(CREDITS_X - 2.0f, CREDITS_Y - 10.0f, CREDITS_W + 4.0f, h + 4.0f, 1.0f / 25.0f, 0xE0141820u);
+                        POPUP_PANEL_Z, gfx_sink());
+    gfx_rect(CREDITS_X - 2.0f, CREDITS_Y - 10.0f, CREDITS_W + 4.0f, h + 4.0f, POPUP_BACK_Z, 0xE0141820u);
     gfx_text("Credits", CREDITS_X + 16.0f, CREDITS_Y, 0.7f, 0xFFFFFFFFu, 1);
     const float rows_y = CREDITS_Y + (float)GFX_LINE_H + 6.0f;
     for (int i = 0; i < CREDITS_ROWS && credits_top + i < CREDITS_N; i++) {
