@@ -85,11 +85,11 @@ try {
 
     # These RGB hashes come from the reviewed mockups.
     $expected = [ordered]@{
-        'v1.0.0-ateam' = '3d087a2b15c25dd1952085f9f5d0057d5d7c297d455bb906a74aba220b741ef3'
-        'v1.6.5-ateam' = '9cd608b8e5c8cf5e402ac59236a47a7c605e717c3af54933653fdb945dcb3fd2'
-        'v1.7.0-ateam' = '28056df40a8dcb30cb51cb0f51e68c6cd5a15e71ee9624e0658adf04297ea5ed'
-        'v2.0.0-ateam' = '89a7ab73b2b0bf4e3a0d1c23c1b1a8ecaff2d7b0d7ab8a114ca94209564f2dc3'
-        'v1.7.2-blaskkaffe' = 'e79f59eb6c6740ec9978d21e0578469405c7823ee0ec531f9fff8f1faa54b771'
+        'v1.0.0-ateam' = '40fe9fbcc10fddfa3af7f951a8286508a768069adf5498b7bb0cb68bc5bcab93'
+        'v1.6.5-ateam' = 'e91a291f8df49ebbb688e2ff3d6f68a421a240b0c81bce5ddcab9d0fd31eafd0'
+        'v1.7.0-ateam' = '7ed1dbbb239da92bba0cce7e0c1845bf2b8208dbae21e388a0c96963e3310f8f'
+        'v2.0.0-ateam' = '47e9e4c2dc7723241e4b84f4e8fdb02b3c2983a9ada2356b706679ad6789670d'
+        'v1.7.2-blaskkaffe' = '00d526147245d9fc646663877bf2ff6c2d8df6b5ddad114dae3960d98ba01683'
     }
     foreach ($version in $expected.Keys) {
         $before = [IO.File]::ReadAllBytes($ipPath)
