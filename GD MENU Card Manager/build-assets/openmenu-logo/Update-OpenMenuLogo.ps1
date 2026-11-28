@@ -86,32 +86,41 @@ for ($i = 0; $i -lt 128; $i++) {
         $spread[$i] = $spread[$i] -bor ((($i -shr $bit) -band 1) -shl (2 * $bit))
     }
 }
-$points = [Collections.Generic.List[Drawing.Point]]::new()
-for ($i = 0; $i -lt $Version.Length; $i++) {
-    $code = [int][char]$Version[$i]
-    if ($code -lt 32 -or $code -gt 126) { throw 'The version contains an unsupported character.' }
-    $glyph = $code - 32
-    $before = $points.Count
-    for ($y = 0; $y -lt 16; $y++) {
-        for ($x = 0; $x -lt 8; $x++) {
-            $fx = ($glyph % 16) * 8 + $x
-            $fy = [int][Math]::Floor($glyph / 16) * 16 + $y
-            $index = $spread[$fy] -bor ($spread[$fx] -shl 1)
-            $pixel = [BitConverter]::ToUInt16($font, 32 + 2 * $index)
-            if (($pixel -band 0x8000) -ne 0) {
-                $points.Add([Drawing.Point]::new($i * 8 + $x, $y))
+function Get-VersionPoints([string]$Text) {
+    $points = [Collections.Generic.List[Drawing.Point]]::new()
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        $code = [int][char]$Text[$i]
+        if ($code -lt 32 -or $code -gt 126) { throw 'The version contains an unsupported character.' }
+        $glyph = $code - 32
+        $before = $points.Count
+        for ($y = 0; $y -lt 16; $y++) {
+            for ($x = 0; $x -lt 8; $x++) {
+                $fx = ($glyph % 16) * 8 + $x
+                $fy = [int][Math]::Floor($glyph / 16) * 16 + $y
+                $index = $spread[$fy] -bor ($spread[$fx] -shl 1)
+                $pixel = [BitConverter]::ToUInt16($font, 32 + 2 * $index)
+                if (($pixel -band 0x8000) -ne 0) {
+                    $points.Add([Drawing.Point]::new($i * 8 + $x, $y))
+                }
             }
         }
+        if ($code -ne 32 -and $points.Count -eq $before) { throw 'A version character is missing from the font.' }
     }
-    if ($code -ne 32 -and $points.Count -eq $before) { throw 'A version character is missing from the font.' }
+    return ,$points
 }
 
+# A version too wide for the line (such as v1.7.2-blaskkaffe) is drawn without its leading v.
+$points = Get-VersionPoints $Version
+$width = ($points.X | Measure-Object -Maximum).Maximum - ($points.X | Measure-Object -Minimum).Minimum + 1
+if ($width -gt 126 -and $Version.StartsWith('v')) {
+    $points = Get-VersionPoints $Version.Substring(1)
+}
 $minX = ($points.X | Measure-Object -Minimum).Minimum
 $maxX = ($points.X | Measure-Object -Maximum).Maximum
 $width = $maxX - $minX + 1
 if ($width -gt 126) { throw 'The version is too wide for the logo.' }
 
-# The template reserves x=176..301 and y=58..73 for the version glyphs.
+# The template (with the "Now in 3D!" burst on the left) reserves x=176..301 and y=58..73 for the version glyphs.
 $left = 176 + [int][Math]::Floor((126 - $width) / 2)
 $bitmap = [Drawing.Bitmap]::new((Join-Path $PSScriptRoot 'base.png'))
 try {

@@ -76,6 +76,15 @@ jobs:
           if ($LASTEXITCODE -eq 0) { Write-Error "1ST_READ.BIN is still the committed one"; exit 1 }
           exit 0
 
+      - name: Boot logo (IP.BIN) tests; the committed logo is the one for version.txt
+        run: |
+          ./build-assets/openmenu-logo/Test-OpenMenuLogo.ps1
+          $v = (Get-Content src/version.txt -Raw).Trim()
+          ./build-assets/openmenu-logo/Update-OpenMenuLogo.ps1 -Version $v
+          git diff --quiet -- src/GDMENUCardManager.Core/tools/openMenu/IP.BIN
+          if ($LASTEXITCODE -ne 0) { Write-Error "IP.BIN's boot logo is not the one for $v (run Update-OpenMenuLogo.ps1, commit IP.BIN)"; exit 1 }
+          exit 0
+
       - name: Scraper tests (offline)
         run: dotnet run -c Release --project src/GDMENUCardManager.ScraperTests/GDMENUCardManager.ScraperTests.csproj
 

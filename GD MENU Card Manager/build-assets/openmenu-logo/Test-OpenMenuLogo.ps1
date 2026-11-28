@@ -85,10 +85,11 @@ try {
 
     # These RGB hashes come from the reviewed mockups.
     $expected = [ordered]@{
-        'v1.0.0-ateam' = '5eef8c71fa9cf293ddc3d3831fed77f341458034a081daced694a11ffee30420'
-        'v1.6.5-ateam' = '5bce6bfe5567b5602edaf2339ca24bccfefef1107f5601cbc920e7365c3e8691'
-        'v1.7.0-ateam' = 'e7d46d863dbc24d07787a68275d8efd1206d35fade3e483b909187029958b69c'
-        'v2.0.0-ateam' = '59173de638d9be8c1474093167a2b97080652f1a8c3baa94d6f38a81967c00a7'
+        'v1.0.0-ateam' = '8a2852fc6fe693d0a8dcc2744c3f117654e3f52372529a5ac3e6a8bfb357fae5'
+        'v1.6.5-ateam' = '3a0c007ca8133d991ae0d09f4911927e5796880a18176d38fdedad55c06ffe5d'
+        'v1.7.0-ateam' = 'c025a021c1b55b58b6297d19659d2464e6a2ca9cf2a480e26b896be1df7c150b'
+        'v2.0.0-ateam' = '17f931f76b48586065084802b6840741c2b352c492a2c8c2e0a9b20e218f9d99'
+        'v1.7.2-blaskkaffe' = 'a9c9093dec9aef464dceefee8cbc18ae0ba8b4b663e4b5dd61c5e6669ae219ac'
     }
     foreach ($version in $expected.Keys) {
         $before = [IO.File]::ReadAllBytes($ipPath)
@@ -130,7 +131,7 @@ try {
     try { $small.Save($templatePath, [Drawing.Imaging.ImageFormat]::Png) } finally { $small.Dispose() }
     Assert-Rejected 'v1.7.0-ateam'
     Assert ((Get-Hash ([IO.File]::ReadAllBytes((Join-Path $root $ipRelative)))) -eq (Get-Hash $original)) 'Tests changed the source IP.BIN.'
-    Write-Host 'Passed: four mockups, byte preservation, repeated builds, invalid inputs, and paths with spaces and brackets.'
+    Write-Host 'Passed: five mockups, byte preservation, repeated builds, invalid inputs, and paths with spaces and brackets.'
 } finally {
     if ([IO.Directory]::Exists($temporary)) { [IO.Directory]::Delete($temporary, $true) }
 }
