@@ -1636,7 +1636,7 @@ popup_buttons(const char* hint, float x0, float x1, float y) {
                              : b[i].key == 'B' ? 0xF02F6FE0u
                              : b[i].key == 'X' ? 0xF0E0C030u
                                                : 0xF02FB050u;
-        popup_key(i, x - 2.0f, y + 2.0f, col); /* as the File screen's: the word starts at the oval's middle, level with it */
+        popup_key(i, x + 2.0f, y + 10.0f, col); /* as the File screen's: the word starts at the oval's middle, level with it */
         gfx_text(b[i].word, x, y, 0.7f, 0xFFFFFFFFu, 1);
         x += (float)gfx_text_width(b[i].word) + POPKEY_BTN_GAP + POPKEY_BTN_LEFT;
     }
