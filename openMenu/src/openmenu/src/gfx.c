@@ -1704,7 +1704,7 @@ static int
 spine_kind_of(int model) {
     const int ca = bmodel_case_single(model);
     return (ca == BMODEL_CASE_PAL ? SPINE_PAL : ca == BMODEL_CASE_WHITE ? SPINE_J : ca == BMODEL_CASE_CLEAR_WHITE ? SPINE_USW : SPINE_US)
-           + (bmodel_case_is_double(model) ? SPINE_KINDS : 0);
+           + (bmodel_case_is_double(model) && ca != BMODEL_CASE_PAL ? SPINE_KINDS : 0); /* PAL: one spine, as the single */
 }
 
 /* Is this game's spine (the bound title and code) made already? */

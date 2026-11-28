@@ -618,6 +618,7 @@ build_tray(builder* b, float S, float x0, float x1, float yt, float yb, float zf
 }
 
 #define RIB_MM 9.1f
+#define PAL_DOUBLE_DEPTH 1.5f /* the PAL double case: the single one, 1.5 times as thick */
 
 /* The double CD case (two to four discs, the "fat box"): 142 x 125 x 24 mm. Its top and bottom edges are dark grey and ribbed over the
  * whole depth (blue and plain for PAL); the front, back and both sides are clear. Under the front the cover (the whole width: no hinge
@@ -894,10 +895,22 @@ build_by_id(builder* b, int id) {
     switch (id) {
         case BMODEL_PHONE: build_phone(b); return 0;
         case BMODEL_CASE_WHITE_DOUBLE:
-        case BMODEL_CASE_PAL_DOUBLE:
         case BMODEL_CASE_DARK_DOUBLE:
         case BMODEL_CASE_CLEAR_WHITE_DOUBLE:
-        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: build_double_case(b, bmodel_case_single(id) == BMODEL_CASE_PAL); return 0;
+        case BMODEL_CASE_CLEAR_BLACK_DOUBLE: build_double_case(b, 0); return 0;
+        case BMODEL_CASE_PAL_DOUBLE:
+            /* the PAL multi-disc case is the single blue case, thicker (one spine, the hinge bar), not the NTSC fat box */
+            build_case(b, &dc_model_dreamcast_pal_case_blue, 0xFF20419Bu, 0);
+            for (int i = 0; i < b->nverts; i++) {
+                nj_vertex* v = &b->verts[i];
+                v->pos.z *= PAL_DOUBLE_DEPTH;
+                v->nrm.z /= PAL_DOUBLE_DEPTH; /* the normals of slanted faces follow the stretch */
+                const float n = sqrtf(v->nrm.x * v->nrm.x + v->nrm.y * v->nrm.y + v->nrm.z * v->nrm.z);
+                if (n > 0.0f) {
+                    v->nrm.x /= n, v->nrm.y /= n, v->nrm.z /= n;
+                }
+            }
+            return 0;
         case BMODEL_GLOBE: build_globe(b); return 0;
         case BMODEL_PODIUM: build_podium(b); return 0;
         case BMODEL_CASE_WHITE: build_case(b, &dc_model_cd_case_white, 0xFF292D31u, 0); return 0;
