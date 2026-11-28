@@ -9,7 +9,7 @@
     <Grid Margin="15">
         <StackPanel>
             <!-- Header -->
-            <TextBlock FontWeight="Bold" FontSize="16">GD MENU Card Manager - by Sonik (ateam version)</TextBlock>
+            <TextBlock FontWeight="Bold" FontSize="16">GD MENU Card Manager - by Sonik (blaskkaffe version)</TextBlock>
             <TextBlock Margin="0,2,0,0">A tool to manage a GDEMU SD card and its contents</TextBlock>
             <TextBlock Margin="0,8,0,0" Foreground="Blue" TextDecorations="Underline"
                        Cursor="Hand" PointerPressed="LinkText_PointerPressed">https://github.com/DerekPascarella/openMenu-Virtual-Folder-Bundle</TextBlock>
