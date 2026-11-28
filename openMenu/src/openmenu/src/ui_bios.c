@@ -1481,7 +1481,13 @@ handle_viewer(button_t b) {
     }
 }
 
-#define POPUP_X 120.0f
+/* Popups are centred on the screen, except over the game list's side layout: there they sit over the list (x 228..628), clear of
+ * the card on the left, whose 2D text and case would otherwise show over them (emulators do not always sort them by depth). */
+static float
+popup_x(void) {
+    return screen == SCREEN_GAMES && glist.side && !viewer_open ? 228.0f : 120.0f;
+}
+#define POPUP_X popup_x()
 #define POPUP_W 400.0f
 #define POPUP_ROWS 8
 
